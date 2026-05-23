@@ -19,6 +19,7 @@ function cn(...classes) {
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Orders', href: '/orders', icon: ShoppingBag },
+  { name: 'Vendors', href: '/vendors', icon: ShieldCheck },
   { name: 'Google Sheets', href: '/imports', icon: FileSpreadsheet },
   { name: 'ShipStation', href: '/shipping', icon: Package },
   { name: 'Settings', href: '/settings', icon: Settings },
