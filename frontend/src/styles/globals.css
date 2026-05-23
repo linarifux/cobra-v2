@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+@theme {
+  /* MI-KRO Brand Colors */
+  --color-brand-gold: #B88645;       /* Primary text/button color */
+  --color-brand-gold-hover: #9A6F37; /* Darker shade for button hovers */
+  --color-brand-gold-light: #FDF9F3; /* Very light tint for active tab backgrounds */
+  --color-brand-black: #0F172A;      /* Deep slate-black for the sidebar */
+
+  /* Tailwind v4 Native Animation Integration */
+  --animate-aurora: aurora 15s ease-in-out infinite;
+  --animate-aurora-reverse: aurora-reverse 20s ease-in-out infinite reverse;
+  --animate-pulse-slow: pulse-slow 3s ease-in-out infinite;
+  --animate-slide-in-right: slide-in-right 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+
+  /* Custom Keyframes */
+  @keyframes aurora {
+    0% { transform: translateX(-25%) translateY(0) rotate(0deg); }
+    50% { transform: translateX(25%) translateY(10%) rotate(5deg); }
+    100% { transform: translateX(-25%) translateY(0) rotate(0deg); }
+  }
+
+  @keyframes aurora-reverse {
+    0% { transform: translateX(25%) translateY(0) rotate(0deg); }
+    50% { transform: translateX(-25%) translateY(-10%) rotate(-5deg); }
+    100% { transform: translateX(25%) translateY(0) rotate(0deg); }
+  }
+
+  @keyframes pulse-slow {
+    0%, 100% { transform: scale(1.1); filter: brightness(1); }
+    50% { transform: scale(1.15); filter: brightness(1.2); }
+  }
+
+  @keyframes slide-in-right {
+    0% { opacity: 0; transform: translateX(-20px); filter: blur(4px); }
+    100% { opacity: 1; transform: translateX(0); filter: blur(0); }
+  }
+}
+
+@layer components {
+  /* Global Component Classes */
+  .btn-primary {
+    @apply bg-brand-gold text-white px-4 py-2 rounded-md hover:bg-brand-gold-hover transition-colors shadow-sm;
+  }
+}
+
+@layer utilities {
+  /* Pre-set opacity for slide-in to prevent flashing before the animation triggers */
+  .animate-slide-in-right {
+    opacity: 0;
+  }
+
+  /* Hide scrollbar for cleaner glass look */
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
