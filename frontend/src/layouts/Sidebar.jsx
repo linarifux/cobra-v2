@@ -52,7 +52,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
             "text-transparent bg-clip-text bg-gradient-to-br from-white via-slate-100 to-slate-400 font-black tracking-[0.2em] overflow-hidden whitespace-nowrap drop-shadow-md transition-all duration-500",
             isOpen ? "w-auto opacity-100 translate-x-0" : "w-0 opacity-0 -translate-x-8 hidden"
           )}>
-            COBRA <span className="text-brand-gold font-light">II</span>
+            COBRA <span className="text-brand-gold font-light bg-gray-500 p-2 rounded-xl">2.0</span>
           </span>
           
           <button 
