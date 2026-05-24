@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Building, Mail, Phone, MapPin, 
   Package, Users, DollarSign, Truck, BarChart3, 
-  Settings, CheckCircle, AlertCircle, Plus, Edit
+  Settings, CheckCircle, AlertTriangle, Plus, Edit,
+  TrendingUp, Clock
 } from 'lucide-react';
 
 export default function VendorDetailsPage() {
@@ -21,7 +22,10 @@ export default function VendorDetailsPage() {
           <ArrowLeft size={18} /> <span className="text-xs font-black uppercase tracking-widest">Back</span>
         </button>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 bg-white/50 rounded-xl text-xs font-bold border border-white/50 hover:bg-white transition-all">
+          <button 
+            onClick={() => navigate(`/vendors/${id}/edit`)}
+            className="flex items-center gap-2 px-4 py-2 bg-white/50 rounded-xl text-xs font-bold border border-white/50 hover:bg-white transition-all"
+          >
             <Edit size={14} /> Edit Profile
           </button>
           <button className="bg-brand-gold text-white px-6 py-2 rounded-xl text-xs font-black shadow-lg shadow-brand-gold/20 hover:scale-105 transition-transform">
@@ -31,7 +35,7 @@ export default function VendorDetailsPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Sidebar (Vendor Info) */}
+        {/* Sidebar */}
         <div className="space-y-6">
           <div className="bg-slate-900 text-white p-6 rounded-3xl">
             <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mb-4">
@@ -67,64 +71,69 @@ export default function VendorDetailsPage() {
             ))}
           </div>
 
-          {/* Dynamic Content Based on Tab */}
-          <TabContent activeTab={activeTab} />
+          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-8 rounded-3xl min-h-[400px]">
+             {activeTab === 'Overview' && (
+                <div className="grid grid-cols-2 gap-6">
+                    <div className="p-6 bg-white/50 rounded-2xl border border-white/50">
+                    <h3 className="font-bold mb-4">Operational Divisions</h3>
+                    <div className="flex gap-2">
+                        {['Retail', 'B2B', 'Wholesale'].map(d => <span key={d} className="px-3 py-1 bg-brand-gold/10 text-brand-gold rounded-lg text-xs font-bold">{d}</span>)}
+                    </div>
+                    </div>
+                    <div className="p-6 bg-white/50 rounded-2xl border border-white/50">
+                    <h3 className="font-bold mb-4">Performance Score</h3>
+                    <div className="flex items-center gap-2 text-emerald-600 font-black text-2xl">
+                        <TrendingUp /> 98.4%
+                    </div>
+                    </div>
+                </div>
+             )}
+
+             {activeTab === 'Inventory' && (
+                <table className="w-full text-xs">
+                    <thead><tr className="text-slate-400 border-b border-white/20"><th className="pb-3 text-left">SKU</th><th className="pb-3 text-left">Name</th><th className="pb-3 text-right">Stock</th></tr></thead>
+                    <tbody className="divide-y divide-white/20">
+                        {[{sku: 'GL-101', name: 'Leather Satchel', stock: 45}, {sku: 'GL-102', name: 'Travel Wallet', stock: 12}].map(item => (
+                            <tr key={item.sku} className="hover:bg-white/20"><td className="py-4 font-bold">{item.sku}</td><td className="py-4">{item.name}</td><td className="py-4 text-right font-black">{item.stock}</td></tr>
+                        ))}
+                    </tbody>
+                </table>
+             )}
+
+             {activeTab === 'Logistics' && (
+                <div className="grid grid-cols-2 gap-4">
+                    {['UPS Ground', 'FedEx Air'].map(carrier => (
+                        <div key={carrier} className="p-4 bg-white/50 rounded-2xl border border-white/50">
+                            <h4 className="font-bold text-sm mb-2">{carrier}</h4>
+                            <div className="flex justify-between text-xs"><span className="text-slate-500">On-Time Rate</span> <span className="font-bold text-emerald-600">99%</span></div>
+                            <div className="flex justify-between text-xs"><span className="text-slate-500">Avg Transit</span> <span className="font-bold">2.4 days</span></div>
+                        </div>
+                    ))}
+                </div>
+             )}
+
+             {activeTab === 'Fees' && (
+                 <div className="space-y-4">
+                    <div className="flex justify-between items-center p-4 bg-white/50 rounded-xl border border-white/50">
+                    <div><p className="font-bold">Pick & Pack Fee</p><p className="text-xs text-slate-500">Per unit</p></div>
+                    <span className="font-black text-lg">$0.75</span>
+                    </div>
+                 </div>
+             )}
+
+             {activeTab === 'Staff' && (
+                 <div className="space-y-4">
+                    <div className="flex justify-between items-center p-4 bg-white/50 rounded-xl border border-white/50">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-slate-200" />
+                            <div><p className="font-bold">John Doe</p><p className="text-[10px] text-slate-500">Account Manager</p></div>
+                        </div>
+                    </div>
+                 </div>
+             )}
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function TabContent({ activeTab }) {
-  // Simple switch for demonstration
-  return (
-    <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-8 rounded-3xl min-h-[400px]">
-       {activeTab === 'Overview' && (
-         <div className="grid grid-cols-2 gap-6">
-            <div className="p-6 bg-white/50 rounded-2xl border border-white/50">
-              <h3 className="font-bold mb-4">Operational Divisions</h3>
-              <div className="flex gap-2">
-                {['Retail', 'B2B', 'Wholesale'].map(d => <span key={d} className="px-3 py-1 bg-brand-gold/10 text-brand-gold rounded-lg text-xs font-bold">{d}</span>)}
-              </div>
-            </div>
-            <div className="p-6 bg-white/50 rounded-2xl border border-white/50">
-              <h3 className="font-bold mb-4">Requested Carriers</h3>
-              <ul className="text-sm text-slate-600 space-y-1">
-                <li>• UPS Ground/Air</li>
-                <li>• FedEx Freight</li>
-                <li>• USPS Priority</li>
-              </ul>
-            </div>
-         </div>
-       )}
-
-       {activeTab === 'Fees' && (
-         <div className="space-y-4">
-            <div className="flex justify-between items-center p-4 bg-white/50 rounded-xl border border-white/50">
-              <div><p className="font-bold">Pick & Pack Fee</p><p className="text-xs text-slate-500">Per unit</p></div>
-              <span className="font-black text-lg">$0.75</span>
-            </div>
-            <div className="flex justify-between items-center p-4 bg-white/50 rounded-xl border border-white/50">
-              <div><p className="font-bold">Storage Fee</p><p className="text-xs text-slate-500">Per pallet/month</p></div>
-              <span className="font-black text-lg">$25.00</span>
-            </div>
-         </div>
-       )}
-
-       {activeTab === 'Staff' && (
-         <div className="space-y-4">
-            <div className="flex justify-between items-center p-4 bg-white/50 rounded-xl border border-white/50">
-                <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-slate-200" />
-                    <div><p className="font-bold">John Doe</p><p className="text-[10px] text-slate-500">Account Manager</p></div>
-                </div>
-                <button className="text-xs font-bold text-slate-400 hover:text-slate-900">Edit Permissions</button>
-            </div>
-            <button className="w-full py-4 border-2 border-dashed border-slate-300 rounded-2xl text-slate-400 font-bold text-xs flex items-center justify-center gap-2 hover:border-slate-400 transition-colors">
-                <Plus size={16} /> Add Staff Member
-            </button>
-         </div>
-       )}
     </div>
   );
 }

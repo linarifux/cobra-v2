@@ -1,10 +1,11 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import DashboardLayout from './layouts/DashboardLayout';
 import DashboardHome from './pages/DashboardHome';
-import OrdersPage from './pages/OrdersPage'; // Import the new page
+import OrdersPage from './pages/OrdersPage';
 import OrderDetailsPage from './pages/OrderDetailsPage';
 import VendorsPage from './pages/VendorsPage';
 import VendorDetailsPage from './pages/VendorDetailsPage';
+import EditVendorDetailsPage from './pages/EditVendorDetailsPage';
 
 export default function App() {
   return (
@@ -21,10 +22,13 @@ export default function App() {
             <Route index element={<OrdersPage />} />
             <Route path=":id" element={<OrderDetailsPage />} />
           </Route>
+          
           <Route path="vendors">
             <Route index element={<VendorsPage />} />
             <Route path=":id" element={<VendorDetailsPage />} />
+            <Route path=":id/edit" element={<EditVendorDetailsPage />} />
           </Route>
+          
           <Route path="imports" element={<div className="p-6">Google Sheets Importer Module</div>} />
           <Route path="shipping" element={<div className="p-6">ShipStation Integration Module</div>} />
           <Route path="settings" element={<div className="p-6">Platform Settings</div>} />
