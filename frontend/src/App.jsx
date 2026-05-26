@@ -6,6 +6,9 @@ import OrderDetailsPage from './pages/OrderDetailsPage';
 import VendorsPage from './pages/VendorsPage';
 import VendorDetailsPage from './pages/VendorDetailsPage';
 import EditVendorDetailsPage from './pages/EditVendorDetailsPage';
+import DivisionsPage from './pages/DivisionsPage';
+import InventoryPage from './pages/InventoryPage';
+import CategoryPage from './pages/CategoryPage';
 
 export default function App() {
   return (
@@ -29,6 +32,9 @@ export default function App() {
             <Route path=":id/edit" element={<EditVendorDetailsPage />} />
           </Route>
           
+          <Route path="/divisions" element={<DivisionsPage />} />
+          <Route path="/inventory" element={<InventoryPage />} />
+          <Route path="/categories" element={<CategoryPage />} />
           <Route path="imports" element={<div className="p-6">Google Sheets Importer Module</div>} />
           <Route path="shipping" element={<div className="p-6">ShipStation Integration Module</div>} />
           <Route path="settings" element={<div className="p-6">Platform Settings</div>} />

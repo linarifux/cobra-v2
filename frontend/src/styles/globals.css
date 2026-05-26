@@ -37,6 +37,10 @@
   }
 }
 
+button{
+  cursor: pointer;
+}
+
 @layer components {
   /* Global Component Classes */
   .btn-primary {

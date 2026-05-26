@@ -6,7 +6,10 @@ import {
   Package, 
   Settings, 
   Menu,
-  ShieldCheck
+  ShieldCheck,
+  LayoutGrid,
+  Box,
+  Layers // Added Layers icon for Categories
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -19,7 +22,10 @@ function cn(...classes) {
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Orders', href: '/orders', icon: ShoppingBag },
+  { name: 'Inventory', href: '/inventory', icon: Box },
   { name: 'Vendors', href: '/vendors', icon: ShieldCheck },
+  { name: 'Divisions', href: '/divisions', icon: LayoutGrid },
+  { name: 'Categories', href: '/categories', icon: Layers },
   { name: 'Google Sheets', href: '/imports', icon: FileSpreadsheet },
   { name: 'ShipStation', href: '/shipping', icon: Package },
   { name: 'Settings', href: '/settings', icon: Settings },
@@ -35,9 +41,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
         isOpen ? "w-64" : "w-20"
       )}
     >
-      {/* Background Layering System 
-        Separated from the main flex container so overflow-hidden doesn't clip our custom tooltips
-      */}
+      {/* Background Layering System */}
       <div className="absolute inset-0 bg-brand-black/40 backdrop-blur-3xl border-r border-white/10 shadow-[8px_0_32px_rgba(0,0,0,0.3)] overflow-hidden -z-10">
         <div className="absolute top-0 -left-1/2 w-[200%] h-64 bg-gradient-to-r from-brand-gold/10 via-transparent to-brand-gold/5 blur-3xl animate-aurora mix-blend-screen pointer-events-none" />
         <div className="absolute bottom-0 -right-1/2 w-[200%] h-64 bg-gradient-to-r from-transparent via-slate-500/10 to-brand-gold/10 blur-3xl animate-aurora-reverse mix-blend-screen pointer-events-none" />
@@ -126,7 +130,6 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                 {!isOpen && (
                   <div className="absolute left-full top-1/2 -translate-y-1/2 ml-4 px-3 py-2 bg-slate-900/90 backdrop-blur-md border border-white/10 text-white text-xs font-bold tracking-wide rounded-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-300 whitespace-nowrap z-50 shadow-[0_8px_32px_rgba(0,0,0,0.4)] translate-x-2 group-hover:translate-x-0">
                     {item.name}
-                    {/* Tooltip Arrow */}
                     <div className="absolute top-1/2 -left-1 -translate-y-1/2 border-t-4 border-b-4 border-r-4 border-transparent border-r-slate-900/90"></div>
                   </div>
                 )}
@@ -137,36 +140,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
       </nav>
 
       {/* Terminal Node / User Profile Dock */}
-      <div className="relative z-10 p-4 border-t border-white/5 bg-gradient-to-t from-brand-black/60 to-transparent">
-        <div className={cn(
-          "flex items-center gap-3 transition-all duration-300",
-          !isOpen && "justify-center"
-        )}>
-          {/* Avatar Base */}
-          <div className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-brand-gold to-amber-700 p-[1px] flex-shrink-0 cursor-pointer group">
-            <div className="w-full h-full bg-slate-900 rounded-xl flex items-center justify-center transition-colors group-hover:bg-slate-800">
-              <span className="text-transparent bg-clip-text bg-gradient-to-br from-white to-slate-400 font-black text-sm tracking-wider">NI</span>
-            </div>
-            {/* Status Indicator */}
-            <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-brand-black rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
-          </div>
-          
-          {/* Meta Details */}
-          <div className={cn(
-            "flex flex-col whitespace-nowrap overflow-hidden transition-all duration-500",
-            isOpen ? "w-auto opacity-100 translate-x-0" : "w-0 opacity-0 -translate-x-4 hidden"
-          )}>
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm font-bold text-white tracking-wide">Naimul Islam</span>
-              <ShieldCheck className="w-3.5 h-3.5 text-brand-gold" />
-            </div>
-            <span className="text-[10px] text-slate-400 font-black tracking-[0.15em] uppercase mt-0.5">
-              CodeXym Admin
-            </span>
-          </div>
-        </div>
-      </div>
-
+      
     </div>
   );
 }
