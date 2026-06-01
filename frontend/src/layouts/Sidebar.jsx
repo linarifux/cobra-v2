@@ -3,13 +3,15 @@ import {
   LayoutDashboard, 
   ShoppingBag, 
   FileSpreadsheet, 
+  Truck,
   Package, 
   Settings, 
   Menu,
   ShieldCheck,
   LayoutGrid,
   Box,
-  Layers // Added Layers icon for Categories
+  Layers,
+  UserCircle 
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -23,10 +25,10 @@ const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Orders', href: '/orders', icon: ShoppingBag },
   { name: 'Inventory', href: '/inventory', icon: Box },
-  { name: 'Vendors', href: '/vendors', icon: ShieldCheck },
+  { name: 'Receiving Orders', href: '/receiving-orders', icon: Truck },
+  { name: 'Customers', href: '/customers', icon: ShieldCheck },
   { name: 'Divisions', href: '/divisions', icon: LayoutGrid },
   { name: 'Categories', href: '/categories', icon: Layers },
-  { name: 'Google Sheets', href: '/imports', icon: FileSpreadsheet },
   { name: 'ShipStation', href: '/shipping', icon: Package },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
@@ -90,13 +92,11 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                       : "text-slate-100 hover:bg-white/10 hover:text-white border border-transparent hover:border-white/20"
                   )}
                 >
-                  {/* Active State Highlight Line */}
                   <div className={cn(
                     "absolute left-0 top-1/4 bottom-1/4 w-1 bg-white rounded-r-full transition-all duration-300 origin-left z-20",
                     isActive ? "scale-x-100 opacity-100" : "scale-x-0 opacity-0"
                   )} />
 
-                  {/* Dynamic Gradient Background for Active State */}
                   {isActive && (
                     <>
                       <div className="absolute inset-0 bg-gradient-to-r from-brand-gold/95 to-brand-gold/50 opacity-100 rounded-2xl transition-opacity duration-500" />
@@ -104,7 +104,6 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                     </>
                   )}
                   
-                  {/* Icon */}
                   <div className="relative flex items-center justify-center">
                     <item.icon 
                       size={22} 
@@ -117,7 +116,6 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                     />
                   </div>
                   
-                  {/* Text */}
                   <span className={cn(
                     "whitespace-nowrap font-bold tracking-wide relative z-10 transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] drop-shadow-md",
                     isOpen ? "ml-4 opacity-100 translate-x-0" : "w-0 opacity-0 -translate-x-6 hidden absolute"
@@ -125,14 +123,6 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                     {item.name}
                   </span>
                 </Link>
-
-                {/* Custom Glassmorphism Tooltip for Closed State */}
-                {!isOpen && (
-                  <div className="absolute left-full top-1/2 -translate-y-1/2 ml-4 px-3 py-2 bg-slate-900/90 backdrop-blur-md border border-white/10 text-white text-xs font-bold tracking-wide rounded-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-300 whitespace-nowrap z-50 shadow-[0_8px_32px_rgba(0,0,0,0.4)] translate-x-2 group-hover:translate-x-0">
-                    {item.name}
-                    <div className="absolute top-1/2 -left-1 -translate-y-1/2 border-t-4 border-b-4 border-r-4 border-transparent border-r-slate-900/90"></div>
-                  </div>
-                )}
               </li>
             );
           })}
@@ -140,6 +130,21 @@ export default function Sidebar({ isOpen, setIsOpen }) {
       </nav>
 
       {/* Terminal Node / User Profile Dock */}
+      <div className={cn(
+        "relative z-10 p-4 border-t border-white/5 transition-all duration-500",
+        isOpen ? "flex items-center gap-4" : "flex justify-center"
+      )}>
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-slate-800 to-slate-700 flex items-center justify-center border border-white/10 shadow-inner">
+          <UserCircle className="text-brand-gold" size={24} />
+        </div>
+        <div className={cn(
+          "overflow-hidden transition-all duration-500",
+          isOpen ? "w-auto opacity-100" : "w-0 opacity-0"
+        )}>
+          <p className="text-xs font-black text-white uppercase tracking-wider">Admin</p>
+          <p className="text-[10px] text-slate-400 font-bold">System Manager</p>
+        </div>
+      </div>
       
     </div>
   );

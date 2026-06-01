@@ -6,24 +6,24 @@ import {
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 
-export default function VendorsPage() {
+export default function CustomersPage() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
   const [filterCategory, setFilterCategory] = useState('All');
 
-  const vendorsData = [
-    { id: 'V-001', name: 'Global Logistics Corp', email: 'ops@globallog.com', phone: '+1 (555) 123-4567', address: 'Chicago, IL', status: 'Active', category: 'Courier', openOrders: 12 },
-    { id: 'V-002', name: 'Packaging Solutions Inc', email: 'sales@packsol.net', phone: '+1 (555) 987-6543', address: 'Austin, TX', status: 'Active', category: 'Supplier', openOrders: 4 },
-    { id: 'V-003', name: 'TechStream Hardware', email: 'support@techstream.io', phone: '+1 (555) 456-7890', address: 'Seattle, WA', status: 'Pending', category: 'Manufacturer', openOrders: 0 },
-    { id: 'V-004', name: 'Textile Manufacturers', email: 'contact@texfab.com', phone: '+1 (555) 222-3333', address: 'New York, NY', status: 'Inactive', category: 'Supplier', openOrders: 0 },
+  const customersData = [
+    { id: 'C-001', name: 'Global Logistics Corp', email: 'ops@globallog.com', phone: '+1 (555) 123-4567', address: 'Chicago, IL', status: 'Active', category: 'Courier', openOrders: 12 },
+    { id: 'C-002', name: 'Packaging Solutions Inc', email: 'sales@packsol.net', phone: '+1 (555) 987-6543', address: 'Austin, TX', status: 'Active', category: 'Supplier', openOrders: 4 },
+    { id: 'C-003', name: 'TechStream Hardware', email: 'support@techstream.io', phone: '+1 (555) 456-7890', address: 'Seattle, WA', status: 'Pending', category: 'Manufacturer', openOrders: 0 },
+    { id: 'C-004', name: 'Textile Manufacturers', email: 'contact@texfab.com', phone: '+1 (555) 222-3333', address: 'New York, NY', status: 'Inactive', category: 'Supplier', openOrders: 0 },
   ];
 
-  const filteredVendors = useMemo(() => {
-    return vendorsData.filter(v => {
-      const matchSearch = v.name.toLowerCase().includes(searchQuery.toLowerCase()) || v.email.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchStatus = filterStatus === 'All' || v.status === filterStatus;
-      const matchCategory = filterCategory === 'All' || v.category === filterCategory;
+  const filteredCustomers = useMemo(() => {
+    return customersData.filter(c => {
+      const matchSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || c.email.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchStatus = filterStatus === 'All' || c.status === filterStatus;
+      const matchCategory = filterCategory === 'All' || c.category === filterCategory;
       return matchSearch && matchStatus && matchCategory;
     });
   }, [searchQuery, filterStatus, filterCategory]);
@@ -31,8 +31,8 @@ export default function VendorsPage() {
   return (
     <div className="h-full p-6 space-y-6">
       <PageHeader 
-        title="Vendor Directory" 
-        subtitle="Manage your supply chain partners, categories, and active order volumes." 
+        title="Customer Directory" 
+        subtitle="Manage your customer base, categories, and active order volumes." 
       />
 
       {/* KPI Stats Bar */}
@@ -56,7 +56,7 @@ export default function VendorsPage() {
           <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
           <input 
             className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 bg-white/50 text-xs"
-            placeholder="Search vendor name..."
+            placeholder="Search customer name..."
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
@@ -77,7 +77,7 @@ export default function VendorsPage() {
             <Download size={14} /> Export
           </button>
           <button className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-800">
-            <Plus size={14} /> Add Vendor
+            <Plus size={14} /> Add Customer
           </button>
         </div>
       </div>
@@ -87,7 +87,7 @@ export default function VendorsPage() {
         <table className="w-full text-left border-collapse text-xs">
           <thead>
             <tr className="bg-slate-100/50 text-[10px] uppercase font-black text-slate-500">
-              <th className="p-4">Vendor</th>
+              <th className="p-4">Customer</th>
               <th className="p-4">Category</th>
               <th className="p-4">Open Orders</th>
               <th className="p-4">Location</th>
@@ -96,24 +96,24 @@ export default function VendorsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-white/40">
-            {filteredVendors.map((vendor) => (
-              <tr key={vendor.id} onClick={() => navigate(`/vendors/${vendor.id}`)} className="hover:bg-white/60 transition-colors cursor-pointer group">
+            {filteredCustomers.map((customer) => (
+              <tr key={customer.id} onClick={() => navigate(`/customers/${customer.id}`)} className="hover:bg-white/60 transition-colors cursor-pointer group">
                 <td className="p-4">
-                  <div className="font-bold text-slate-900">{vendor.name}</div>
-                  <div className="text-[10px] text-slate-400">{vendor.email}</div>
+                  <div className="font-bold text-slate-900">{customer.name}</div>
+                  <div className="text-[10px] text-slate-400">{customer.email}</div>
                 </td>
-                <td className="p-4 font-medium text-slate-600">{vendor.category}</td>
+                <td className="p-4 font-medium text-slate-600">{customer.category}</td>
                 <td className="p-4">
-                   <span className={`inline-flex items-center gap-1 font-bold ${vendor.openOrders > 0 ? 'text-indigo-600' : 'text-slate-400'}`}>
-                      <Package size={12} /> {vendor.openOrders}
+                   <span className={`inline-flex items-center gap-1 font-bold ${customer.openOrders > 0 ? 'text-indigo-600' : 'text-slate-400'}`}>
+                      <Package size={12} /> {customer.openOrders}
                    </span>
                 </td>
-                <td className="p-4 text-slate-500">{vendor.address}</td>
+                <td className="p-4 text-slate-500">{customer.address}</td>
                 <td className="p-4">
                    <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase ${
-                     vendor.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 
-                     vendor.status === 'Pending' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600'
-                   }`}>{vendor.status}</span>
+                     customer.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 
+                     customer.status === 'Pending' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600'
+                   }`}>{customer.status}</span>
                 </td>
                 <td className="p-4 text-right">
                   <ChevronRight size={16} className="text-slate-400 group-hover:text-brand-gold ml-auto" />

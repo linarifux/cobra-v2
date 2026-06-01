@@ -3,12 +3,13 @@ import DashboardLayout from './layouts/DashboardLayout';
 import DashboardHome from './pages/DashboardHome';
 import OrdersPage from './pages/OrdersPage';
 import OrderDetailsPage from './pages/OrderDetailsPage';
-import VendorsPage from './pages/VendorsPage';
+import CustomersPage from './pages/CustomersPage';
 import VendorDetailsPage from './pages/VendorDetailsPage';
 import EditVendorDetailsPage from './pages/EditVendorDetailsPage';
 import DivisionsPage from './pages/DivisionsPage';
 import InventoryPage from './pages/InventoryPage';
 import CategoryPage from './pages/CategoryPage';
+import ReceivingOrders from './pages/ReceivingOrders';
 
 export default function App() {
   return (
@@ -26,8 +27,8 @@ export default function App() {
             <Route path=":id" element={<OrderDetailsPage />} />
           </Route>
           
-          <Route path="vendors">
-            <Route index element={<VendorsPage />} />
+          <Route path="customers">
+            <Route index element={<CustomersPage />} />
             <Route path=":id" element={<VendorDetailsPage />} />
             <Route path=":id/edit" element={<EditVendorDetailsPage />} />
           </Route>
@@ -35,7 +36,7 @@ export default function App() {
           <Route path="/divisions" element={<DivisionsPage />} />
           <Route path="/inventory" element={<InventoryPage />} />
           <Route path="/categories" element={<CategoryPage />} />
-          <Route path="imports" element={<div className="p-6">Google Sheets Importer Module</div>} />
+          <Route path="/receiving-orders" element={<ReceivingOrders />} />
           <Route path="shipping" element={<div className="p-6">ShipStation Integration Module</div>} />
           <Route path="settings" element={<div className="p-6">Platform Settings</div>} />
 

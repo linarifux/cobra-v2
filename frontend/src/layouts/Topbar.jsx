@@ -74,7 +74,7 @@ export default function Topbar() {
             value={query}
             onChange={handleSearch}
             className="block w-full pl-11 pr-14 py-2.5 border border-white/60 rounded-xl text-sm bg-white/50 backdrop-blur-md placeholder-slate-500 font-semibold text-slate-900 focus:outline-none focus:bg-white/90 focus:ring-1 focus:ring-brand-gold/50 transition-all duration-300 shadow-[inset_0_2px_4px_rgba(0,0,0,0.02)] relative z-10"
-            placeholder="Search orders, clients, or actions..."
+            placeholder="Search orders, customers, or actions..."
           />
 
           <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none z-10">

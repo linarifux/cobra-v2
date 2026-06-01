@@ -92,7 +92,7 @@ export default function OrdersPage() {
               <th className="p-4"><CheckSquare size={14} /></th>
               <th className="p-4">Order Details</th>
               <th className="p-4">Date</th>
-              <th className="p-4">Brand</th>
+              <th className="p-4">Customer</th>
               <th className="p-4">Division</th>
               <th className="p-4">Location</th>
               <th className="p-4">Priority</th>
