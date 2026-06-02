@@ -27,7 +27,7 @@ const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Orders', href: '/orders', icon: ShoppingBag },
   { name: 'Inventory', href: '/inventory', icon: Box },
-  { name: 'Receiving Orders', href: '/receiving-orders', icon: Truck },
+  { name: 'Receiving', href: '/receiving', icon: Truck },
   { name: 'Customers', href: '/customers', icon: UserCheck },
   { name: 'Divisions', href: '/divisions', icon: LayoutGrid },
   { name: 'Categories', href: '/categories', icon: Layers },

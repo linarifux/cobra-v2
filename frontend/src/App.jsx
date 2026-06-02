@@ -33,8 +33,8 @@ export default function App() {
           <Route path="/categories" element={<CategoryPage />} />
           
           {/* Updated Receiving Routes */}
-          <Route path="/receiving-orders" element={<ReceivingOrders />} />
-          <Route path="/receiving-orders/:id" element={<ReceivingOrderDetail />} />
+          <Route path="/receiving" element={<ReceivingOrders />} />
+          <Route path="/receiving/:id" element={<ReceivingOrderDetail />} />
 
           //* New Routes for Locations and Shipping */
           <Route path="locations" element={<WarehouseLocations />} />
