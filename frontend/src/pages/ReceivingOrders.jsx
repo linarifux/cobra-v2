@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Package, Plus, Download, Trash2, Edit2, 
-  CheckSquare, Square, Search, X, Eye, Calendar, User, Box, Truck, BarChart3
+  CheckSquare, Square, Search, X, Eye, Calendar, PlusCircle, Check, Minus
 } from 'lucide-react';
 
 const INITIAL_DATA = [
@@ -17,22 +18,25 @@ export default function ReceivingOrders() {
   const [selectedRows, setSelectedRows] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   
-  // New Shipment Form State
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
+    vendor: '',
     customer: '',
-    item: '',
-    qty: '',
-    skids: ''
+    shelf: false,
+    lot: '',
+    location: '',
+    inventoryItem: ''
   });
 
-  // Filter States
+  const [lineItems, setLineItems] = useState([
+    { id: Date.now(), skids: '', cartons: '', unitsPerCarton: '', unitWeight: '' }
+  ]);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
 
-  // Reactive Filtering Logic
   const filteredData = useMemo(() => {
     return data.filter(row => {
       const matchesSearch = row.item.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -40,23 +44,42 @@ export default function ReceivingOrders() {
       const matchesStatus = statusFilter === 'All' || row.status === statusFilter;
       const matchesFrom = !fromDate || row.date >= fromDate;
       const matchesTo = !toDate || row.date <= toDate;
-      
       return matchesSearch && matchesStatus && matchesFrom && matchesTo;
     });
   }, [data, searchTerm, statusFilter, fromDate, toDate]);
 
+  const addLineItem = () => {
+    setLineItems([...lineItems, { id: Date.now(), skids: '', cartons: '', unitsPerCarton: '', unitWeight: '' }]);
+  };
+
+  const removeLineItem = (id) => {
+    if (lineItems.length > 1) {
+      setLineItems(lineItems.filter(item => item.id !== id));
+    }
+  };
+
+  const updateLineItem = (id, field, value) => {
+    setLineItems(lineItems.map(item => item.id === id ? { ...item, [field]: value } : item));
+  };
+
   const handleAddShipment = (e) => {
     e.preventDefault();
+    const totalQty = lineItems.reduce((acc, curr) => acc + ((parseInt(curr.cartons) || 0) * (parseInt(curr.unitsPerCarton) || 0)), 0);
+    const totalSkids = lineItems.reduce((acc, curr) => acc + (parseInt(curr.skids) || 0), 0);
+
     const newEntry = {
-      id: Math.floor(100 + Math.random() * 900),
-      ...formData,
-      qty: parseInt(formData.qty),
-      skids: parseInt(formData.skids),
+      id: Math.floor(1000 + Math.random() * 9000),
+      date: formData.date,
+      customer: formData.customer,
+      item: formData.inventoryItem || 'New Item',
+      qty: totalQty,
+      skids: formData.shelf ? 0 : totalSkids,
       status: 'Pending'
     };
     setData([newEntry, ...data]);
-    setFormData({ date: new Date().toISOString().split('T')[0], customer: '', item: '', qty: '', skids: '' });
     setIsModalOpen(false);
+    setFormData({ date: new Date().toISOString().split('T')[0], vendor: '', customer: '', shelf: false, lot: '', location: '', inventoryItem: '' });
+    setLineItems([{ id: Date.now(), skids: '', cartons: '', unitsPerCarton: '', unitWeight: '' }]);
   };
 
   const toggleRow = (id) => {
@@ -96,7 +119,6 @@ export default function ReceivingOrders() {
   return (
     <div className="space-y-6 animate-slide-in-right relative">
       
-      {/* 1. Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900">Receiving Management</h1>
@@ -113,50 +135,104 @@ export default function ReceivingOrders() {
         </div>
       </div>
 
-      {/* Add Shipment Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm" onClick={() => setIsModalOpen(false)} />
-          <form onSubmit={handleAddShipment} className="relative w-full max-w-lg bg-white/90 backdrop-blur-xl border border-white shadow-2xl rounded-3xl p-8 animate-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-black text-slate-900">New Shipment Entry</h2>
-              <button type="button" onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Date</label>
-                <div className="relative">
-                  <Calendar className="absolute left-3 top-3 text-slate-400" size={16} />
-                  <input required type="date" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-brand-gold outline-none" />
+      <AnimatePresence>
+        {isModalOpen && (
+          <div className="fixed inset-0 z-50 flex justify-end">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm" 
+              onClick={() => setIsModalOpen(false)} 
+            />
+            <motion.div 
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="relative w-full max-w-lg h-full bg-white/95 backdrop-blur-2xl shadow-2xl border-l border-white/50 p-6 overflow-y-auto flex flex-col"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-lg font-black text-slate-900">New Receiving Entry</h2>
+                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={18} /></button>
+              </div>
+              
+              <form onSubmit={handleAddShipment} className="flex-1 flex flex-col gap-y-4">
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Date Received</label>
+                  <input required type="date" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-gold" />
                 </div>
-              </div>
-              <div className="col-span-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Customer</label>
-                <input required type="text" value={formData.customer} onChange={(e) => setFormData({...formData, customer: e.target.value})} placeholder="e.g. Joff Company" className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-brand-gold outline-none" />
-              </div>
-              <div className="col-span-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Inventory Item</label>
-                <input required type="text" value={formData.item} onChange={(e) => setFormData({...formData, item: e.target.value})} placeholder="e.g. Probiotic Blend" className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-brand-gold outline-none" />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Quantity</label>
-                <input required type="number" value={formData.qty} onChange={(e) => setFormData({...formData, qty: e.target.value})} className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-brand-gold outline-none" />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Skids</label>
-                <input required type="number" value={formData.skids} onChange={(e) => setFormData({...formData, skids: e.target.value})} className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-brand-gold outline-none" />
-              </div>
-            </div>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Vendor</label>
+                    <select value={formData.vendor} onChange={(e) => setFormData({...formData, vendor: e.target.value})} className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-gold">
+                      <option value="">Select</option>
+                      <option value="Joff Company">Joff Company</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Customer</label>
+                    <select value={formData.customer} onChange={(e) => setFormData({...formData, customer: e.target.value})} className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-gold">
+                      <option value="">Select</option>
+                      <option value="Joff Company">Joff Company</option>
+                    </select>
+                  </div>
+                </div>
 
-            <button type="submit" className="w-full mt-8 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-all active:scale-95 shadow-lg shadow-slate-900/20">
-              Submit Shipment
-            </button>
-          </form>
-        </div>
-      )}
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Inventory Item</label>
+                  <select value={formData.inventoryItem} onChange={(e) => setFormData({...formData, inventoryItem: e.target.value})} className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-gold">
+                    <option value="">Select Item</option>
+                    <option value="Probiotic Blend">Probiotic Blend</option>
+                    <option value="Shipping Box L">Shipping Box L</option>
+                  </select>
+                </div>
 
-      {/* 2. Interactive Filter Bar */}
+                <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <input type="checkbox" checked={formData.shelf} onChange={(e) => setFormData({...formData, shelf: e.target.checked})} className="w-4 h-4 accent-brand-gold rounded" />
+                  <label className="text-xs font-bold text-slate-700">Add to Shelf Inventory</label>
+                </div>
+
+                {/* Dynamic Line Items */}
+                <div className="space-y-3 mt-2">
+                  <label className="text-xs font-black text-slate-900 uppercase tracking-wider">Shipment Details</label>
+                  {lineItems.map((item) => (
+                    <div key={item.id} className="grid grid-cols-4 gap-2 items-end">
+                      {!formData.shelf && (
+                        <div className="col-span-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase">Skids</label>
+                          <input type="number" value={item.skids} onChange={(e) => updateLineItem(item.id, 'skids', e.target.value)} className="w-full mt-1 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold" />
+                        </div>
+                      )}
+                      <div className={formData.shelf ? "col-span-2" : "col-span-1"}>
+                          <label className="text-[9px] font-black text-slate-400 uppercase">Cartons</label>
+                          <input type="number" value={item.cartons} onChange={(e) => updateLineItem(item.id, 'cartons', e.target.value)} className="w-full mt-1 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold" />
+                      </div>
+                      <div className={formData.shelf ? "col-span-2" : "col-span-1"}>
+                          <label className="text-[9px] font-black text-slate-400 uppercase">Units/Ctn</label>
+                          <input type="number" value={item.unitsPerCarton} onChange={(e) => updateLineItem(item.id, 'unitsPerCarton', e.target.value)} className="w-full mt-1 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold" />
+                      </div>
+                      <div className="flex gap-1 pb-1">
+                          <button type="button" onClick={addLineItem} className="p-1.5 bg-slate-100 rounded-lg text-slate-600 hover:bg-brand-gold hover:text-white"><Plus size={14} /></button>
+                          <button type="button" onClick={() => removeLineItem(item.id)} className="p-1.5 bg-slate-100 rounded-lg text-slate-600 hover:bg-red-500 hover:text-white"><Minus size={14} /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-auto pt-4">
+                  <button type="submit" className="w-full py-3 bg-brand-gold hover:bg-brand-gold-hover text-white font-black rounded-xl shadow-lg shadow-brand-gold/20 transition-all active:scale-95">
+                    Confirm Shipment
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Main Table Section */}
       <div className="bg-white/40 backdrop-blur-2xl border border-white/60 rounded-3xl p-6 shadow-[0_8px_32px_rgba(0,0,0,0.04)]">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
           <div className="lg:col-span-2 relative">
@@ -190,7 +266,6 @@ export default function ReceivingOrders() {
         </div>
       </div>
 
-      {/* 3. Bulk Action Bar */}
       {selectedRows.length > 0 && (
         <div className="flex items-center justify-between bg-slate-900 text-white p-4 rounded-2xl shadow-xl animate-in fade-in slide-in-from-top-2 duration-300">
           <p className="font-bold text-sm flex items-center gap-2"><span className="bg-white/20 px-2 py-0.5 rounded-md">{selectedRows.length}</span> selected</p>
@@ -198,7 +273,6 @@ export default function ReceivingOrders() {
         </div>
       )}
 
-      {/* 4. Data Table */}
       <div className="bg-white/40 backdrop-blur-2xl border border-white/60 rounded-3xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.04)] min-h-[300px]">
         <table className="w-full text-left border-collapse">
           <thead>
