@@ -10,7 +10,8 @@ import DivisionsPage from './pages/DivisionsPage';
 import InventoryPage from './pages/InventoryPage';
 import CategoryPage from './pages/CategoryPage';
 import ReceivingOrders from './pages/ReceivingOrders';
-import ReceivingOrderDetail from './pages/ReceivingOrderDetail'; // Import here
+import ReceivingOrderDetail from './pages/ReceivingOrderDetail';
+import WarehouseLocations from './pages/WarehouseLocations';
 
 export default function App() {
   return (
@@ -34,6 +35,9 @@ export default function App() {
           {/* Updated Receiving Routes */}
           <Route path="/receiving-orders" element={<ReceivingOrders />} />
           <Route path="/receiving-orders/:id" element={<ReceivingOrderDetail />} />
+
+          //* New Routes for Locations and Shipping */
+          <Route path="locations" element={<WarehouseLocations />} />
           
           <Route path="shipping" element={<div className="p-6">ShipStation Integration Module</div>} />
           <Route path="settings" element={<div className="p-6">Platform Settings</div>} />

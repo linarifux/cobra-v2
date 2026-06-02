@@ -4,7 +4,7 @@ import {
   CheckCircle2, Info, Building2, MapPin, Weight, Clock
 } from 'lucide-react';
 
-// This would typically come from an API or Global State
+// This will come from an API or Global State
 const MOCK_ORDERS = [
   {
     id: "538",

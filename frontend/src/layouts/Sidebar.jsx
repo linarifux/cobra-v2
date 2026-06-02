@@ -5,6 +5,7 @@ import {
   FileSpreadsheet, 
   Truck,
   UserCheck,
+  ShelvingUnit,
   Package, 
   Settings, 
   Menu,
@@ -30,6 +31,7 @@ const navigation = [
   { name: 'Customers', href: '/customers', icon: UserCheck },
   { name: 'Divisions', href: '/divisions', icon: LayoutGrid },
   { name: 'Categories', href: '/categories', icon: Layers },
+  { name: 'Locations', href: '/locations', icon: ShelvingUnit },
   { name: 'ShipStation', href: '/shipping', icon: Package },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
