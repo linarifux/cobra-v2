@@ -320,6 +320,7 @@ export default function WarehouseLocations() {
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-brand-gold outline-none"
                       >
                         <option value="Rack">Rack</option>
+                        <option value="Shelf">Shelf</option>
                         <option value="Floor">Floor</option>
                         <option value="Cooler">Cooler</option>
                       </select>
