@@ -10,6 +10,7 @@ const INITIAL_LOCATIONS = [
   { 
     id: 1, 
     name: 'Aisle 1-A', 
+    shelf: 'Tier 3', // Added shelf tracking
     type: 'Rack', 
     capacity: 100, 
     status: 'Active',
@@ -21,6 +22,7 @@ const INITIAL_LOCATIONS = [
   { 
     id: 2, 
     name: 'Aisle 1-B', 
+    shelf: 'Tier 1', // Added shelf tracking
     type: 'Rack', 
     capacity: 100, 
     status: 'Active',
@@ -31,6 +33,7 @@ const INITIAL_LOCATIONS = [
   { 
     id: 3, 
     name: 'Cold Storage 01', 
+    shelf: 'Row B', // Added shelf tracking
     type: 'Cooler', 
     capacity: 50, 
     status: 'Full',
@@ -48,6 +51,7 @@ export default function WarehouseLocations() {
   // Form State
   const [formData, setFormData] = useState({ 
     name: '', 
+    shelf: '', // Added shelf field to state
     type: 'Rack', 
     capacity: 100,
     inventory: [{ id: Date.now(), item: '', lot: '', qty: '' }]
@@ -60,6 +64,7 @@ export default function WarehouseLocations() {
   const filteredLocations = useMemo(() => {
     return locations.filter(loc => {
       const matchesSearch = loc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            (loc.shelf && loc.shelf.toLowerCase().includes(searchTerm.toLowerCase())) ||
                             loc.inventory.some(inv => inv.item.toLowerCase().includes(searchTerm.toLowerCase()) || inv.lot.toLowerCase().includes(searchTerm.toLowerCase()));
       const matchesType = typeFilter === 'All' || loc.type === typeFilter;
       return matchesSearch && matchesType;
@@ -70,6 +75,7 @@ export default function WarehouseLocations() {
   const openAddModal = () => {
     setFormData({ 
       name: '', 
+      shelf: '', 
       type: 'Rack', 
       capacity: 100,
       inventory: [{ id: Date.now(), item: '', lot: '', qty: '' }]
@@ -81,6 +87,7 @@ export default function WarehouseLocations() {
   const openEditModal = (loc) => {
     setFormData({
       name: loc.name,
+      shelf: loc.shelf || '', 
       type: loc.type,
       capacity: loc.capacity,
       inventory: loc.inventory.length > 0 ? loc.inventory : [{ id: Date.now(), item: '', lot: '', qty: '' }]
@@ -114,7 +121,6 @@ export default function WarehouseLocations() {
   };
 
   const handleSave = () => {
-    // Sanitize values and filter out completely empty entries
     const cleanInventory = formData.inventory
       .filter(line => line.item.trim() !== '')
       .map(line => ({
@@ -126,6 +132,7 @@ export default function WarehouseLocations() {
 
     const payload = {
       name: formData.name,
+      shelf: formData.shelf || 'N/A', // Mapping to payload
       type: formData.type,
       capacity: parseInt(formData.capacity) || 100,
       inventory: cleanInventory,
@@ -133,10 +140,8 @@ export default function WarehouseLocations() {
     };
 
     if (activeLocation) {
-      // Update
       setLocations(prev => prev.map(l => l.id === activeLocation.id ? { ...payload, id: l.id } : l));
     } else {
-      // Create
       setLocations(prev => [...prev, { ...payload, id: Date.now() }]);
     }
     setIsModalOpen(false);
@@ -148,7 +153,6 @@ export default function WarehouseLocations() {
     }
   };
 
-  // Helper calculation for total dynamic utilization
   const getLocationTotals = (inventory) => {
     return inventory.reduce((sum, current) => sum + (parseInt(current.qty) || 0), 0);
   };
@@ -175,7 +179,7 @@ export default function WarehouseLocations() {
           <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
           <input 
             type="text" 
-            placeholder="Search locations, SKU items, or lot numbers..." 
+            placeholder="Search locations, shelves, SKU items, or lot numbers..." 
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 bg-white/60 border border-white/50 rounded-xl text-sm font-semibold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/50" 
@@ -217,7 +221,10 @@ export default function WarehouseLocations() {
 
                 <div className="mb-4">
                   <h3 className="font-black text-slate-900 text-lg leading-tight">{loc.name}</h3>
-                  <span className="inline-block mt-1 text-[9px] bg-slate-200/60 px-2 py-0.5 rounded-md font-black text-slate-600 uppercase tracking-wider">{loc.type}</span>
+                  <div className="flex gap-1.5 mt-1">
+                    <span className="inline-block text-[9px] bg-slate-200/60 px-2 py-0.5 rounded-md font-black text-slate-600 uppercase tracking-wider">{loc.type}</span>
+                    <span className="inline-block text-[9px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md font-black uppercase tracking-wider">Shelf: {loc.shelf || 'N/A'}</span>
+                  </div>
                 </div>
 
                 {/* Sub-Inventory List Breakdown */}
@@ -304,17 +311,29 @@ export default function WarehouseLocations() {
                     </div>
                   </div>
 
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block">Storage Category</label>
-                    <select 
-                      value={formData.type}
-                      onChange={(e) => setFormData({...formData, type: e.target.value})}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-brand-gold outline-none"
-                    >
-                      <option value="Rack">Rack</option>
-                      <option value="Floor">Floor</option>
-                      <option value="Cooler">Cooler</option>
-                    </select>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block">Storage Category</label>
+                      <select 
+                        value={formData.type}
+                        onChange={(e) => setFormData({...formData, type: e.target.value})}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-brand-gold outline-none"
+                      >
+                        <option value="Rack">Rack</option>
+                        <option value="Floor">Floor</option>
+                        <option value="Cooler">Cooler</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block">Shelf / Row Level</label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g., Tier 3"
+                        value={formData.shelf}
+                        onChange={(e) => setFormData({...formData, shelf: e.target.value})}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-brand-gold outline-none" 
+                      />
+                    </div>
                   </div>
 
                   {/* Multi-item Dynamic Allocation Form Space */}
@@ -330,7 +349,7 @@ export default function WarehouseLocations() {
                       </button>
                     </div>
 
-                    <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                    <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
                       {formData.inventory.map((line, idx) => (
                         <div key={line.id || idx} className="p-3 bg-slate-50 border border-slate-200 rounded-xl relative space-y-2">
                           {formData.inventory.length > 1 && (
