@@ -17,6 +17,7 @@ export default function ReceivingOrders() {
   const [data, setData] = useState(INITIAL_DATA);
   const [selectedRows, setSelectedRows] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [activeOrderId, setActiveOrderId] = useState(null);
   
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -48,6 +49,40 @@ export default function ReceivingOrders() {
     });
   }, [data, searchTerm, statusFilter, fromDate, toDate]);
 
+  // Modal Controls
+  const openNewModal = () => {
+    setActiveOrderId(null);
+    setFormData({ date: new Date().toISOString().split('T')[0], vendor: '', customer: '', shelf: false, lot: '', location: '', inventoryItem: '' });
+    setLineItems([{ id: Date.now(), skids: '', cartons: '', unitsPerCarton: '', unitWeight: '' }]);
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (row) => {
+    setActiveOrderId(row.id);
+    setFormData({
+      date: row.date,
+      vendor: '', // Mocking vendor as it's not in base table
+      customer: row.customer,
+      shelf: row.skids === 0,
+      lot: '',
+      location: '',
+      inventoryItem: row.item
+    });
+    // Reverse engineer line items from totals for the sake of the edit view
+    setLineItems([
+      { id: Date.now(), skids: row.skids, cartons: row.qty, unitsPerCarton: 1, unitWeight: '' }
+    ]);
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setTimeout(() => {
+      setActiveOrderId(null);
+    }, 300); // Wait for exit animation
+  };
+
+  // Line Item Handlers
   const addLineItem = () => {
     setLineItems([...lineItems, { id: Date.now(), skids: '', cartons: '', unitsPerCarton: '', unitWeight: '' }]);
   };
@@ -62,26 +97,41 @@ export default function ReceivingOrders() {
     setLineItems(lineItems.map(item => item.id === id ? { ...item, [field]: value } : item));
   };
 
-  const handleAddShipment = (e) => {
+  // Save (Create/Update)
+  const handleSaveShipment = (e) => {
     e.preventDefault();
     const totalQty = lineItems.reduce((acc, curr) => acc + ((parseInt(curr.cartons) || 0) * (parseInt(curr.unitsPerCarton) || 0)), 0);
     const totalSkids = lineItems.reduce((acc, curr) => acc + (parseInt(curr.skids) || 0), 0);
 
-    const newEntry = {
-      id: Math.floor(1000 + Math.random() * 9000),
+    const payload = {
       date: formData.date,
       customer: formData.customer,
       item: formData.inventoryItem || 'New Item',
       qty: totalQty,
       skids: formData.shelf ? 0 : totalSkids,
-      status: 'Pending'
     };
-    setData([newEntry, ...data]);
-    setIsModalOpen(false);
-    setFormData({ date: new Date().toISOString().split('T')[0], vendor: '', customer: '', shelf: false, lot: '', location: '', inventoryItem: '' });
-    setLineItems([{ id: Date.now(), skids: '', cartons: '', unitsPerCarton: '', unitWeight: '' }]);
+
+    if (activeOrderId) {
+      // Update existing
+      setData(prev => prev.map(row => row.id === activeOrderId ? { ...row, ...payload } : row));
+    } else {
+      // Create new
+      const newEntry = { ...payload, id: Math.floor(1000 + Math.random() * 9000), status: 'Pending' };
+      setData([newEntry, ...data]);
+    }
+    
+    closeModal();
   };
 
+  // Delete
+  const handleDelete = (id) => {
+    if (window.confirm('Are you sure you want to delete this receiving order?')) {
+      setData(prev => prev.filter(row => row.id !== id));
+      setSelectedRows(prev => prev.filter(rowId => rowId !== id));
+    }
+  };
+
+  // Bulk Actions & Helpers
   const toggleRow = (id) => {
     setSelectedRows(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
@@ -127,7 +177,7 @@ export default function ReceivingOrders() {
         <div className="flex gap-3">
           <button onClick={exportToCSV} className="flex items-center gap-2 px-4 py-2 bg-white/50 border border-white/60 hover:bg-white/80 rounded-xl text-sm font-bold text-slate-700 shadow-sm transition-all"><Download size={16} /> Export</button>
           <button 
-            onClick={() => setIsModalOpen(true)}
+            onClick={openNewModal}
             className="flex items-center gap-2 px-4 py-2 bg-brand-gold hover:bg-brand-gold-hover text-white rounded-xl text-sm font-bold shadow-lg shadow-brand-gold/20 transition-all hover:-translate-y-0.5"
           >
             <Plus size={16} /> Add Shipment
@@ -143,7 +193,7 @@ export default function ReceivingOrders() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm" 
-              onClick={() => setIsModalOpen(false)} 
+              onClick={closeModal} 
             />
             <motion.div 
               initial={{ x: '100%' }}
@@ -153,11 +203,13 @@ export default function ReceivingOrders() {
               className="relative w-full max-w-lg h-full bg-white/95 backdrop-blur-2xl shadow-2xl border-l border-white/50 p-6 overflow-y-auto flex flex-col"
             >
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-lg font-black text-slate-900">New Receiving Entry</h2>
-                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={18} /></button>
+                <h2 className="text-lg font-black text-slate-900">
+                  {activeOrderId ? 'Edit Receiving Entry' : 'New Receiving Entry'}
+                </h2>
+                <button onClick={closeModal} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={18} /></button>
               </div>
               
-              <form onSubmit={handleAddShipment} className="flex-1 flex flex-col gap-y-4">
+              <form onSubmit={handleSaveShipment} className="flex-1 flex flex-col gap-y-4">
                 <div>
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Date Received</label>
                   <input required type="date" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-gold" />
@@ -176,6 +228,7 @@ export default function ReceivingOrders() {
                     <select value={formData.customer} onChange={(e) => setFormData({...formData, customer: e.target.value})} className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-gold">
                       <option value="">Select</option>
                       <option value="Joff Company">Joff Company</option>
+                      <option value="DSM">DSM</option>
                     </select>
                   </div>
                 </div>
@@ -186,12 +239,30 @@ export default function ReceivingOrders() {
                     <option value="">Select Item</option>
                     <option value="Probiotic Blend">Probiotic Blend</option>
                     <option value="Shipping Box L">Shipping Box L</option>
+                    <option value="Extract A">Extract A</option>
+                    <option value='Tape Roll 2"'>Tape Roll 2"</option>
                   </select>
                 </div>
 
                 <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
                   <input type="checkbox" checked={formData.shelf} onChange={(e) => setFormData({...formData, shelf: e.target.checked})} className="w-4 h-4 accent-brand-gold rounded" />
                   <label className="text-xs font-bold text-slate-700">Add to Shelf Inventory</label>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Lot #</label>
+                    <input type="text" value={formData.lot} onChange={(e) => setFormData({...formData, lot: e.target.value})} className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-gold" />
+                  </div>
+                  
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Location</label>
+                    <select value={formData.location} onChange={(e) => setFormData({...formData, location: e.target.value})} className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-gold">
+                      <option value="">Select Location</option>
+                      <option value="Aisle 1">Aisle 1</option>
+                      <option value="Aisle 2">Aisle 2</option>
+                    </select>
+                  </div>
                 </div>
 
                 {/* Dynamic Line Items */}
@@ -223,7 +294,7 @@ export default function ReceivingOrders() {
 
                 <div className="mt-auto pt-4">
                   <button type="submit" className="w-full py-3 bg-brand-gold hover:bg-brand-gold-hover text-white font-black rounded-xl shadow-lg shadow-brand-gold/20 transition-all active:scale-95">
-                    Confirm Shipment
+                    {activeOrderId ? 'Save Changes' : 'Confirm Shipment'}
                   </button>
                 </div>
               </form>
@@ -232,7 +303,6 @@ export default function ReceivingOrders() {
         )}
       </AnimatePresence>
 
-      {/* Main Table Section */}
       <div className="bg-white/40 backdrop-blur-2xl border border-white/60 rounded-3xl p-6 shadow-[0_8px_32px_rgba(0,0,0,0.04)]">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
           <div className="lg:col-span-2 relative">
@@ -297,8 +367,10 @@ export default function ReceivingOrders() {
                   <td className="p-4 text-right">
                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Link to={`/receiving/${row.id}`} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-brand-gold transition-colors"><Eye size={16} /></Link>
-                      <button className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-brand-gold transition-colors"><Edit2 size={16} /></button>
-                      <button className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
+                      {/* Hooked up openEditModal here */}
+                      <button onClick={() => openEditModal(row)} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-brand-gold transition-colors"><Edit2 size={16} /></button>
+                      {/* Hooked up handleDelete here */}
+                      <button onClick={() => handleDelete(row.id)} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
                     </div>
                   </td>
                 </tr>

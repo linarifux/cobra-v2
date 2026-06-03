@@ -4,7 +4,7 @@ import {
   CheckCircle2, Info, Building2, MapPin, Weight, Clock
 } from 'lucide-react';
 
-// This will come from an API or Global State
+// Simulated Global State / API data source
 const MOCK_ORDERS = [
   {
     id: "538",
@@ -12,6 +12,7 @@ const MOCK_ORDERS = [
     expectedDelivery: "2026-05-12",
     supplier: "Joff Company - Global Distribution",
     warehouse: "Dhaka Central Hub - Sector A",
+    location: "Aisle 1-A (Rack)", // Added location field
     status: "Received",
     totalWeight: "1,250 kg",
     notes: "Handle with care. Temperature sensitive items included.",
@@ -42,7 +43,7 @@ export default function ReceivingOrderDetail() {
       {/* 1. Page Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <Link to="/receiving-orders" className="p-2 bg-white/50 hover:bg-white/80 border border-white/60 rounded-xl transition-all shadow-sm">
+          <Link to="/receiving" className="p-2 bg-white/50 hover:bg-white/80 border border-white/60 rounded-xl transition-all shadow-sm">
             <ArrowLeft className="text-slate-600" size={20} />
           </Link>
           <div>
@@ -66,18 +67,19 @@ export default function ReceivingOrderDetail() {
       </div>
 
       {/* 2. Quick Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         {[
           { label: 'Supplier', val: 'Joff Co.', icon: Building2 },
-          { label: 'Warehouse', val: 'Dhaka Central', icon: MapPin },
+          { label: 'Warehouse', val: 'Dhaka Central', icon: Building2 },
+          { label: 'Storage Location', val: order.location || 'Unassigned', icon: MapPin }, // Rendered location field
           { label: 'Weight', val: order.totalWeight, icon: Weight },
           { label: 'Expected', val: order.expectedDelivery, icon: Calendar },
         ].map((stat, i) => (
           <div key={i} className="bg-white/40 backdrop-blur-xl border border-white/60 p-4 rounded-2xl shadow-sm flex items-center gap-3">
-            <div className="p-2 bg-white/60 rounded-lg text-brand-gold"><stat.icon size={20} /></div>
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase">{stat.label}</p>
-              <p className="text-sm font-bold text-slate-900">{stat.val}</p>
+            <div className="p-2 bg-white/60 rounded-lg text-brand-gold shrink-0"><stat.icon size={20} /></div>
+            <div className="overflow-hidden">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider truncate">{stat.label}</p>
+              <p className="text-sm font-bold text-slate-900 truncate">{stat.val}</p>
             </div>
           </div>
         ))}
@@ -93,33 +95,35 @@ export default function ReceivingOrderDetail() {
               <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Inventory Items</h3>
               <span className="text-xs font-bold text-slate-400">{order.items.length} Unique SKUs</span>
             </div>
-            <table className="w-full text-left">
-              <thead>
-                <tr className="bg-white/20">
-                  <th className="p-4 text-[11px] font-black text-slate-400 uppercase">Item Details</th>
-                  <th className="p-4 text-[11px] font-black text-slate-400 uppercase text-right">Expected</th>
-                  <th className="p-4 text-[11px] font-black text-slate-400 uppercase text-right">Received</th>
-                  <th className="p-4 text-[11px] font-black text-slate-400 uppercase text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/40">
-                {order.items.map((item, i) => (
-                  <tr key={i} className="hover:bg-white/30 transition-colors">
-                    <td className="p-4">
-                      <p className="text-sm font-bold text-slate-900">{item.name}</p>
-                      <p className="text-xs text-slate-500 font-mono">{item.sku}</p>
-                    </td>
-                    <td className="p-4 text-sm font-bold text-slate-600 text-right">{item.qty}</td>
-                    <td className="p-4 text-sm font-bold text-emerald-700 text-right">{item.received}</td>
-                    <td className="p-4 text-center">
-                      <span className={`text-[10px] font-black px-2 py-1 rounded-full ${item.condition === 'Perfect' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                        {item.condition}
-                      </span>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left min-w-[500px]">
+                <thead>
+                  <tr className="bg-white/20">
+                    <th className="p-4 text-[11px] font-black text-slate-400 uppercase tracking-wider">Item Details</th>
+                    <th className="p-4 text-[11px] font-black text-slate-400 uppercase tracking-wider text-right">Expected</th>
+                    <th className="p-4 text-[11px] font-black text-slate-400 uppercase tracking-wider text-right">Received</th>
+                    <th className="p-4 text-[11px] font-black text-slate-400 uppercase tracking-wider text-center">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-white/40">
+                  {order.items.map((item, i) => (
+                    <tr key={i} className="hover:bg-white/30 transition-colors">
+                      <td className="p-4">
+                        <p className="text-sm font-bold text-slate-900">{item.name}</p>
+                        <p className="text-xs text-slate-500 font-mono">{item.sku}</p>
+                      </td>
+                      <td className="p-4 text-sm font-bold text-slate-600 text-right">{item.qty.toLocaleString()}</td>
+                      <td className="p-4 text-sm font-bold text-emerald-700 text-right">{item.received.toLocaleString()}</td>
+                      <td className="p-4 text-center">
+                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wide ${item.condition === 'Perfect' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                          {item.condition}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <div className="bg-white/40 backdrop-blur-2xl border border-white/60 rounded-3xl p-6 shadow-sm">

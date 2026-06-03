@@ -3,13 +3,41 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   MapPin, Plus, Search, Filter, X, 
   Database, AlertCircle, CheckCircle, Package, 
-  Edit2, Trash2, ChevronDown 
+  Edit2, Trash2, ChevronDown, Minus, Layers
 } from 'lucide-react';
 
 const INITIAL_LOCATIONS = [
-  { id: 1, name: 'Aisle 1-A', type: 'Rack', capacity: 100, used: 85, status: 'Active' },
-  { id: 2, name: 'Aisle 1-B', type: 'Rack', capacity: 100, used: 40, status: 'Active' },
-  { id: 3, name: 'Cold Storage 01', type: 'Cooler', capacity: 50, used: 48, status: 'Full' },
+  { 
+    id: 1, 
+    name: 'Aisle 1-A', 
+    type: 'Rack', 
+    capacity: 100, 
+    status: 'Active',
+    inventory: [
+      { id: 101, item: 'Probiotic Blend', lot: 'LOT-2026-A', qty: 50 },
+      { id: 102, item: 'Shipping Box L', lot: 'LOT-9912-X', qty: 35 }
+    ]
+  },
+  { 
+    id: 2, 
+    name: 'Aisle 1-B', 
+    type: 'Rack', 
+    capacity: 100, 
+    status: 'Active',
+    inventory: [
+      { id: 201, item: 'Tape Roll 2"', lot: 'LOT-8821-M', qty: 40 }
+    ]
+  },
+  { 
+    id: 3, 
+    name: 'Cold Storage 01', 
+    type: 'Cooler', 
+    capacity: 50, 
+    status: 'Full',
+    inventory: [
+      { id: 301, item: 'Extract A', lot: 'LOT-0034-C', qty: 48 }
+    ]
+  },
 ];
 
 export default function WarehouseLocations() {
@@ -18,7 +46,12 @@ export default function WarehouseLocations() {
   const [activeLocation, setActiveLocation] = useState(null); // null = Add, object = Edit
   
   // Form State
-  const [formData, setFormData] = useState({ name: '', type: 'Rack', capacity: 100, used: 0, status: 'Active' });
+  const [formData, setFormData] = useState({ 
+    name: '', 
+    type: 'Rack', 
+    capacity: 100,
+    inventory: [{ id: Date.now(), item: '', lot: '', qty: '' }]
+  });
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -26,7 +59,8 @@ export default function WarehouseLocations() {
 
   const filteredLocations = useMemo(() => {
     return locations.filter(loc => {
-      const matchesSearch = loc.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = loc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            loc.inventory.some(inv => inv.item.toLowerCase().includes(searchTerm.toLowerCase()) || inv.lot.toLowerCase().includes(searchTerm.toLowerCase()));
       const matchesType = typeFilter === 'All' || loc.type === typeFilter;
       return matchesSearch && matchesType;
     });
@@ -34,24 +68,76 @@ export default function WarehouseLocations() {
 
   // Modal Handlers
   const openAddModal = () => {
-    setFormData({ name: '', type: 'Rack', capacity: 100, used: 0, status: 'Active' });
+    setFormData({ 
+      name: '', 
+      type: 'Rack', 
+      capacity: 100,
+      inventory: [{ id: Date.now(), item: '', lot: '', qty: '' }]
+    });
     setActiveLocation(null);
     setIsModalOpen(true);
   };
 
   const openEditModal = (loc) => {
-    setFormData(loc);
+    setFormData({
+      name: loc.name,
+      type: loc.type,
+      capacity: loc.capacity,
+      inventory: loc.inventory.length > 0 ? loc.inventory : [{ id: Date.now(), item: '', lot: '', qty: '' }]
+    });
     setActiveLocation(loc);
     setIsModalOpen(true);
   };
 
+  // Dynamic Inventory Line Handlers inside Form
+  const addInventoryLine = () => {
+    setFormData(prev => ({
+      ...prev,
+      inventory: [...prev.inventory, { id: Date.now(), item: '', lot: '', qty: '' }]
+    }));
+  };
+
+  const removeInventoryLine = (id) => {
+    if (formData.inventory.length > 1) {
+      setFormData(prev => ({
+        ...prev,
+        inventory: prev.inventory.filter(line => line.id !== id)
+      }));
+    }
+  };
+
+  const updateInventoryLine = (id, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      inventory: prev.inventory.map(line => line.id === id ? { ...line, [field]: value } : line)
+    }));
+  };
+
   const handleSave = () => {
+    // Sanitize values and filter out completely empty entries
+    const cleanInventory = formData.inventory
+      .filter(line => line.item.trim() !== '')
+      .map(line => ({
+        id: line.id || Date.now(),
+        item: line.item,
+        lot: line.lot || 'N/A',
+        qty: parseInt(line.qty) || 0
+      }));
+
+    const payload = {
+      name: formData.name,
+      type: formData.type,
+      capacity: parseInt(formData.capacity) || 100,
+      inventory: cleanInventory,
+      status: 'Active'
+    };
+
     if (activeLocation) {
       // Update
-      setLocations(prev => prev.map(l => l.id === activeLocation.id ? { ...formData, id: l.id } : l));
+      setLocations(prev => prev.map(l => l.id === activeLocation.id ? { ...payload, id: l.id } : l));
     } else {
       // Create
-      setLocations(prev => [...prev, { ...formData, id: Date.now() }]);
+      setLocations(prev => [...prev, { ...payload, id: Date.now() }]);
     }
     setIsModalOpen(false);
   };
@@ -62,13 +148,18 @@ export default function WarehouseLocations() {
     }
   };
 
+  // Helper calculation for total dynamic utilization
+  const getLocationTotals = (inventory) => {
+    return inventory.reduce((sum, current) => sum + (parseInt(current.qty) || 0), 0);
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Warehouse Locations</h1>
-          <p className="text-slate-500 font-medium">Manage storage zones and capacity distribution.</p>
+          <p className="text-slate-500 font-medium">Manage storage zones, dynamic item placements, and batch lots.</p>
         </div>
         <button 
           onClick={openAddModal}
@@ -84,46 +175,93 @@ export default function WarehouseLocations() {
           <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
           <input 
             type="text" 
-            placeholder="Search locations..." 
+            placeholder="Search locations, SKU items, or lot numbers..." 
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 bg-white/60 border border-white/50 rounded-xl text-sm font-semibold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/50" 
           />
         </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Type:</span>
+          <select 
+            value={typeFilter} 
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="px-3 py-2 bg-white/60 border border-white/50 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-brand-gold/50"
+          >
+            <option value="All">All Storage Types</option>
+            <option value="Rack">Rack</option>
+            <option value="Floor">Floor</option>
+            <option value="Cooler">Cooler</option>
+          </select>
+        </div>
       </div>
 
       {/* Grid View */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filteredLocations.map((loc) => (
-          <motion.div 
-            layout
-            key={loc.id} 
-            className="bg-white/60 backdrop-blur-xl border border-white/60 p-5 rounded-2xl hover:border-brand-gold/50 hover:shadow-lg transition-all group relative"
-          >
-            {/* Actions */}
-            <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button onClick={() => openEditModal(loc)} className="p-1.5 bg-white rounded-lg shadow-sm hover:bg-brand-gold hover:text-white transition-colors text-slate-600"><Edit2 size={14} /></button>
-              <button onClick={() => handleDelete(loc.id)} className="p-1.5 bg-white rounded-lg shadow-sm hover:bg-red-500 hover:text-white transition-colors text-red-500"><Trash2 size={14} /></button>
-            </div>
+        {filteredLocations.map((loc) => {
+          const totalUsed = getLocationTotals(loc.inventory);
+          const capacityPercentage = Math.min(Math.round((totalUsed / loc.capacity) * 100), 100);
+          
+          return (
+            <motion.div 
+              layout
+              key={loc.id} 
+              className="bg-white/60 backdrop-blur-xl border border-white/60 p-5 rounded-2xl hover:border-brand-gold/50 hover:shadow-lg transition-all group relative flex flex-col justify-between"
+            >
+              <div>
+                {/* Actions */}
+                <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => openEditModal(loc)} className="p-1.5 bg-white rounded-lg shadow-sm hover:bg-brand-gold hover:text-white transition-colors text-slate-600"><Edit2 size={14} /></button>
+                  <button onClick={() => handleDelete(loc.id)} className="p-1.5 bg-white rounded-lg shadow-sm hover:bg-red-500 hover:text-white transition-colors text-red-500"><Trash2 size={14} /></button>
+                </div>
 
-            <div className="mb-4">
-              <h3 className="font-black text-slate-900 text-lg">{loc.name}</h3>
-              <span className="text-[10px] bg-slate-200/50 px-2 py-0.5 rounded-lg font-bold text-slate-600 uppercase tracking-wider">{loc.type}</span>
-            </div>
-            
-            <div className="space-y-2">
-              <div className="flex justify-between text-[11px] font-black text-slate-500">
-                <span>Capacity: {Math.round((loc.used / loc.capacity) * 100)}%</span>
+                <div className="mb-4">
+                  <h3 className="font-black text-slate-900 text-lg leading-tight">{loc.name}</h3>
+                  <span className="inline-block mt-1 text-[9px] bg-slate-200/60 px-2 py-0.5 rounded-md font-black text-slate-600 uppercase tracking-wider">{loc.type}</span>
+                </div>
+
+                {/* Sub-Inventory List Breakdown */}
+                <div className="border-t border-slate-100 pt-3 mb-4 space-y-2.5">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1"><Layers size={12}/> Content Breakdown</p>
+                  {loc.inventory.length === 0 ? (
+                    <p className="text-xs text-slate-400 font-medium italic py-1">Empty location</p>
+                  ) : (
+                    <div className="max-h-[140px] overflow-y-auto space-y-1.5 pr-1">
+                      {loc.inventory.map((inv) => (
+                        <div key={inv.id} className="bg-white/40 border border-slate-100 p-2 rounded-xl flex justify-between items-center text-xs">
+                          <div className="overflow-hidden mr-2">
+                            <p className="font-bold text-slate-800 truncate">{inv.item}</p>
+                            <p className="text-[10px] font-mono text-slate-400 truncate">Lot: {inv.lot}</p>
+                          </div>
+                          <span className="font-black text-slate-900 bg-slate-100 px-2 py-1 rounded-md text-[11px] min-w-[32px] text-center shrink-0">
+                            {inv.qty}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="w-full h-2.5 bg-slate-200/50 rounded-full overflow-hidden">
-                <div className="h-full bg-brand-gold rounded-full" style={{ width: `${(loc.used / loc.capacity) * 100}%` }} />
+              
+              {/* Progress Utilization Tracker */}
+              <div className="space-y-1.5 pt-2 border-t border-white/40">
+                <div className="flex justify-between text-[11px] font-black text-slate-500">
+                  <span>Capacity: {totalUsed} / {loc.capacity}</span>
+                  <span className={capacityPercentage >= 90 ? 'text-red-500' : 'text-slate-600'}>{capacityPercentage}%</span>
+                </div>
+                <div className="w-full h-2 bg-slate-200/50 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-500 ${capacityPercentage >= 90 ? 'bg-red-500' : 'bg-brand-gold'}`} 
+                    style={{ width: `${capacityPercentage}%` }} 
+                  />
+                </div>
               </div>
-            </div>
-          </motion.div>
-        ))}
+            </motion.div>
+          );
+        })}
       </div>
 
-      {/* Add/Edit Slide-Over */}
+      {/* Add/Edit Slide-Over Frame */}
       <AnimatePresence>
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex justify-end">
@@ -135,40 +273,120 @@ export default function WarehouseLocations() {
             <motion.div 
               initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="relative w-full max-w-sm h-full bg-white shadow-2xl border-l border-slate-200 p-8 overflow-y-auto"
+              className="relative w-full max-w-md h-full bg-white shadow-2xl border-l border-slate-200 p-6 overflow-y-auto flex flex-col justify-between"
             >
-              <div className="flex justify-between items-center mb-8">
-                <h2 className="text-xl font-black text-slate-900">{activeLocation ? 'Edit Location' : 'New Location'}</h2>
-                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full"><X size={20} /></button>
+              <div>
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-black text-slate-900">{activeLocation ? 'Edit Location Architecture' : 'New Storage Location'}</h2>
+                  <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full"><X size={20} /></button>
+                </div>
+                
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block">Location Designation</label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g., Aisle 4-C"
+                        value={formData.name}
+                        onChange={(e) => setFormData({...formData, name: e.target.value})}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-brand-gold outline-none" 
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block">Max Storage Units</label>
+                      <input 
+                        type="number" 
+                        value={formData.capacity}
+                        onChange={(e) => setFormData({...formData, capacity: e.target.value})}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-brand-gold outline-none" 
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block">Storage Category</label>
+                    <select 
+                      value={formData.type}
+                      onChange={(e) => setFormData({...formData, type: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-brand-gold outline-none"
+                    >
+                      <option value="Rack">Rack</option>
+                      <option value="Floor">Floor</option>
+                      <option value="Cooler">Cooler</option>
+                    </select>
+                  </div>
+
+                  {/* Multi-item Dynamic Allocation Form Space */}
+                  <div className="pt-2">
+                    <div className="flex justify-between items-center mb-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Assigned Material Records</label>
+                      <button 
+                        type="button" 
+                        onClick={addInventoryLine} 
+                        className="flex items-center gap-1 text-[10px] font-black text-brand-gold bg-brand-gold/10 hover:bg-brand-gold hover:text-white px-2 py-1 rounded-lg transition-colors uppercase"
+                      >
+                        <Plus size={12}/> Mix Item
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                      {formData.inventory.map((line, idx) => (
+                        <div key={line.id || idx} className="p-3 bg-slate-50 border border-slate-200 rounded-xl relative space-y-2">
+                          {formData.inventory.length > 1 && (
+                            <button 
+                              type="button" 
+                              onClick={() => removeInventoryLine(line.id)} 
+                              className="absolute top-2 right-2 text-slate-400 hover:text-red-500 transition-colors"
+                            >
+                              <Minus size={14}/>
+                            </button>
+                          )}
+                          <div>
+                            <label className="text-[9px] font-bold text-slate-400 uppercase">Item / SKU Reference</label>
+                            <input 
+                              type="text"
+                              placeholder="e.g., Probiotic Blend"
+                              value={line.item}
+                              onChange={(e) => updateInventoryLine(line.id, 'item', e.target.value)}
+                              className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:ring-1 focus:ring-brand-gold mt-0.5"
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[9px] font-bold text-slate-400 uppercase">Lot Batch ID</label>
+                              <input 
+                                type="text"
+                                placeholder="e.g., LOT-2026"
+                                value={line.lot}
+                                onChange={(e) => updateInventoryLine(line.id, 'lot', e.target.value)}
+                                className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:ring-1 focus:ring-brand-gold mt-0.5"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[9px] font-bold text-slate-400 uppercase">Allocated Qty</label>
+                              <input 
+                                type="number"
+                                placeholder="0"
+                                value={line.qty}
+                                onChange={(e) => updateInventoryLine(line.id, 'qty', e.target.value)}
+                                className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:ring-1 focus:ring-brand-gold mt-0.5"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
-              
-              <div className="space-y-6">
-                <div>
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1.5 block">Location Name</label>
-                  <input 
-                    type="text" 
-                    value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-brand-gold outline-none" 
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1.5 block">Type</label>
-                  <select 
-                    value={formData.type}
-                    onChange={(e) => setFormData({...formData, type: e.target.value})}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-brand-gold outline-none"
-                  >
-                    <option>Rack</option>
-                    <option>Floor</option>
-                    <option>Cooler</option>
-                  </select>
-                </div>
+
+              <div className="pt-4 mt-4 border-t border-slate-100">
                 <button 
                   onClick={handleSave}
-                  className="w-full py-4 bg-brand-gold hover:bg-brand-gold-hover text-white font-black rounded-xl shadow-lg shadow-brand-gold/20 transition-all active:scale-95 mt-4"
+                  className="w-full py-3 bg-brand-gold hover:bg-brand-gold-hover text-white font-black rounded-xl shadow-lg shadow-brand-gold/20 transition-all active:scale-95"
                 >
-                  {activeLocation ? 'Save Changes' : 'Create Location'}
+                  {activeLocation ? 'Save Structure Changes' : 'Create Mixed Location'}
                 </button>
               </div>
             </motion.div>
