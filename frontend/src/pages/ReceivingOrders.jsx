@@ -13,6 +13,14 @@ const INITIAL_DATA = [
   { id: 535, date: '2026-05-10', customer: 'DSM', item: 'Extract A', qty: 1200, skids: 2, status: 'Pending' },
 ];
 
+// Centralized Inventory Master Data with defined unit weights
+const INVENTORY_ITEMS = [
+  { name: 'Probiotic Blend', defaultWeight: 2.50 },
+  { name: 'Shipping Box L', defaultWeight: 0.45 },
+  { name: 'Extract A', defaultWeight: 1.20 },
+  { name: 'Tape Roll 2"', defaultWeight: 0.15 },
+];
+
 export default function ReceivingOrders() {
   const [data, setData] = useState(INITIAL_DATA);
   const [selectedRows, setSelectedRows] = useState([]);
@@ -21,7 +29,6 @@ export default function ReceivingOrders() {
   
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
-    vendor: '',
     customer: '',
     shelf: false,
     lot: '',
@@ -30,13 +37,19 @@ export default function ReceivingOrders() {
   });
 
   const [lineItems, setLineItems] = useState([
-    { id: Date.now(), skids: '', cartons: '', unitsPerCarton: '', unitWeight: '' }
+    { id: Date.now(), skids: '', cartons: '', unitsPerCarton: '' }
   ]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+
+  // Auto-lookup the unit weight of the selected inventory item
+  const currentItemWeight = useMemo(() => {
+    const matchedItem = INVENTORY_ITEMS.find(item => item.name === formData.inventoryItem);
+    return matchedItem ? matchedItem.defaultWeight : 0;
+  }, [formData.inventoryItem]);
 
   const filteredData = useMemo(() => {
     return data.filter(row => {
@@ -52,8 +65,15 @@ export default function ReceivingOrders() {
   // Modal Controls
   const openNewModal = () => {
     setActiveOrderId(null);
-    setFormData({ date: new Date().toISOString().split('T')[0], vendor: '', customer: '', shelf: false, lot: '', location: '', inventoryItem: '' });
-    setLineItems([{ id: Date.now(), skids: '', cartons: '', unitsPerCarton: '', unitWeight: '' }]);
+    setFormData({ 
+      date: new Date().toISOString().split('T')[0], 
+      customer: '', 
+      shelf: false, 
+      lot: '', 
+      location: '', 
+      inventoryItem: '' 
+    });
+    setLineItems([{ id: Date.now(), skids: '', cartons: '', unitsPerCarton: '' }]);
     setIsModalOpen(true);
   };
 
@@ -61,16 +81,14 @@ export default function ReceivingOrders() {
     setActiveOrderId(row.id);
     setFormData({
       date: row.date,
-      vendor: '', // Mocking vendor as it's not in base table
       customer: row.customer,
       shelf: row.skids === 0,
       lot: '',
       location: '',
       inventoryItem: row.item
     });
-    // Reverse engineer line items from totals for the sake of the edit view
     setLineItems([
-      { id: Date.now(), skids: row.skids, cartons: row.qty, unitsPerCarton: 1, unitWeight: '' }
+      { id: Date.now(), skids: row.skids, cartons: row.qty, unitsPerCarton: 1 }
     ]);
     setIsModalOpen(true);
   };
@@ -84,7 +102,7 @@ export default function ReceivingOrders() {
 
   // Line Item Handlers
   const addLineItem = () => {
-    setLineItems([...lineItems, { id: Date.now(), skids: '', cartons: '', unitsPerCarton: '', unitWeight: '' }]);
+    setLineItems([...lineItems, { id: Date.now(), skids: '', cartons: '', unitsPerCarton: '' }]);
   };
 
   const removeLineItem = (id) => {
@@ -112,10 +130,8 @@ export default function ReceivingOrders() {
     };
 
     if (activeOrderId) {
-      // Update existing
       setData(prev => prev.map(row => row.id === activeOrderId ? { ...row, ...payload } : row));
     } else {
-      // Create new
       const newEntry = { ...payload, id: Math.floor(1000 + Math.random() * 9000), status: 'Pending' };
       setData([newEntry, ...data]);
     }
@@ -200,7 +216,7 @@ export default function ReceivingOrders() {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="relative w-full max-w-lg h-full bg-white/95 backdrop-blur-2xl shadow-2xl border-l border-white/50 p-6 overflow-y-auto flex flex-col"
+              className="relative w-full max-w-xl h-full bg-white/95 backdrop-blur-2xl shadow-2xl border-l border-white/50 p-6 overflow-y-auto flex flex-col"
             >
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-lg font-black text-slate-900">
@@ -215,32 +231,22 @@ export default function ReceivingOrders() {
                   <input required type="date" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-gold" />
                 </div>
                 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Vendor</label>
-                    <select value={formData.vendor} onChange={(e) => setFormData({...formData, vendor: e.target.value})} className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-gold">
-                      <option value="">Select</option>
-                      <option value="Joff Company">Joff Company</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Customer</label>
-                    <select value={formData.customer} onChange={(e) => setFormData({...formData, customer: e.target.value})} className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-gold">
-                      <option value="">Select</option>
-                      <option value="Joff Company">Joff Company</option>
-                      <option value="DSM">DSM</option>
-                    </select>
-                  </div>
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Customer / Product Depositor</label>
+                  <select required value={formData.customer} onChange={(e) => setFormData({...formData, customer: e.target.value})} className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-gold">
+                    <option value="">Select Customer Account</option>
+                    <option value="Joff Company">Joff Company</option>
+                    <option value="DSM">DSM</option>
+                  </select>
                 </div>
 
                 <div>
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Inventory Item</label>
-                  <select value={formData.inventoryItem} onChange={(e) => setFormData({...formData, inventoryItem: e.target.value})} className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-gold">
+                  <select required value={formData.inventoryItem} onChange={(e) => setFormData({...formData, inventoryItem: e.target.value})} className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-gold">
                     <option value="">Select Item</option>
-                    <option value="Probiotic Blend">Probiotic Blend</option>
-                    <option value="Shipping Box L">Shipping Box L</option>
-                    <option value="Extract A">Extract A</option>
-                    <option value='Tape Roll 2"'>Tape Roll 2"</option>
+                    {INVENTORY_ITEMS.map((item) => (
+                      <option key={item.name} value={item.name}>{item.name}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -265,31 +271,71 @@ export default function ReceivingOrders() {
                   </div>
                 </div>
 
-                {/* Dynamic Line Items */}
+                {/* Advanced Dynamic Line Items Grid with Auto-calculated Weights */}
                 <div className="space-y-3 mt-2">
-                  <label className="text-xs font-black text-slate-900 uppercase tracking-wider">Shipment Details</label>
-                  {lineItems.map((item) => (
-                    <div key={item.id} className="grid grid-cols-4 gap-2 items-end">
-                      {!formData.shelf && (
-                        <div className="col-span-1">
-                          <label className="text-[9px] font-black text-slate-400 uppercase">Skids</label>
-                          <input type="number" value={item.skids} onChange={(e) => updateLineItem(item.id, 'skids', e.target.value)} className="w-full mt-1 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold" />
+                  <label className="text-xs font-black text-slate-900 uppercase tracking-wider block border-b border-slate-100 pb-1">
+                    Shipment Weights & Details
+                  </label>
+                  
+                  {lineItems.map((item) => {
+                    // Calculated total line weight using the auto-fetched item master weight
+                    const totalLineWeight = (
+                      (parseInt(item.cartons) || 0) * (parseInt(item.unitsPerCarton) || 0) * currentItemWeight
+                    ).toFixed(2);
+
+                    return (
+                      <div key={item.id} className="grid grid-cols-12 gap-2 items-end border-b border-slate-50 pb-3 last:border-0">
+                        {!formData.shelf ? (
+                          <>
+                            <div className="col-span-2">
+                              <label className="text-[9px] font-black text-slate-400 uppercase">Skids</label>
+                              <input type="number" value={item.skids} onChange={(e) => updateLineItem(item.id, 'skids', e.target.value)} className="w-full mt-1 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold" />
+                            </div>
+                            <div className="col-span-2">
+                              <label className="text-[9px] font-black text-slate-400 uppercase">Cartons</label>
+                              <input type="number" value={item.cartons} onChange={(e) => updateLineItem(item.id, 'cartons', e.target.value)} className="w-full mt-1 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold" />
+                            </div>
+                            <div className="col-span-2">
+                              <label className="text-[9px] font-black text-slate-400 uppercase">Units/Ctn</label>
+                              <input type="number" value={item.unitsPerCarton} onChange={(e) => updateLineItem(item.id, 'unitsPerCarton', e.target.value)} className="w-full mt-1 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold" />
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="col-span-3">
+                              <label className="text-[9px] font-black text-slate-400 uppercase">Cartons</label>
+                              <input type="number" value={item.cartons} onChange={(e) => updateLineItem(item.id, 'cartons', e.target.value)} className="w-full mt-1 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold" />
+                            </div>
+                            <div className="col-span-3">
+                              <label className="text-[9px] font-black text-slate-400 uppercase">Units/Ctn</label>
+                              <input type="number" value={item.unitsPerCarton} onChange={(e) => updateLineItem(item.id, 'unitsPerCarton', e.target.value)} className="w-full mt-1 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold" />
+                            </div>
+                          </>
+                        )}
+                        
+                        {/* Auto-taken unit weight from Master Inventory Array */}
+                        <div className="col-span-2">
+                          <label className="text-[9px] font-black text-slate-400 uppercase">Item Wt</label>
+                          <div className="w-full mt-1 px-1 py-1.5 bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-500 text-center truncate select-none">
+                            {currentItemWeight > 0 ? currentItemWeight.toFixed(2) : '0.00'}
+                          </div>
                         </div>
-                      )}
-                      <div className={formData.shelf ? "col-span-2" : "col-span-1"}>
-                          <label className="text-[9px] font-black text-slate-400 uppercase">Cartons</label>
-                          <input type="number" value={item.cartons} onChange={(e) => updateLineItem(item.id, 'cartons', e.target.value)} className="w-full mt-1 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold" />
+
+                        {/* Calculated Total Line Item Weight Display */}
+                        <div className="col-span-2">
+                          <label className="text-[9px] font-black text-slate-400 uppercase">Total Wt</label>
+                          <div className="w-full mt-1 px-1 py-1.5 bg-slate-100 border border-slate-200 rounded-lg text-xs font-black text-slate-700 text-center truncate">
+                            {totalLineWeight}
+                          </div>
+                        </div>
+
+                        <div className="col-span-2 flex gap-1 pb-0.5 justify-end">
+                          <button type="button" onClick={addLineItem} className="p-1.5 bg-slate-100 rounded-lg text-slate-600 hover:bg-brand-gold hover:text-white transition-colors"><Plus size={12} /></button>
+                          <button type="button" onClick={() => removeLineItem(item.id)} className="p-1.5 bg-slate-100 rounded-lg text-slate-600 hover:bg-red-500 hover:text-white transition-colors"><Minus size={12} /></button>
+                        </div>
                       </div>
-                      <div className={formData.shelf ? "col-span-2" : "col-span-1"}>
-                          <label className="text-[9px] font-black text-slate-400 uppercase">Units/Ctn</label>
-                          <input type="number" value={item.unitsPerCarton} onChange={(e) => updateLineItem(item.id, 'unitsPerCarton', e.target.value)} className="w-full mt-1 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold" />
-                      </div>
-                      <div className="flex gap-1 pb-1">
-                          <button type="button" onClick={addLineItem} className="p-1.5 bg-slate-100 rounded-lg text-slate-600 hover:bg-brand-gold hover:text-white"><Plus size={14} /></button>
-                          <button type="button" onClick={() => removeLineItem(item.id)} className="p-1.5 bg-slate-100 rounded-lg text-slate-600 hover:bg-red-500 hover:text-white"><Minus size={14} /></button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 <div className="mt-auto pt-4">
@@ -367,9 +413,7 @@ export default function ReceivingOrders() {
                   <td className="p-4 text-right">
                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Link to={`/receiving/${row.id}`} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-brand-gold transition-colors"><Eye size={16} /></Link>
-                      {/* Hooked up openEditModal here */}
                       <button onClick={() => openEditModal(row)} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-brand-gold transition-colors"><Edit2 size={16} /></button>
-                      {/* Hooked up handleDelete here */}
                       <button onClick={() => handleDelete(row.id)} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
                     </div>
                   </td>

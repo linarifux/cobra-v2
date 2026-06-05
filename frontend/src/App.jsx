@@ -19,24 +19,33 @@ export default function App() {
       <Routes>
         <Route path="/" element={<DashboardLayout />}>
           <Route index element={<DashboardHome />} />
+          
           <Route path="orders">
             <Route index element={<OrdersPage />} />
             <Route path=":id" element={<OrderDetailsPage />} />
           </Route>
+          
           <Route path="customers">
             <Route index element={<CustomersPage />} />
             <Route path=":id" element={<VendorDetailsPage />} />
             <Route path=":id/edit" element={<EditVendorDetailsPage />} />
           </Route>
+          
           <Route path="/divisions" element={<DivisionsPage />} />
-          <Route path="/inventory" element={<InventoryPage />} />
+          
+          {/* Updated Inventory Architecture Routes */}
+          <Route path="inventory">
+            <Route index element={<InventoryPage />} />
+            <Route path=":inventoryId" element={<InventoryPage />} />
+          </Route>
+          
           <Route path="/categories" element={<CategoryPage />} />
           
           {/* Updated Receiving Routes */}
           <Route path="/receiving" element={<ReceivingOrders />} />
           <Route path="/receiving/:id" element={<ReceivingOrderDetail />} />
 
-          //* New Routes for Locations and Shipping */
+          {/* New Routes for Locations and Shipping */}
           <Route path="locations" element={<WarehouseLocations />} />
           
           <Route path="shipping" element={<div className="p-6">ShipStation Integration Module</div>} />
