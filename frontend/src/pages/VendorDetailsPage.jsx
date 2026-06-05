@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-// Added new icons for the new info
-import { ArrowLeft, Building, Edit, Mail, Phone, MapPin, ShieldCheck, Clock, Star, TrendingUp } from 'lucide-react';
+import { 
+  ArrowLeft, Building, Edit, Mail, Phone, MapPin, 
+  ShieldCheck, Clock, Star, TrendingUp 
+} from 'lucide-react';
 
 import OverviewTab from '../components/vendors/tabs/OverviewTab';
+import DivisionTab from '../components/vendors/tabs/DivisionTab';
 import InventoryTab from '../components/vendors/tabs/InventoryTab';
 import ProcessingTab from '../components/vendors/tabs/ProcessingTab';
 import LogisticsTab from '../components/vendors/tabs/LogisticsTab';
@@ -16,6 +19,7 @@ export default function VendorDetailsPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('Overview');
   
+  
   const [rates, setRates] = useState([
     { id: 1, name: 'Pick & Pack Fee', value: '0.75' },
     { id: 2, name: 'Storage Fee', value: '25.00' }
@@ -25,8 +29,27 @@ export default function VendorDetailsPage() {
     { id: 1, name: 'UPS', service: 'Ground', account: '12345' }
   ]);
 
-  const tabs = ['Overview', 'Inventory', 'Processing', 'Carrier', 'Logistics', 'Rates', 'Staff'];
-  const TabComponents = { Overview: OverviewTab, Inventory: InventoryTab, Processing: ProcessingTab, Carrier: CarrierTab, Logistics: LogisticsTab, Rates: RatesTab, Staff: StaffTab };
+  
+  const [divisions, setDivisions] = useState([
+    { id: 1, name: 'North American Supply', code: 'DIV-NAS', manager: 'Sarah Jenkins', region: 'Midwest Hub', status: 'Active' },
+    { id: 2, name: 'EMEA Distribution', code: 'DIV-EMEA', manager: 'Marcus Vance', region: 'Frankfurt Central', status: 'Active' },
+    { id: 3, name: 'APAC Electronics Procurement', code: 'DIV-APAC', manager: 'Lin Nguyen', region: 'Singapore Sea Port', status: 'Inactive' }
+  ]);
+
+  const tabs = ['Overview', 'Division', 'Inventory', 'Processing', 'Carrier', 'Logistics', 'Rates', 'Staff'];
+  
+
+  const TabComponents = { 
+    Overview: OverviewTab, 
+    Division: DivisionTab, 
+    Inventory: InventoryTab, 
+    Processing: ProcessingTab, 
+    Carrier: CarrierTab, 
+    Logistics: LogisticsTab, 
+    Rates: RatesTab, 
+    Staff: StaffTab 
+  };
+  
   const ActiveComponent = TabComponents[activeTab];
 
   return (
@@ -42,7 +65,7 @@ export default function VendorDetailsPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Sidebar: Added Contact and Compliance Details */}
+        {/* Sidebar */}
         <div className="space-y-6">
           <div className="bg-slate-900 text-white p-6 rounded-3xl">
              <div className="flex justify-between items-start mb-4">
@@ -67,7 +90,7 @@ export default function VendorDetailsPage() {
         {/* Main Content Area */}
         <div className="lg:col-span-3 space-y-6">
           
-          {/* NEW: Performance Summary Row */}
+          {/* Performance Summary Row */}
           <div className="grid grid-cols-3 gap-4">
              {[
                { label: 'Avg Rating', value: '4.9/5', icon: <Star size={16} className="text-amber-400" /> },
@@ -93,8 +116,16 @@ export default function VendorDetailsPage() {
             ))}
           </div>
 
+          {/* Provided divisions state props downstream */}
           <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-8 rounded-3xl min-h-[400px]">
-             <ActiveComponent rates={rates} setRates={setRates} carriers={carriers} setCarriers={setCarriers} />
+             <ActiveComponent 
+               rates={rates} 
+               setRates={setRates} 
+               carriers={carriers} 
+               setCarriers={setCarriers} 
+               divisions={divisions} 
+               setDivisions={setDivisions} 
+             />
           </div>
         </div>
       </div>
