@@ -2,7 +2,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useMemo } from 'react';
 import { 
   ArrowLeft, Printer, Package, Calendar, FileText, 
-  CheckCircle2, Info, Building2, MapPin, Weight, Clock
+  CheckCircle2, Info, Building2, MapPin, Weight, Clock, Truck
 } from 'lucide-react';
 
 // Centralized Inventory Master Data (matching dashboard registry)
@@ -22,6 +22,7 @@ const MOCK_ORDERS = [
     orderDate: "2026-05-10",
     expectedDelivery: "2026-05-12",
     customer: "Joff Company - Global Distribution",
+    carrier: "UPS Ground",
     warehouse: "Dhaka Central Hub - Sector A",
     location: "Aisle 1-A (Rack)",
     status: "Received",
@@ -64,10 +65,10 @@ export default function ReceivingOrderDetail() {
     });
   }, [order]);
 
-  // Dynamically calculate the global order weight from total resolved line values
+  // Dynamically calculate the global order weight from total resolved line values in lbs
   const calculatedTotalWeight = useMemo(() => {
-    const totalKg = enrichedItems.reduce((acc, curr) => acc + curr.totalLineWeight, 0);
-    return totalKg > 0 ? `${totalKg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg` : '0.00 kg';
+    const totalLbs = enrichedItems.reduce((acc, curr) => acc + curr.totalLineWeight, 0);
+    return totalLbs > 0 ? `${totalLbs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} lbs` : '0.00 lbs';
   }, [enrichedItems]);
 
   if (!order) {
@@ -104,12 +105,13 @@ export default function ReceivingOrderDetail() {
       </div>
 
       {/* 2. Quick Stats Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
         {[
           { label: 'Customer', val: order.customer.split(' - ')[0], icon: Building2 },
+          { label: 'Carrier', val: order.carrier || '—', icon: Truck },
           { label: 'Warehouse', val: order.warehouse.split(' - ')[0], icon: Building2 },
           { label: 'Storage Location', val: order.location || 'Unassigned', icon: MapPin },
-          { label: 'Total Weight', val: calculatedTotalWeight, icon: Weight }, // Dynamic updated metric
+          { label: 'Total Weight', val: calculatedTotalWeight, icon: Weight }, 
           { label: 'Expected', val: order.expectedDelivery, icon: Calendar },
         ].map((stat, i) => (
           <div key={i} className="bg-white/40 backdrop-blur-xl border border-white/60 p-4 rounded-2xl shadow-sm flex items-center gap-3">
@@ -139,8 +141,8 @@ export default function ReceivingOrderDetail() {
                     <th className="p-4 text-[11px] font-black text-slate-400 uppercase tracking-wider">Item Details</th>
                     <th className="p-4 text-[11px] font-black text-slate-400 uppercase tracking-wider text-center">Pack Configuration</th>
                     <th className="p-4 text-[11px] font-black text-slate-400 uppercase tracking-wider text-right">Expected / Received</th>
-                    <th className="p-4 text-[11px] font-black text-slate-400 uppercase tracking-wider text-right">Item Wt</th>
-                    <th className="p-4 text-[11px] font-black text-slate-400 uppercase tracking-wider text-right">Total Wt</th>
+                    <th className="p-4 text-[11px] font-black text-slate-400 uppercase tracking-wider text-right">Item Wt (lbs)</th>
+                    <th className="p-4 text-[11px] font-black text-slate-400 uppercase tracking-wider text-right">Total Wt (lbs)</th>
                     <th className="p-4 text-[11px] font-black text-slate-400 uppercase tracking-wider text-center">Status</th>
                   </tr>
                 </thead>

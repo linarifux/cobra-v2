@@ -3,14 +3,14 @@ import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Package, Plus, Download, Trash2, Edit2, 
-  CheckSquare, Square, Search, X, Eye, Calendar, PlusCircle, Check, Minus
+  CheckSquare, Square, Search, X, Eye, Calendar, PlusCircle, Check, Minus, Truck
 } from 'lucide-react';
 
 const INITIAL_DATA = [
-  { id: 538, date: '2026-05-12', customer: 'Joff Company', item: 'Probiotic Blend', qty: 5800, skids: 1, status: 'Received' },
-  { id: 537, date: '2026-05-11', customer: 'Joff Company', item: 'Shipping Box L', qty: 8900, skids: 0, status: 'Pending' },
-  { id: 536, date: '2026-05-11', customer: 'Joff Company', item: 'Tape Roll 2"', qty: 90, skids: 0, status: 'Received' },
-  { id: 535, date: '2026-05-10', customer: 'DSM', item: 'Extract A', qty: 1200, skids: 2, status: 'Pending' },
+  { id: 538, date: '2026-05-12', customer: 'Joff Company', carrier: 'UPS Ground', item: 'Probiotic Blend', qty: 5800, skids: 1, status: 'Received' },
+  { id: 537, date: '2026-05-11', customer: 'Joff Company', carrier: 'Pitt Ohio LTL', item: 'Shipping Box L', qty: 8900, skids: 0, status: 'Pending' },
+  { id: 536, date: '2026-05-11', customer: 'Joff Company', carrier: 'FedEx Overnight', item: 'Tape Roll 2"', qty: 90, skids: 0, status: 'Received' },
+  { id: 535, date: '2026-05-10', customer: 'DSM', carrier: 'DHL Express', item: 'Extract A', qty: 1200, skids: 2, status: 'Pending' },
 ];
 
 // Centralized Inventory Master Data with defined unit weights
@@ -30,6 +30,7 @@ export default function ReceivingOrders() {
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     customer: '',
+    carrier: '',
     shelf: false,
     lot: '',
     location: '',
@@ -54,7 +55,8 @@ export default function ReceivingOrders() {
   const filteredData = useMemo(() => {
     return data.filter(row => {
       const matchesSearch = row.item.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                            row.customer.toLowerCase().includes(searchTerm.toLowerCase());
+                            row.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            (row.carrier && row.carrier.toLowerCase().includes(searchTerm.toLowerCase()));
       const matchesStatus = statusFilter === 'All' || row.status === statusFilter;
       const matchesFrom = !fromDate || row.date >= fromDate;
       const matchesTo = !toDate || row.date <= toDate;
@@ -68,6 +70,7 @@ export default function ReceivingOrders() {
     setFormData({ 
       date: new Date().toISOString().split('T')[0], 
       customer: '', 
+      carrier: '',
       shelf: false, 
       lot: '', 
       location: '', 
@@ -82,6 +85,7 @@ export default function ReceivingOrders() {
     setFormData({
       date: row.date,
       customer: row.customer,
+      carrier: row.carrier || '',
       shelf: row.skids === 0,
       lot: '',
       location: '',
@@ -124,6 +128,7 @@ export default function ReceivingOrders() {
     const payload = {
       date: formData.date,
       customer: formData.customer,
+      carrier: formData.carrier || 'Unknown Carrier',
       item: formData.inventoryItem || 'New Item',
       qty: totalQty,
       skids: formData.shelf ? 0 : totalSkids,
@@ -169,8 +174,8 @@ export default function ReceivingOrders() {
   };
 
   const exportToCSV = () => {
-    const headers = ['Date', 'Receiving #', 'Customer', 'Inventory Item', 'Qty', 'Skids', 'Status'];
-    const csvContent = [headers.join(','), ...filteredData.map(row => [row.date, row.id, `"${row.customer}"`, `"${row.item}"`, row.qty, row.skids, row.status].join(','))].join('\n');
+    const headers = ['Date', 'Receiving #', 'Customer', 'Carrier', 'Inventory Item', 'Qty', 'Skids', 'Status'];
+    const csvContent = [headers.join(','), ...filteredData.map(row => [row.date, row.id, `"${row.customer}"`, `"${row.carrier || ''}"`, `"${row.item}"`, row.qty, row.skids, row.status].join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -238,6 +243,17 @@ export default function ReceivingOrders() {
                     <option value="Joff Company">Joff Company</option>
                     <option value="DSM">DSM</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Carrier / Inbound Logistics</label>
+                  <input 
+                    type="text" 
+                    value={formData.carrier} 
+                    onChange={(e) => setFormData({...formData, carrier: e.target.value})} 
+                    placeholder="e.g., UPS Ground, FedEx Overnight, Pitt Ohio LTL" 
+                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-brand-gold" 
+                  />
                 </div>
 
                 <div>
@@ -355,7 +371,7 @@ export default function ReceivingOrders() {
             <label className="text-[10px] font-bold text-slate-400 uppercase mb-1.5 block">Search</label>
             <div className="relative">
               <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
-              <input type="text" placeholder="Item or Customer..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-white/60 border border-white/50 rounded-xl text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-brand-gold/50 outline-none" />
+              <input type="text" placeholder="Item, Customer or Carrier..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-white/60 border border-white/50 rounded-xl text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-brand-gold/50 outline-none" />
             </div>
           </div>
           <div>
@@ -390,38 +406,46 @@ export default function ReceivingOrders() {
       )}
 
       <div className="bg-white/40 backdrop-blur-2xl border border-white/60 rounded-3xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.04)] min-h-[300px]">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="border-b border-white/50 bg-white/20">
-              <th className="p-4 w-10"><button onClick={toggleSelectAll} className="text-slate-400 hover:text-brand-gold">{selectedRows.length === filteredData.length ? <CheckSquare size={18} /> : <Square size={18} />}</button></th>
-              {['Date', 'Receiving #', 'Customer', 'Inventory Item', 'Qty', 'Skids', 'Status', ''].map((h) => <th key={h} className="p-4 text-[11px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-white/40">
-            {filteredData.map((row) => {
-              const isSelected = selectedRows.includes(row.id);
-              return (
-                <tr key={row.id} className={`${isSelected ? 'bg-brand-gold/5' : ''} hover:bg-white/40 transition-colors group`}>
-                  <td className="p-4"><button onClick={() => toggleRow(row.id)} className="text-slate-400 hover:text-brand-gold">{isSelected ? <CheckSquare size={18} className="text-brand-gold" /> : <Square size={18} />}</button></td>
-                  <td className="p-4 text-sm font-bold text-slate-600">{row.date}</td>
-                  <td className="p-4 text-sm font-mono font-bold text-slate-900">#{row.id}</td>
-                  <td className="p-4 text-sm font-medium text-slate-600">{row.customer}</td>
-                  <td className="p-4 text-sm font-semibold text-slate-800">{row.item}</td>
-                  <td className="p-4 text-sm font-bold text-slate-900">{row.qty.toLocaleString()}</td>
-                  <td className="p-4 text-sm font-bold text-slate-600">{row.skids}</td>
-                  <td className="p-4"><span className={`text-[10px] font-black px-2 py-1 rounded-full uppercase ${row.status === 'Received' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>{row.status}</span></td>
-                  <td className="p-4 text-right">
-                    <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Link to={`/receiving/${row.id}`} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-brand-gold transition-colors"><Eye size={16} /></Link>
-                      <button onClick={() => openEditModal(row)} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-brand-gold transition-colors"><Edit2 size={16} /></button>
-                      <button onClick={() => handleDelete(row.id)} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[900px]">
+            <thead>
+              <tr className="border-b border-white/50 bg-white/20">
+                <th className="p-4 w-10"><button onClick={toggleSelectAll} className="text-slate-400 hover:text-brand-gold">{selectedRows.length === filteredData.length ? <CheckSquare size={18} /> : <Square size={18} />}</button></th>
+                {['Date', 'Receiving #', 'Customer', 'Carrier', 'Inventory Item', 'Qty', 'Skids', 'Status', ''].map((h) => <th key={h} className="p-4 text-[11px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/40">
+              {filteredData.map((row) => {
+                const isSelected = selectedRows.includes(row.id);
+                return (
+                  <tr key={row.id} className={`${isSelected ? 'bg-brand-gold/5' : ''} hover:bg-white/40 transition-colors group`}>
+                    <td className="p-4"><button onClick={() => toggleRow(row.id)} className="text-slate-400 hover:text-brand-gold">{isSelected ? <CheckSquare size={18} className="text-brand-gold" /> : <Square size={18} />}</button></td>
+                    <td className="p-4 text-sm font-bold text-slate-600">{row.date}</td>
+                    <td className="p-4 text-sm font-mono font-bold text-slate-900">#{row.id}</td>
+                    <td className="p-4 text-sm font-medium text-slate-600">{row.customer}</td>
+                    <td className="p-4 text-sm font-semibold text-slate-700">
+                      <div className="flex items-center gap-1.5 text-slate-600">
+                        <Truck size={14} className="text-slate-400" />
+                        <span>{row.carrier || '—'}</span>
+                      </div>
+                    </td>
+                    <td className="p-4 text-sm font-semibold text-slate-800">{row.item}</td>
+                    <td className="p-4 text-sm font-bold text-slate-900">{row.qty.toLocaleString()}</td>
+                    <td className="p-4 text-sm font-bold text-slate-600">{row.skids}</td>
+                    <td className="p-4"><span className={`text-[10px] font-black px-2 py-1 rounded-full uppercase ${row.status === 'Received' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>{row.status}</span></td>
+                    <td className="p-4 text-right">
+                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Link to={`/receiving/${row.id}`} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-brand-gold transition-colors"><Eye size={16} /></Link>
+                        <button onClick={() => openEditModal(row)} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-brand-gold transition-colors"><Edit2 size={16} /></button>
+                        <button onClick={() => handleDelete(row.id)} className="p-1.5 hover:bg-white rounded-lg text-slate-400 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
