@@ -22,13 +22,17 @@ const app = express();
 
 // 3. Security & Utility Middlewares
 app.use(helmet());
-app.use(cors({ origin: ["http://localhost:5173", "http://localhost:5000"] }));
+app.use(cors({ origin: ["http://localhost:5173", "http://localhost:5000", "https://cobra-v2.vercel.app", "https://cobra-v2.netlify.app"] }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
+
+app.get('/', (req, res) => {
+  res.send('Welcome to COBRA API');
+});
 
 // 4. Routes
 app.use('/api/v1/auth', authRoutes);
