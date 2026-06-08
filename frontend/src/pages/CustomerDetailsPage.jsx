@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux';
 import { 
   ArrowLeft, Building, Edit, Mail, Phone, MapPin, 
   ShieldCheck, Star, TrendingUp, User, Loader2
 } from 'lucide-react';
+
+// Redux Actions
+import { fetchCustomerById, clearCurrentCustomer } from '../store/slices/customerSlice';
 
 // Tab Components imports
 import OverviewTab from '../components/vendors/tabs/OverviewTab';
@@ -18,12 +22,14 @@ import CarrierTab from '../components/vendors/tabs/CarrierTab';
 export default function CustomerDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+  
+  // Access Redux State
+  const { currentCustomer: customer, status, error } = useSelector((state) => state.customers);
   
   const [activeTab, setActiveTab] = useState('Overview');
-  const [isLoading, setIsLoading] = useState(true);
-  const [customer, setCustomer] = useState(null);
   
-  // Tab States
+  // Tab States (These would eventually be moved to Redux/Backend too)
   const [rates, setRates] = useState([
     { id: 1, name: 'Pick & Pack Fee', value: '0.75' },
     { id: 2, name: 'Storage Fee', value: '25.00' }
@@ -54,43 +60,17 @@ export default function CustomerDetailsPage() {
   
   const ActiveComponent = TabComponents[activeTab];
 
-  // Fetch Customer Data Hook
+  // Fetch real customer data on mount
   useEffect(() => {
-    const fetchCustomer = async () => {
-      try {
-        setIsLoading(true);
-        // In production, replace this with your Redux dispatch:
-        // const response = await dispatch(fetchCustomerById(id)).unwrap();
-        // setCustomer(response);
+    if (id) {
+      dispatch(fetchCustomerById(id));
+    }
 
-        // Simulated API Delay
-        await new Promise(resolve => setTimeout(resolve, 600));
-        
-        // Mocking the backend MongoDB response structure
-        setCustomer({
-          _id: id || 'C-001',
-          customerName: 'DSM',
-          contactName: 'Alex Zenteno',
-          contactEmail: 'alex.zenteno@dsm-firmenich.com',
-          contactNumber: '636-219-9048',
-          address: {
-            line1: '4006 Fulling Mill Street',
-            line2: '',
-            city: 'St. Charles',
-            state: 'MO',
-            zip: '63301'
-          },
-          status: 'Active' 
-        });
-      } catch (error) {
-        console.error("Failed to load customer", error);
-      } finally {
-        setIsLoading(false);
-      }
+    // Cleanup when leaving the page to prevent showing stale data on next visit
+    return () => {
+      dispatch(clearCurrentCustomer());
     };
-
-    fetchCustomer();
-  }, [id]);
+  }, [id, dispatch]);
 
   // Utility to format address cleanly
   const formatAddress = (address) => {
@@ -99,7 +79,25 @@ export default function CustomerDetailsPage() {
     return `${street}, ${address.city || ''}, ${address.state || ''} ${address.zip || ''}`.trim().replace(/,\s*$/, '');
   };
 
-  if (isLoading || !customer) {
+  // Error State
+  if (status === 'failed') {
+    return (
+      <div className="h-full flex flex-col items-center justify-center min-h-[600px] gap-4">
+        <div className="bg-red-50 text-red-600 p-6 rounded-3xl text-center text-sm font-bold border border-red-200 shadow-sm">
+          Failed to load customer: {error}
+        </div>
+        <button 
+          onClick={() => navigate('/customers')}
+          className="text-slate-500 hover:text-slate-800 text-sm font-bold underline transition-colors"
+        >
+          Return to Directory
+        </button>
+      </div>
+    );
+  }
+
+  // Loading State
+  if (status === 'loading' || !customer) {
     return (
       <div className="h-full flex items-center justify-center min-h-[600px]">
         <div className="flex flex-col items-center gap-3 text-slate-400">
@@ -135,7 +133,7 @@ export default function CustomerDetailsPage() {
                       {customer.customerName}
                     </p>
                     <span className={`inline-flex items-center text-[10px] font-bold px-2.5 py-0.5 rounded-full mt-2 border uppercase tracking-wider ${
-                      customer.status === 'Active' 
+                      (customer.status || 'Active') === 'Active' 
                         ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' 
                         : 'bg-slate-500/15 text-slate-400 border-slate-500/20'
                     }`}>
