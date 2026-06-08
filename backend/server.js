@@ -7,9 +7,12 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 
 import { connectDB } from './config/db.js';
-import authRoutes from './routes/authRoutes.js';
 import AppError from './utils/AppError.js';
 import { globalErrorHandler } from './middlewares/errorMiddleware.js';
+
+// routes
+import authRoutes from './routes/authRoutes.js';
+import customerRoutes from './routes/customerRoutes.js';
 
 // 1. Initialize Database Connection
 connectDB();
@@ -29,7 +32,7 @@ if (process.env.NODE_ENV === 'development') {
 
 // 4. Routes
 app.use('/api/v1/auth', authRoutes);
-
+app.use('/api/v1/customers', customerRoutes);
 // 5. Unhandled Routes (404 handler)
 // app.all('*', (req, res, next) => {
 //   next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));

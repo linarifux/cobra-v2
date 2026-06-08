@@ -20,6 +20,21 @@ export const protect = catchAsync(async (req, res, next) => {
     return next(new AppError('The user belonging to this token no longer exists.', 401));
   }
 
+  // Attach the user to the request object so subsequent middlewares can use it
   req.user = currentUser;
   next();
 });
+
+// --- NEW ROLE MIDDLEWARE ---
+// Pass in allowed roles, e.g., restrictTo('admin', 'staff')
+export const restrictTo = (...roles) => {
+  return (req, res, next) => {
+    // If the user's role is not in the array of allowed roles
+    if (!roles.includes(req.user.role)) {
+      return next(new AppError('You do not have permission to perform this action', 403));
+    }
+    
+    // User is authorized, move to the next middleware/controller
+    next();
+  };
+};

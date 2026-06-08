@@ -13,7 +13,12 @@ const userSchema = new mongoose.Schema({
     type: String, 
     required: [true, 'Password is required'], 
     minlength: 8,
-    select: false // Never return password in queries by default
+    select: false 
+  },
+  role: {
+    type: String,
+    enum: ['admin', 'staff', 'warehouse'],
+    default: 'staff' // Default role for newly registered users
   }
 }, { timestamps: true });
 
