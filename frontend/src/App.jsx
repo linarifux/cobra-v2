@@ -4,8 +4,8 @@ import DashboardHome from './pages/DashboardHome';
 import OrdersPage from './pages/OrdersPage';
 import OrderDetailsPage from './pages/OrderDetailsPage';
 import CustomersPage from './pages/CustomersPage';
-import VendorDetailsPage from './pages/VendorDetailsPage';
-import EditVendorDetailsPage from './pages/EditVendorDetailsPage';
+import CustomerDetailsPage from './pages/CustomerDetailsPage';
+import EditCustomerDetailsPage from './pages/EditCustomerDetailsPage';
 import DivisionsPage from './pages/DivisionsPage';
 import InventoryPage from './pages/InventoryPage';
 import CategoryPage from './pages/CategoryPage';
@@ -27,8 +27,8 @@ export default function App() {
           
           <Route path="customers">
             <Route index element={<CustomersPage />} />
-            <Route path=":id" element={<VendorDetailsPage />} />
-            <Route path=":id/edit" element={<EditVendorDetailsPage />} />
+            <Route path=":id" element={<CustomerDetailsPage />} />
+            <Route path=":id/edit" element={<EditCustomerDetailsPage />} />
           </Route>
           
           <Route path="/divisions" element={<DivisionsPage />} />

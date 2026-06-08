@@ -1,13 +1,9 @@
 import { configureStore } from '@reduxjs/toolkit';
-import ordersReducer from '../features/orders/ordersSlice';
-import importsReducer from '../features/imports/importsSlice';
-import shippingReducer from '../features/shipping/shippingSlice';
+import customerReducer from './slices/customerSlice';
 
 export const store = configureStore({
   reducer: {
-    orders: ordersReducer,
-    imports: importsReducer,
-    shipping: shippingReducer,
+    customers: customerReducer,
+    // Add other slices here as your app grows (orders, auth, etc.)
   },
-  // RTK includes thunk middleware by default for async backend calls later
 });

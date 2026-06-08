@@ -10,7 +10,7 @@ import { connectDB } from './config/db.js';
 import AppError from './utils/AppError.js';
 import { globalErrorHandler } from './middlewares/errorMiddleware.js';
 
-// routes
+// routesx
 import authRoutes from './routes/authRoutes.js';
 import customerRoutes from './routes/customerRoutes.js';
 
@@ -22,7 +22,7 @@ const app = express();
 
 // 3. Security & Utility Middlewares
 app.use(helmet());
-app.use(cors());
+app.use(cors({ origin: ["http://localhost:5173", "http://localhost:5000"] }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
