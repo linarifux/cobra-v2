@@ -33,7 +33,7 @@ categorySchema.index({ parentCategory: 1 });
 
 // AUTO-CALCULATE HIERARCHY DEPTH
 // Before saving, check if the parentCategory was changed/added
-categorySchema.pre('save', async function (next) {
+categorySchema.pre('save', async function () {
   if (this.isModified('parentCategory')) {
     if (this.parentCategory) {
       // Find the parent and set this depth to parent.depth + 1
@@ -46,7 +46,6 @@ categorySchema.pre('save', async function (next) {
       this.hierarchyDepth = 1;
     }
   }
-  next();
 });
 
 export default mongoose.model('Category', categorySchema);
