@@ -1,5 +1,5 @@
 import React from 'react';
-import { Filter, Search } from 'lucide-react';
+import { Filter, Search, X } from 'lucide-react';
 
 export default function FilterBoard({ 
   searchQuery, 
@@ -14,57 +14,69 @@ export default function FilterBoard({
   const isFiltered = statusFilter !== 'All' || managerFilter !== 'All' || searchQuery !== '';
 
   return (
-    <div className="bg-white/30 backdrop-blur-sm border border-slate-200/60 p-4 rounded-2xl flex flex-wrap items-center gap-4 text-xs font-bold text-slate-600">
-      <div className="flex items-center gap-1.5 text-slate-500 text-[11px] uppercase tracking-wider font-black shrink-0">
-        <Filter size={14} /> Filter Board:
+    <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-4 rounded-3xl flex flex-col lg:flex-row items-center gap-4 shadow-sm transition-all duration-300">
+      
+      {/* Title Label */}
+      <div className="flex items-center gap-2 text-slate-400 text-[10px] uppercase tracking-widest font-black shrink-0 w-full lg:w-auto px-1 lg:px-0">
+        <Filter size={14} className="text-brand-gold" /> Filter Board
       </div>
 
-      <div className="relative flex items-center min-w-[200px]">
-        <Search size={14} className="absolute left-2.5 text-slate-400 pointer-events-none" />
+      {/* Search Input */}
+      <div className="relative flex-1 w-full">
+        <Search size={16} className="absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
         <input 
           type="text"
-          placeholder="Search name or code..."
+          placeholder="Search by division name or internal code..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-2.5 py-1 text-slate-800 outline-none focus:ring-1 focus:ring-slate-900 font-semibold text-xs h-[28px]"
+          className="w-full bg-white/60 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-slate-900 placeholder:text-slate-400 outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 font-semibold text-xs transition-all"
         />
       </div>
       
-      <div className="flex items-center gap-2">
-        <span className="text-slate-400 font-medium">Status:</span>
-        <select 
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-slate-800 outline-none focus:ring-1 focus:ring-slate-900 font-semibold h-[28px]"
-        >
-          <option value="All">All Statuses</option>
-          <option value="Active">Active</option>
-          <option value="Inactive">Inactive</option>
-        </select>
-      </div>
+      {/* Filters & Actions */}
+      <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full lg:w-auto">
+        
+        {/* Status Filter */}
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 hidden sm:inline">Status:</span>
+          <select 
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="w-full sm:w-auto bg-white/60 border border-slate-200 rounded-xl px-3 py-2 text-slate-700 outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 font-semibold text-xs cursor-pointer transition-all"
+          >
+            <option value="All">All Statuses</option>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+          </select>
+        </div>
 
-      <div className="flex items-center gap-2">
-        <span className="text-slate-400 font-medium">Manager:</span>
-        <select 
-          value={managerFilter}
-          onChange={(e) => setManagerFilter(e.target.value)}
-          className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-slate-800 outline-none focus:ring-1 focus:ring-slate-900 font-semibold h-[28px]"
-        >
-          <option value="All">All Managers</option>
-          {staffList.map((staffMember) => (
-            <option key={staffMember.id} value={staffMember.name}>{staffMember.name}</option>
-          ))}
-        </select>
+        {/* Manager Filter */}
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 hidden sm:inline">Manager:</span>
+          <select 
+            value={managerFilter}
+            onChange={(e) => setManagerFilter(e.target.value)}
+            className="w-full sm:w-auto bg-white/60 border border-slate-200 rounded-xl px-3 py-2 text-slate-700 outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 font-semibold text-xs cursor-pointer transition-all"
+          >
+            <option value="All">All Managers</option>
+            {staffList.map((staffMember) => (
+              <option key={staffMember.id} value={staffMember.name}>{staffMember.name}</option>
+            ))}
+          </select>
+        </div>
+        
+        {/* Clear Filters Button */}
+        {isFiltered && (
+          <button 
+            onClick={clearFilters}
+            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-colors shadow-sm w-full sm:w-auto shrink-0"
+            title="Clear all filters"
+          >
+            <X size={14} /> Clear
+          </button>
+        )}
       </div>
       
-      {isFiltered && (
-        <button 
-          onClick={clearFilters}
-          className="text-[10px] font-black uppercase text-red-500 hover:text-red-700 bg-red-50 px-2 py-0.5 rounded-md transition-colors ml-auto"
-        >
-          Clear Filters
-        </button>
-      )}
     </div>
   );
 }

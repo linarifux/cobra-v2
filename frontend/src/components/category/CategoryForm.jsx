@@ -1,77 +1,88 @@
 import React from 'react';
-import { PlusCircle, Check, X } from 'lucide-react';
+import { PlusCircle, Check, X, Loader2 } from 'lucide-react';
 
 export default function CategoryForm({ 
   formData, 
   setFormData, 
-  divisions, 
-  categories, 
+  divisions = [], 
+  categories = [], 
   editingId, 
   onSave, 
-  onCancel 
+  onCancel,
+  isSubmitting 
 }) {
   return (
-    <div className="bg-white/60 border border-slate-200/80 p-5 rounded-2xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end shadow-sm animate-in fade-in slide-in-from-top-3 duration-300">
-      <div className="space-y-1">
-        <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Category Name</label>
+    <div className="bg-white/40 backdrop-blur-xl border border-white/60 p-6 rounded-3xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 items-end shadow-sm animate-in fade-in slide-in-from-top-3 duration-300">
+      
+      {/* Category Name */}
+      <div className="space-y-1.5">
+        <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block pl-1">
+          Category Name <span className="text-red-400">*</span>
+        </label>
         <input 
-          className="w-full bg-white p-2.5 rounded-xl border border-slate-200 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-900" 
+          className="w-full bg-white/60 px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-900 placeholder:text-slate-400 outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 transition-all disabled:opacity-50" 
           value={formData.name} 
           onChange={(e) => setFormData({...formData, name: e.target.value})} 
           placeholder="e.g. Dry Food" 
+          disabled={isSubmitting}
         />
       </div>
 
-      <div className="space-y-1">
-        <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Level</label>
+      {/* Parent Category */}
+      <div className="space-y-1.5">
+        <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block pl-1">
+          Parent Category
+        </label>
         <select 
-          className="w-full bg-white p-2.5 rounded-xl border border-slate-200 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-900 h-[38px]" 
-          value={formData.level} 
-          onChange={(e) => setFormData({...formData, level: parseInt(e.target.value)})}
-        >
-          {[1, 2, 3, 4].map(l => <option key={l} value={l}>Level {l}</option>)}
-        </select>
-      </div>
-
-      <div className="space-y-1">
-        <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Parent Category</label>
-        <select 
-          className="w-full bg-white p-2.5 rounded-xl border border-slate-200 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-900 h-[38px]" 
+          className="w-full bg-white/60 px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 cursor-pointer transition-all disabled:opacity-50" 
           value={formData.parent} 
           onChange={(e) => setFormData({...formData, parent: e.target.value})}
+          disabled={isSubmitting}
         >
-          <option value="None">None (Root)</option>
-          {categories.filter(c => c.id !== editingId).map(c => (
-            <option key={c.id} value={c.name}>{c.name}</option>
+          <option value="None">None (Top Level Node)</option>
+          {categories
+            .filter(c => c._id !== editingId) // Prevent a category from being set as its own parent
+            .map(c => (
+              <option key={c._id} value={c._id}>
+                {c.categoryName} (Lvl {c.hierarchyDepth})
+              </option>
           ))}
         </select>
       </div>
 
-      <div className="space-y-1">
-        <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Assigned Division</label>
+      {/* Assigned Division */}
+      <div className="space-y-1.5">
+        <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block pl-1">
+          Assigned Division Branch <span className="text-red-400">*</span>
+        </label>
         <select 
-          className="w-full bg-white p-2.5 rounded-xl border border-slate-200 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-900 h-[38px]" 
+          className="w-full bg-white/60 px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 cursor-pointer transition-all disabled:opacity-50" 
           value={formData.division} 
           onChange={(e) => setFormData({...formData, division: e.target.value})}
+          disabled={isSubmitting}
         >
-          {divisions.map((div, index) => (
-            <option key={index} value={div}>{div}</option>
+          {divisions.map((div) => (
+            <option key={div._id} value={div._id}>{div.divisionName}</option>
           ))}
         </select>
       </div>
 
-      <div className="flex gap-2 w-full">
+      {/* Actions */}
+      <div className="flex gap-3 w-full items-end h-[42px]">
         <button 
           onClick={onSave} 
-          className="flex-1 bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-emerald-700 transition-all flex items-center justify-center gap-1.5 h-[38px]"
+          disabled={isSubmitting || !formData.name}
+          className="flex-1 bg-slate-900 text-white px-4 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-md disabled:opacity-70 h-full"
         >
-           {editingId ? <Check size={14}/> : <PlusCircle size={14} />} 
-           {editingId ? 'Save Changes' : 'Save'}
+           {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : (editingId ? <Check size={14}/> : <PlusCircle size={14} />)} 
+           {editingId ? 'Save' : 'Add Node'}
         </button>
+        
         {editingId && (
           <button 
             onClick={onCancel} 
-            className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 rounded-xl transition-all h-[38px] flex items-center justify-center border border-slate-200"
+            disabled={isSubmitting}
+            className="px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-800 rounded-xl transition-all h-full flex items-center justify-center border border-slate-200 shadow-sm disabled:opacity-50"
             title="Cancel Edit"
           >
             <X size={14}/>
