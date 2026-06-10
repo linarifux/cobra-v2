@@ -8,6 +8,7 @@ import CustomerDetailsPage from './pages/CustomerDetailsPage';
 import EditCustomerDetailsPage from './pages/EditCustomerDetailsPage';
 import DivisionsPage from './pages/DivisionsPage';
 import InventoryPage from './pages/InventoryPage';
+import InventoryDetailPage from './pages/InventoryDetailPage';
 import CategoryPage from './pages/CategoryPage';
 import ReceivingOrders from './pages/ReceivingOrders';
 import ReceivingOrderDetail from './pages/ReceivingOrderDetail';
@@ -36,7 +37,7 @@ export default function App() {
           {/* Updated Inventory Architecture Routes */}
           <Route path="inventory">
             <Route index element={<InventoryPage />} />
-            <Route path=":inventoryId" element={<InventoryPage />} />
+            <Route path=":inventoryId" element={<InventoryDetailPage />} />
           </Route>
           
           <Route path="/categories" element={<CategoryPage />} />

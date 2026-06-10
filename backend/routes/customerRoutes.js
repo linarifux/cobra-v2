@@ -8,7 +8,14 @@ import {
 } from '../controllers/customerController.js';
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
+import divisionRouter from './divisionRoutes.js';
+import inventoryRouter from './inventoryRoutes.js';
+
 const router = express.Router();
+
+// Redirect nested requests
+router.use('/:customerId/divisions', divisionRouter);
+router.use('/:customerId/inventory', inventoryRouter);
 
 // 1. Require a valid login token for ALL customer routes
 // router.use(protect); 

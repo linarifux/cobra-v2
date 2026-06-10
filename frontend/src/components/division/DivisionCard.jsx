@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, Package, Tag, Edit2, Trash2, ToggleLeft, ToggleRight, Check, X } from 'lucide-react';
+import { User, Package, Tag, Edit2, Trash2, ToggleLeft, ToggleRight, Check, X, Building } from 'lucide-react';
 
 export default function DivisionCard({ 
   div, 
@@ -7,6 +7,7 @@ export default function DivisionCard({
   editFormData, 
   setEditFormData, 
   staffList, 
+  customersList,
   onStartEdit, 
   onCancelEdit, 
   onSaveEdit, 
@@ -19,22 +20,36 @@ export default function DivisionCard({
         {isEditing ? (
           <div className="space-y-4 mb-4">
             <div>
-              <label className="text-[9px] font-black uppercase text-slate-400 pl-1 mb-1 block tracking-wider">Internal Code</label>
-              <input 
-                type="text"
-                value={editFormData.code}
-                onChange={e => setEditFormData({...editFormData, code: e.target.value})}
-                className="w-full px-3 py-2 bg-white/60 border border-slate-200 rounded-xl text-xs font-mono font-bold uppercase outline-none focus:ring-2 focus:ring-brand-gold/20 focus:border-brand-gold transition-all"
-              />
+              <label className="text-[9px] font-black uppercase text-slate-400 pl-1 mb-1 block tracking-wider">Assigned Customer</label>
+              <select 
+                value={editFormData.customer}
+                onChange={e => setEditFormData({...editFormData, customer: e.target.value})}
+                className="w-full px-3 py-2 bg-white/60 border border-slate-200 rounded-xl text-xs outline-none font-semibold focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 cursor-pointer"
+              >
+                {customersList.map(cust => (
+                  <option key={cust._id} value={cust._id}>{cust.customerName}</option>
+                ))}
+              </select>
             </div>
-            <div>
-              <label className="text-[9px] font-black uppercase text-slate-400 pl-1 mb-1 block tracking-wider">Division Name</label>
-              <input 
-                type="text"
-                value={editFormData.name}
-                onChange={e => setEditFormData({...editFormData, name: e.target.value})}
-                className="w-full px-3 py-2 bg-white/60 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-brand-gold/20 focus:border-brand-gold transition-all"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[9px] font-black uppercase text-slate-400 pl-1 mb-1 block tracking-wider">Internal Code</label>
+                <input 
+                  type="text"
+                  value={editFormData.code}
+                  onChange={e => setEditFormData({...editFormData, code: e.target.value})}
+                  className="w-full px-3 py-2 bg-white/60 border border-slate-200 rounded-xl text-xs font-mono font-bold uppercase outline-none focus:ring-2 focus:ring-brand-gold/20 focus:border-brand-gold transition-all"
+                />
+              </div>
+              <div>
+                <label className="text-[9px] font-black uppercase text-slate-400 pl-1 mb-1 block tracking-wider">Division Name</label>
+                <input 
+                  type="text"
+                  value={editFormData.name}
+                  onChange={e => setEditFormData({...editFormData, name: e.target.value})}
+                  className="w-full px-3 py-2 bg-white/60 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-brand-gold/20 focus:border-brand-gold transition-all"
+                />
+              </div>
             </div>
           </div>
         ) : (
@@ -52,9 +67,22 @@ export default function DivisionCard({
         )}
 
         <div className="space-y-3 pt-4 border-t border-slate-200/50 text-xs text-slate-600">
+          
           <div className="flex items-center gap-2.5 font-medium min-h-[32px]">
             <div className="w-6 h-6 rounded-lg bg-brand-gold/10 flex items-center justify-center shrink-0 border border-brand-gold/20">
-              <User size={12} className="text-brand-gold" />
+              <Building size={12} className="text-brand-gold" />
+            </div>
+            <span className="w-full truncate flex items-center">
+              <span className="text-slate-400 font-bold mr-1 shrink-0">Client:</span>
+              <strong className="text-slate-900 font-black truncate bg-white/60 border border-slate-200/60 px-2 py-0.5 rounded-lg text-[10px] shadow-sm ml-1">
+                {div.customerName}
+              </strong>
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2.5 font-medium min-h-[32px]">
+            <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center shrink-0 border border-slate-200">
+              <User size={12} className="text-slate-400" />
             </div>
             <span className="w-full truncate">
               <span className="text-slate-400 font-bold mr-1">Head:</span>
@@ -64,6 +92,7 @@ export default function DivisionCard({
                   onChange={e => setEditFormData({...editFormData, manager: e.target.value})}
                   className="px-2 py-1 bg-white/60 border border-slate-200 rounded-lg text-xs outline-none font-semibold focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 cursor-pointer"
                 >
+                  <option value="">Unassigned</option>
                   {staffList.map(member => (
                     <option key={member.id} value={member.name}>{member.name}</option>
                   ))}
@@ -113,7 +142,7 @@ export default function DivisionCard({
             <button 
               type="button"
               onClick={() => onToggleStatus(div.id)}
-              className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-900 transition-colors bg-white/40 px-2.5 py-1.5 rounded-xl hover:bg-white"
+              className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-900 transition-colors bg-white/40 px-2.5 py-1.5 rounded-xl hover:bg-white shadow-sm border border-transparent hover:border-slate-200"
             >
               {div.status === 'Active' ? (
                 <>

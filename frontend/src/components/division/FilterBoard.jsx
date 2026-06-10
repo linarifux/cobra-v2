@@ -8,10 +8,13 @@ export default function FilterBoard({
   setStatusFilter, 
   managerFilter, 
   setManagerFilter, 
+  customerFilter,
+  setCustomerFilter,
   clearFilters, 
-  staffList 
+  staffList,
+  customersList 
 }) {
-  const isFiltered = statusFilter !== 'All' || managerFilter !== 'All' || searchQuery !== '';
+  const isFiltered = statusFilter !== 'All' || managerFilter !== 'All' || customerFilter !== 'All' || searchQuery !== '';
 
   return (
     <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-4 rounded-3xl flex flex-col lg:flex-row items-center gap-4 shadow-sm transition-all duration-300">
@@ -22,7 +25,7 @@ export default function FilterBoard({
       </div>
 
       {/* Search Input */}
-      <div className="relative flex-1 w-full">
+      <div className="relative flex-1 w-full min-w-[200px]">
         <Search size={16} className="absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
         <input 
           type="text"
@@ -36,9 +39,23 @@ export default function FilterBoard({
       {/* Filters & Actions */}
       <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full lg:w-auto">
         
+        {/* Customer Filter */}
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 hidden lg:inline">Customer:</span>
+          <select 
+            value={customerFilter}
+            onChange={(e) => setCustomerFilter(e.target.value)}
+            className="w-full sm:w-auto bg-white/60 border border-slate-200 rounded-xl px-3 py-2 text-slate-700 outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 font-semibold text-xs cursor-pointer transition-all"
+          >
+            <option value="All">All Customers</option>
+            {customersList.map((cust) => (
+              <option key={cust._id} value={cust._id}>{cust.customerName}</option>
+            ))}
+          </select>
+        </div>
+
         {/* Status Filter */}
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 hidden sm:inline">Status:</span>
           <select 
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
@@ -47,21 +64,6 @@ export default function FilterBoard({
             <option value="All">All Statuses</option>
             <option value="Active">Active</option>
             <option value="Inactive">Inactive</option>
-          </select>
-        </div>
-
-        {/* Manager Filter */}
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 hidden sm:inline">Manager:</span>
-          <select 
-            value={managerFilter}
-            onChange={(e) => setManagerFilter(e.target.value)}
-            className="w-full sm:w-auto bg-white/60 border border-slate-200 rounded-xl px-3 py-2 text-slate-700 outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 font-semibold text-xs cursor-pointer transition-all"
-          >
-            <option value="All">All Managers</option>
-            {staffList.map((staffMember) => (
-              <option key={staffMember.id} value={staffMember.name}>{staffMember.name}</option>
-            ))}
           </select>
         </div>
         

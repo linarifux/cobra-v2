@@ -14,6 +14,12 @@ const divisionSchema = new mongoose.Schema(
       trim: true,
       uppercase: true, // Automatically converts inputs like "div-nas" to "DIV-NAS"
     },
+    // NEW: The Relational Link to Customer
+    customer: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Customer',
+      required: [true, 'A division must belong to a customer'],
+    },
     status: {
       type: String,
       enum: ['Active', 'Inactive'],
@@ -24,5 +30,8 @@ const divisionSchema = new mongoose.Schema(
     timestamps: true 
   }
 );
+
+// Add an index to improve read performance when querying divisions for a specific customer
+divisionSchema.index({ customer: 1 });
 
 export default mongoose.model('Division', divisionSchema);

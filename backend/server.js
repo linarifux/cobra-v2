@@ -15,7 +15,7 @@ import authRoutes from './routes/authRoutes.js';
 import customerRoutes from './routes/customerRoutes.js';
 import divisionRoutes from './routes/divisionRoutes.js';
 import categoryRoutes from './routes/categoryRoutes.js';
-
+import inventoryRoutes from './routes/inventoryRoutes.js';
 
 
 // 1. Initialize Database Connection
@@ -43,7 +43,7 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/customers', customerRoutes);
 app.use('/api/v1/divisions', divisionRoutes);
 app.use('/api/v1/categories', categoryRoutes); 
-
+app.use('/api/v1/inventory', inventoryRoutes);
 // 5. Unhandled Routes (404 handler)
 // app.all('*', (req, res, next) => {
 //   next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
