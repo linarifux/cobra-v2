@@ -11,6 +11,7 @@ import { fetchInventory, createInventory, updateInventory, deleteInventory } fro
 import { fetchCustomers } from '../store/slices/customerSlice';
 import { fetchDivisions } from '../store/slices/divisionSlice';
 import { fetchCategories } from '../store/slices/categorySlice';
+import { fetchLocations } from '../store/slices/locationSlice';
 
 export default function InventoryPage() {
   const navigate = useNavigate();
@@ -21,6 +22,7 @@ export default function InventoryPage() {
   const { items: apiCustomers = [], status: custStatus } = useSelector(state => state.customers || {});
   const { items: apiDivisions = [], status: divStatus } = useSelector(state => state.divisions || {});
   const { items: apiCategories = [], status: catStatus } = useSelector(state => state.categories || {});
+  const { items: apiLocations = [], status: locStatus } = useSelector(state => state.locations || {});
 
   // Load external collections on mount
   useEffect(() => {
@@ -28,7 +30,8 @@ export default function InventoryPage() {
     if (custStatus === 'idle') dispatch(fetchCustomers());
     if (divStatus === 'idle') dispatch(fetchDivisions());
     if (catStatus === 'idle') dispatch(fetchCategories());
-  }, [invStatus, custStatus, divStatus, catStatus, dispatch]);
+    if (locStatus === 'idle') dispatch(fetchLocations());
+  }, [invStatus, custStatus, divStatus, catStatus, locStatus, dispatch]);
 
   const [showFormPanel, setShowFormPanel] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -54,10 +57,11 @@ export default function InventoryPage() {
         ...prev,
         customer: prev.customer || apiCustomers[0]?._id || '',
         division: prev.division || apiDivisions[0]?._id || '',
-        category: prev.category || apiCategories[0]?._id || ''
+        category: prev.category || apiCategories[0]?._id || '',
+        location: prev.location || apiLocations[0]?.designation || ''
       }));
     }
-  }, [apiCustomers, apiDivisions, apiCategories, showFormPanel, isEditMode]);
+  }, [apiCustomers, apiDivisions, apiCategories, apiLocations, showFormPanel, isEditMode]);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -76,7 +80,7 @@ export default function InventoryPage() {
       customer: apiCustomers[0]?._id || '', 
       division: apiDivisions[0]?._id || '',
       category: apiCategories[0]?._id || '', 
-      location: 'Warehouse Alpha - A3', 
+      location: apiLocations[0]?.designation || '', 
       price: 0, available: 0, onOrder: 0, minThreshold: 20
     });
     setShowFormPanel(true);
@@ -86,7 +90,6 @@ export default function InventoryPage() {
   const openEditMode = (item) => {
     setIsEditMode(true);
     setEditingId(item.id);
-    // Crucial Fix: Map the string IDs back to the form so the dropdowns highlight the correct value
     setFormData({ 
       code: item.code,
       desc: item.desc,
@@ -116,7 +119,7 @@ export default function InventoryPage() {
       customer: formData.customer,
       divisions: [formData.division], 
       categories: [formData.category], 
-      locationCoordinates: formData.location,
+      locationCoordinates: formData.location, // Passes the string designation to the backend
       unitCost: Number(formData.price),
       unitsOnHand: Number(formData.available),
       pipelineSupply: Number(formData.onOrder),
@@ -167,7 +170,7 @@ export default function InventoryPage() {
       divisionId: item.divisions?.[0]?._id || '',
       category: item.categories?.[0]?.categoryName || 'Unassigned',
       categoryId: item.categories?.[0]?._id || '',
-      location: item.locationCoordinates || 'Unassigned',
+      location: item.locationCoordinates || 'Unassigned Facility',
       price: item.unitCost || 0,
       available: item.unitsOnHand || 0,
       onOrder: item.pipelineSupply || 0,
@@ -273,9 +276,20 @@ export default function InventoryPage() {
               </select>
             </div>
 
+            {/* Dynamic Location Select mapped to API */}
             <div>
               <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Logistics Vault Location</label>
-              <input type="text" placeholder="e.g. Warehouse Alpha - A3" value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 h-[34px]" disabled={isSubmitting}/>
+              <select 
+                value={formData.location} 
+                onChange={e => setFormData({...formData, location: e.target.value})} 
+                disabled={isSubmitting || locStatus === 'loading'} 
+                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 h-[34px] cursor-pointer"
+              >
+                <option value="" disabled>Select vault location...</option>
+                {apiLocations.map(loc => (
+                  <option key={loc._id} value={loc.designation}>{loc.designation}</option>
+                ))}
+              </select>
             </div>
 
             <div>

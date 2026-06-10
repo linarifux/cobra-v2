@@ -9,7 +9,7 @@ import {
 // Redux Actions
 import { fetchInventoryById, deleteInventory, clearCurrentInventoryItem } from '../store/slices/inventorySlice';
 
-export default function InventoryDetailPage() {
+export default function InventoryDetail() {
   // CRITICAL FIX: Extract 'inventoryId' to match the parameter defined in App.jsx routes
   const { inventoryId } = useParams();
   const navigate = useNavigate();
