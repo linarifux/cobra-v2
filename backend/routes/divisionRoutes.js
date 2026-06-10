@@ -21,7 +21,8 @@ router.route('/')
 
 router.route('/:id')
   .get(getDivision)
-  .put(restrictTo('admin', 'staff'), updateDivision)
+  // .put(restrictTo('admin', 'staff'), updateDivision)
+  .put(updateDivision)
   .delete(restrictTo('admin', 'staff'), deleteDivision);
 
 export default router;
