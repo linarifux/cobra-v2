@@ -28,7 +28,7 @@ const app = express();
 
 // 3. Security & Utility Middlewares
 app.use(helmet());
-app.use(cors({ origin: ["http://localhost:5173", "http://localhost:5000", "https://cobra-v2.vercel.app", "https://cobra-v2.netlify.app"] }));
+app.use(cors({ origin: ["http://localhost:5173", "http://localhost:5000", "https://cobra-v2.vercel.app", "https://cobra-v2.netlify.app", "https://dsm-mi-orders.netlify.app"] }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
