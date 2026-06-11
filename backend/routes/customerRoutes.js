@@ -11,6 +11,7 @@ import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 import divisionRouter from './divisionRoutes.js';
 import inventoryRouter from './inventoryRoutes.js';
 import orderRouter from './orderRoutes.js';
+import addressRouter from './addressRoutes.js';
 
 const router = express.Router();
 
@@ -18,6 +19,7 @@ const router = express.Router();
 router.use('/:customerId/divisions', divisionRouter);
 router.use('/:customerId/orders', orderRouter);
 router.use('/:customerId/inventory', inventoryRouter);
+router.use('/:customerId/addresses', addressRouter);
 
 // 1. Require a valid login token for ALL customer routes
 // router.use(protect); 
