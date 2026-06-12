@@ -24,8 +24,8 @@ export default function CustomerDetailsPage() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   
-  // Access Redux State
-  const { currentCustomer: customer, status, error } = useSelector((state) => state.customers);
+  // Safely Access Redux State with fallbacks
+  const { currentCustomer: customer, status, error } = useSelector((state) => state.customers || {});
   
   const [activeTab, setActiveTab] = useState('Overview');
   
@@ -33,10 +33,6 @@ export default function CustomerDetailsPage() {
   const [rates, setRates] = useState([
     { id: 1, name: 'Pick & Pack Fee', value: '0.75' },
     { id: 2, name: 'Storage Fee', value: '25.00' }
-  ]);
-
-  const [carriers, setCarriers] = useState([
-    { id: 1, name: 'UPS', service: 'Ground', account: '12345' }
   ]);
   
   const [divisions, setDivisions] = useState([
@@ -224,8 +220,6 @@ export default function CustomerDetailsPage() {
                customerData={customer}
                rates={rates} 
                setRates={setRates} 
-               carriers={carriers} 
-               setCarriers={setCarriers} 
                divisions={divisions} 
                setDivisions={setDivisions} 
              />

@@ -2,28 +2,25 @@ import express from 'express';
 import {
   createOrder,
   getAllOrders,
-  getOrderById,
+  getOrder,
   updateOrder,
   deleteOrder
 } from '../controllers/orderController.js';
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
-// mergeParams: true allows fetching orders under a specific customer route if needed
+// mergeParams: true allows access to :customerId from nested customerRoutes
 const router = express.Router({ mergeParams: true });
 
-// Require authentication for all order routes
-router.use(protect);
+// Uncomment when auth is ready
+// router.use(protect);
 
 router.route('/')
   .get(getAllOrders)
-  // E.g., Only admins and office staff can generate new B2B orders
-  .post(restrictTo('admin', 'staff'), createOrder);
+  .post(createOrder);
 
 router.route('/:id')
-  .get(getOrderById)
-  // Warehouse staff can update statuses/tracking
-  .put(restrictTo('admin', 'staff', 'warehouse'), updateOrder)
-  // Only admins can delete orders
-  .delete(restrictTo('admin'), deleteOrder);
+  .get(getOrder)
+  .put(updateOrder)
+  .delete(restrictTo('admin', 'staff'), deleteOrder);
 
 export default router;

@@ -93,7 +93,27 @@ export const updateCustomer = createAsyncThunk(
   }
 );
 
-// 5. Delete Customer
+// 5. Update Customer Carrier Assignments
+export const updateCustomerCarriersConfig = createAsyncThunk(
+  'customers/updateCustomerCarriersConfig',
+  async ({ id, carrierConfigurations }, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`${API_URL}/customers/${id}/carriers`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ carrierConfigurations })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Failed to update carrier configuration');
+      
+      return data.data.customer;
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+// 6. Delete Customer
 export const deleteCustomer = createAsyncThunk(
   'customers/deleteCustomer',
   async (id, { rejectWithValue }) => {
@@ -158,7 +178,6 @@ const customerSlice = createSlice({
 
       // --- Create ---
       .addCase(createCustomer.fulfilled, (state, action) => {
-        // Push the newly created customer to the top of the array
         state.items.unshift(action.payload);
       })
 
@@ -168,7 +187,17 @@ const customerSlice = createSlice({
         if (index !== -1) {
           state.items[index] = action.payload;
         }
-        // Also update currentCustomer if it's the one currently being viewed
+        if (state.currentCustomer && state.currentCustomer._id === action.payload._id) {
+          state.currentCustomer = action.payload;
+        }
+      })
+
+      // --- Update Customer Carriers ---
+      .addCase(updateCustomerCarriersConfig.fulfilled, (state, action) => {
+        const index = state.items.findIndex(c => c._id === action.payload._id);
+        if (index !== -1) {
+          state.items[index] = action.payload;
+        }
         if (state.currentCustomer && state.currentCustomer._id === action.payload._id) {
           state.currentCustomer = action.payload;
         }

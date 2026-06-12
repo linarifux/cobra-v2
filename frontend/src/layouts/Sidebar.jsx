@@ -32,8 +32,10 @@ const navigation = [
   { name: 'Divisions', href: '/divisions', icon: LayoutGrid },
   { name: 'Categories', href: '/categories', icon: Layers },
   { name: 'Locations', href: '/locations', icon: ShelvingUnit },
+  { name: 'Carriers', href: '/carriers', icon:  Box},
   { name: 'ShipStation', href: '/shipping', icon: Package },
   { name: 'Settings', href: '/settings', icon: Settings },
+  
 ];
 
 export default function Sidebar({ isOpen, setIsOpen }) {

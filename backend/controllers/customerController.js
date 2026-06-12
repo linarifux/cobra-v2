@@ -28,7 +28,8 @@ export const getAllCustomers = catchAsync(async (req, res, next) => {
 // @desc    Get a single customer by ID
 // @route   GET /api/v1/customers/:id
 export const getCustomer = catchAsync(async (req, res, next) => {
-  const customer = await Customer.findById(req.params.id);
+  const customer = await Customer.findById(req.params.id)
+    .populate('carrierConfigurations.carrier', 'carrierType accountName isActive'); // Pulls carrier details into the profile
 
   if (!customer) {
     return next(new AppError('No customer found with that ID', 404));
@@ -50,7 +51,27 @@ export const updateCustomer = catchAsync(async (req, res, next) => {
       new: true, // Returns the updated document
       runValidators: true // Ensures the new data meets schema requirements
     }
-  );
+  ).populate('carrierConfigurations.carrier', 'carrierType accountName isActive');
+
+  if (!customer) {
+    return next(new AppError('No customer found with that ID', 404));
+  }
+
+  res.status(200).json({
+    status: 'success',
+    data: { customer }
+  });
+});
+
+// @desc    Assign or update a carrier configuration for a specific customer
+// @route   PUT /api/v1/customers/:id/carriers
+export const updateCustomerCarriers = catchAsync(async (req, res, next) => {
+  // Overwrites the customer's carrier array with the newly configured selections
+  const customer = await Customer.findByIdAndUpdate(
+    req.params.id,
+    { carrierConfigurations: req.body.carrierConfigurations },
+    { new: true, runValidators: true }
+  ).populate('carrierConfigurations.carrier', 'carrierType accountName isActive');
 
   if (!customer) {
     return next(new AppError('No customer found with that ID', 404));

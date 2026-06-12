@@ -1,25 +1,16 @@
 import Order from '../models/Order.js';
+import Customer from '../models/Customer.js';
 import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 
 // @desc    Create a new order
 // @route   POST /api/v1/orders
+// @route   POST /api/v1/customers/:customerId/orders
 export const createOrder = catchAsync(async (req, res, next) => {
-  // If routing is nested via customer (e.g., POST /customers/:customerId/orders)
-  if (!req.body.customer && req.params.customerId) {
-    req.body.customer = req.params.customerId;
-  }
+  // If hitting the nested route, ensure the customer ID is attached to the body
+  if (!req.body.customer) req.body.customer = req.params.customerId;
 
-  // NOTE: In a full production system, you would also want to decrement the 
-  // Inventory pipelineSupply or unitsOnHand here inside a MongoDB Transaction.
-  
   const order = await Order.create(req.body);
-
-  // Populate data before returning to frontend
-  await order.populate([
-    { path: 'customer', select: 'customerName contactEmail' },
-    { path: 'items.inventoryItem', select: 'itemName sku' }
-  ]);
 
   res.status(201).json({
     status: 'success',
@@ -27,19 +18,18 @@ export const createOrder = catchAsync(async (req, res, next) => {
   });
 });
 
-// @desc    Get all orders
+// @desc    Get all orders (with optional customer filter)
 // @route   GET /api/v1/orders
 // @route   GET /api/v1/customers/:customerId/orders
 export const getAllOrders = catchAsync(async (req, res, next) => {
   let filter = {};
-  
-  if (req.params.customerId) {
-    filter = { customer: req.params.customerId };
-  }
+  // Support nested routing to get only one customer's orders
+  if (req.params.customerId) filter = { customer: req.params.customerId };
 
   const orders = await Order.find(filter)
-    .populate('customer', 'customerName')
-    .sort('-createdAt'); // Newest orders first
+    .populate('customer', 'customerName contactEmail')
+    .populate('shippingDetails.carrierId', 'carrierType accountName')
+    .sort('-createdAt');
 
   res.status(200).json({
     status: 'success',
@@ -48,15 +38,12 @@ export const getAllOrders = catchAsync(async (req, res, next) => {
   });
 });
 
-// @desc    Get single order by ID
+// @desc    Get a single order by ID
 // @route   GET /api/v1/orders/:id
-export const getOrderById = catchAsync(async (req, res, next) => {
+export const getOrder = catchAsync(async (req, res, next) => {
   const order = await Order.findById(req.params.id)
     .populate('customer', 'customerName contactEmail contactNumber address')
-    .populate({
-      path: 'items.inventoryItem',
-      select: 'itemName sku unitCost locationCoordinates'
-    });
+    .populate('shippingDetails.carrierId', 'carrierType accountName');
 
   if (!order) {
     return next(new AppError('No order found with that ID', 404));
@@ -68,7 +55,7 @@ export const getOrderById = catchAsync(async (req, res, next) => {
   });
 });
 
-// @desc    Update an order (e.g., Status change, add tracking)
+// @desc    Update an order (status, tracking, etc.)
 // @route   PUT /api/v1/orders/:id
 export const updateOrder = catchAsync(async (req, res, next) => {
   const order = await Order.findByIdAndUpdate(
@@ -76,10 +63,9 @@ export const updateOrder = catchAsync(async (req, res, next) => {
     req.body, 
     {
       new: true,
-      runValidators: true 
+      runValidators: true
     }
-  ).populate('customer', 'customerName')
-   .populate('items.inventoryItem', 'itemName sku');
+  ).populate('customer', 'customerName').populate('shippingDetails.carrierId', 'carrierType accountName');
 
   if (!order) {
     return next(new AppError('No order found with that ID', 404));

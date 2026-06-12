@@ -4,6 +4,8 @@ import divisionReducer from './slices/divisionSlice';
 import categoryReducer from './slices/categorySlice';
 import inventoryReducer from './slices/inventorySlice';
 import locationReducer from './slices/locationSlice';
+import carrierReducer from './slices/carrierSlice';
+import orderReducer from './slices/orderSlice';
 
 export const store = configureStore({
   reducer: {
@@ -12,5 +14,7 @@ export const store = configureStore({
     categories: categoryReducer,
     inventory: inventoryReducer,
     locations: locationReducer,
+    carriers: carrierReducer,
+    orders: orderReducer,
   },
 });

@@ -1,58 +1,106 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux';
 import { 
   ArrowLeft, Truck, MapPin, User, CreditCard, 
-  Download, Trash2, Edit2, Check, Plus, Minus,
-  MessageSquare, Mail, Phone, X, Calendar, Weight
+  Trash2, Edit2, Check, Plus, Minus,
+  MessageSquare, Mail, Phone, X, Weight, Loader2, Save
 } from 'lucide-react';
+import { fetchOrderById, updateOrder, clearCurrentOrder } from '../store/slices/orderSlice';
 
-// Mock data source for available inventory stock items
+// Placeholder mock data source for available inventory items
 const AVAILABLE_INVENTORIES = [
   { id: 'inv-1', name: 'Premium Leather Component', sku: 'PL-001', price: 47.50, weight: 2.50 },
   { id: 'inv-2', name: 'Chakku Carbon Steel Blade', sku: 'CH-202', price: 85.00, weight: 1.15 },
   { id: 'inv-3', name: 'Ergonomic Walnut Handle', sku: 'HD-044', price: 18.00, weight: 0.40 },
-  { id: 'inv-4', name: 'Heavy Duty Brass Rivets (Pack)', sku: 'RV-009', price: 6.25, weight: 0.15 }
+  { id: 'inv-4', name: 'Heavy Duty Brass Rivets (Pack)', sku: 'RV-009', price: 6.25, weight: 0.15 },
+  { id: 'inv-5', name: 'bala bla', sku: 'DSM-BLA', price: 45.00, weight: 1.50 } 
 ];
+
+// Helper to generate safe local IDs for new items
+const generateLocalId = () => `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
 export default function OrderDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [orderStatus, setOrderStatus] = useState('Awaiting Shipment');
+  const dispatch = useDispatch();
 
-  // State
-  const [shipping, setShipping] = useState({ carrier: 'UPS Ground', tracking: '1Z99928374', eta: '2026-05-24' });
-  const [dates, setDates] = useState({ order: '2026-05-18', pick: '2026-05-19', ship: '2026-05-20' });
-  const [address, setAddress] = useState({ name: 'Sarah Jenkins', street: '421 Maple Avenue', city: 'Brooklyn', state: 'NY', zip: '11201' });
-  const [items, setItems] = useState([{ id: 1, name: 'Premium Leather Component', sku: 'PL-001', qty: 1, price: 47.50, weight: 2.50 }]);
-  const [notes, setNotes] = useState([{ id: 1, text: 'Customer requested discreet packaging.' }]);
+  const { currentOrder, status } = useSelector((state) => state.orders || {});
+
+  // Local editable states mapped directly to the API JSON structure
+  const [orderStatus, setOrderStatus] = useState('Pending');
+  const [shipping, setShipping] = useState({ carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0 });
+  const [address, setAddress] = useState({ name: '', email: '', phone: '', street: '', line2: '', city: '', state: '', zip: '', country: '' });
+  const [items, setItems] = useState([]);
+  const [notes, setNotes] = useState('');
   
-  // Drawer and New Item State
+  // UI states
   const [fulfillOpen, setFulfillOpen] = useState(false);
   const [cartonCount, setCartonCount] = useState(1);
   const [newItem, setNewItem] = useState({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
-  const [editing, setEditing] = useState({ logistics: false, address: false, dates: false });
-  const [newNote, setNewNote] = useState('');
+  const [editing, setEditing] = useState({ logistics: false, address: false });
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Calculations
-  const subtotal = items.reduce((acc, item) => acc + (item.price * item.qty), 0);
-  const tax = subtotal * 0.08;
-  const total = subtotal + tax;
+  // Load Order Data
+  useEffect(() => {
+    if (id) dispatch(fetchOrderById(id));
+    return () => dispatch(clearCurrentOrder());
+  }, [id, dispatch]);
+
+  // Sync Redux API Data to Local State for editing
+  useEffect(() => {
+    if (currentOrder) {
+      setOrderStatus(currentOrder.status || 'Pending');
+      
+      // Match shippingDetails from JSON
+      setShipping({ 
+        carrierType: currentOrder.shippingDetails?.carrierType || '', 
+        serviceCode: currentOrder.shippingDetails?.serviceCode || '', 
+        trackingNumber: currentOrder.shippingDetails?.trackingNumber || '',
+        shippingCost: currentOrder.shippingDetails?.shippingCost || 0
+      });
+      
+      // Match shippingAddress from JSON (Added email & phone)
+      setAddress({ 
+        name: currentOrder.shippingAddress?.recipientName || '', 
+        email: currentOrder.shippingAddress?.email || '',
+        phone: currentOrder.shippingAddress?.phone || '',
+        street: currentOrder.shippingAddress?.line1 || '', 
+        line2: currentOrder.shippingAddress?.line2 || '', 
+        city: currentOrder.shippingAddress?.city || '', 
+        state: currentOrder.shippingAddress?.state || '', 
+        zip: currentOrder.shippingAddress?.zip || '',
+        country: currentOrder.shippingAddress?.country || 'USA'
+      });
+      
+      setNotes(currentOrder.notes || '');
+      
+      // Map backend items to frontend items
+      const mappedItems = currentOrder.items?.map((i) => ({
+        id: generateLocalId(), 
+        name: i.name,
+        sku: i.sku,
+        qty: i.quantity,
+        price: i.unitPrice,
+        weight: AVAILABLE_INVENTORIES.find(inv => inv.sku === i.sku)?.weight || 1.0 
+      })) || [];
+      setItems(mappedItems);
+    }
+  }, [currentOrder]);
+
+  // Financial Calculations
+  const subtotal = items.reduce((acc, item) => acc + (Number(item.price) * Number(item.qty)), 0);
+  const shippingCost = Number(shipping.shippingCost) || 0;
+  const tax = subtotal * 0.08; 
+  const grandTotal = subtotal + shippingCost + tax;
   
-  // Weight Calculation
-  const totalWeight = items.reduce((acc, item) => acc + (item.weight * item.qty), 0);
+  const totalWeight = items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
 
   const handleInventoryChange = (e) => {
     const selectedId = e.target.value;
     const matchedStock = AVAILABLE_INVENTORIES.find(inv => inv.id === selectedId);
-    
     if (matchedStock) {
-      setNewItem({
-        ...newItem,
-        name: matchedStock.name,
-        sku: matchedStock.sku,
-        price: matchedStock.price,
-        weight: matchedStock.weight
-      });
+      setNewItem({ ...newItem, name: matchedStock.name, sku: matchedStock.sku, price: matchedStock.price, weight: matchedStock.weight });
     } else {
       setNewItem({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
     }
@@ -64,25 +112,92 @@ export default function OrderDetailsPage() {
       ...items, 
       { 
         ...newItem, 
-        id: Date.now(), 
+        id: generateLocalId(), 
         qty: Number(newItem.qty), 
-        price: Number(newItem.price),
-        weight: Number(newItem.weight || 0)
+        price: Number(newItem.price), 
+        weight: Number(newItem.weight || 0) 
       }
     ]);
     setNewItem({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
   };
 
+  // Push changes to MongoDB
+  const handleSaveOrder = async () => {
+    setIsSaving(true);
+    
+    // Format strictly to match backend Schema
+    const payload = {
+      status: orderStatus,
+      notes: notes,
+      shippingAddress: {
+        recipientName: address.name,
+        email: address.email,
+        phone: address.phone,
+        line1: address.street,
+        line2: address.line2,
+        city: address.city,
+        state: address.state,
+        zip: address.zip,
+        country: address.country
+      },
+      shippingDetails: {
+        ...currentOrder.shippingDetails,
+        carrierType: shipping.carrierType,
+        serviceCode: shipping.serviceCode,
+        trackingNumber: shipping.trackingNumber,
+        shippingCost: Number(shipping.shippingCost)
+      },
+      items: items.map(item => ({
+        sku: item.sku,
+        name: item.name,
+        quantity: Number(item.qty),
+        unitPrice: Number(item.price),
+        totalPrice: Number(item.qty) * Number(item.price)
+      }))
+    };
+
+    try {
+      await dispatch(updateOrder({ id: currentOrder._id, updateData: payload })).unwrap();
+      setEditing({ logistics: false, address: false }); // Close edit inputs
+    } catch (error) {
+      alert(`Failed to save order: ${error}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Render loading state
+  if (status === 'loading' || !currentOrder) {
+    return (
+      <div className="h-full flex items-center justify-center min-h-[600px]">
+        <div className="flex flex-col items-center gap-3 text-slate-400">
+          <Loader2 className="animate-spin text-brand-gold" size={32} />
+          <p className="text-xs font-black uppercase tracking-widest">Loading Order Details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Safe Date parsing
+  const creationDate = currentOrder.createdAt 
+    ? new Date(currentOrder.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    : 'Unknown Date';
+
   return (
     <div className="h-full flex flex-col gap-5 animate-fade-in max-w-[1400px] mx-auto pb-10 px-4 box-border text-slate-900">
+      
       {/* Header */}
       <div className="flex items-center justify-between bg-white/30 p-3 rounded-2xl border border-white/50 backdrop-blur-xl transition-all duration-300 gap-4">
         <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors duration-200 shrink-0">
           <ArrowLeft size={16} /> <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">Back to Orders</span>
         </button>
         <div className="flex gap-2 shrink-0">
-          <button className="flex items-center gap-1.5 px-3 py-1.5 bg-white/50 rounded-xl text-[11px] font-bold border border-white/50 hover:bg-white transition-all duration-200">
-            <Download size={13} /> Packing Slip
+          <button 
+            onClick={handleSaveOrder}
+            disabled={isSaving}
+            className="flex items-center gap-1.5 px-4 py-1.5 bg-slate-900 text-white rounded-xl text-[11px] font-black shadow-lg hover:bg-slate-800 transition-all duration-200 disabled:opacity-70"
+          >
+            {isSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save Changes
           </button>
           <button 
             onClick={() => setFulfillOpen(true)}
@@ -96,58 +211,56 @@ export default function OrderDetailsPage() {
       {/* Slide-over Drawer */}
       <div className={`fixed inset-0 z-50 flex justify-end transition-opacity duration-300 ${fulfillOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
         <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setFulfillOpen(false)} />
-        <div className={`relative w-full max-w-sm bg-white/90 backdrop-blur-2xl border-l border-white/50 p-5 shadow-2xl h-full overflow-y-auto transition-transform duration-300 ease-in-out ${fulfillOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className={`relative w-full max-w-sm bg-white/95 backdrop-blur-2xl border-l border-white/50 p-5 shadow-2xl h-full overflow-y-auto transition-transform duration-300 ease-in-out ${fulfillOpen ? 'translate-x-0' : 'translate-x-full'}`}>
           <div className="flex justify-between items-center mb-6">
             <div className="flex items-center gap-3">
               <h2 className="font-black uppercase tracking-wider text-xs text-slate-800">Fulfillment Details</h2>
-              <div className="flex gap-1 bg-white/50 p-0.5 rounded-lg shrink-0">
-                <button onClick={() => setCartonCount(prev => Math.max(1, prev - 1))} className="hover:bg-white p-1 rounded transition-colors duration-200"><Minus size={12}/></button>
-                <button onClick={() => setCartonCount(prev => prev + 1)} className="hover:bg-white p-1 rounded transition-colors duration-200"><Plus size={12}/></button>
+              <div className="flex gap-1 bg-white/50 p-0.5 rounded-lg shrink-0 border border-slate-200">
+                <button onClick={() => setCartonCount(prev => Math.max(1, prev - 1))} className="hover:bg-white p-1 rounded transition-colors"><Minus size={12}/></button>
+                <button onClick={() => setCartonCount(prev => prev + 1)} className="hover:bg-white p-1 rounded transition-colors"><Plus size={12}/></button>
               </div>
             </div>
-            <button onClick={() => setFulfillOpen(false)} className="text-slate-500 hover:text-slate-900 transition-colors duration-200"><X size={18}/></button>
+            <button onClick={() => setFulfillOpen(false)} className="text-slate-500 hover:text-slate-900"><X size={18}/></button>
           </div>
           
           <div className="space-y-4">
-            {/* Dimensions */}
             <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
               {Array.from({ length: cartonCount }).map((_, index) => (
-                <div key={index} className="grid grid-cols-4 gap-2 bg-white/40 p-2 rounded-xl border border-white/60">
+                <div key={index} className="grid grid-cols-4 gap-2 bg-white/40 p-2 rounded-xl border border-slate-200">
                    <div className="col-span-1">
                       <label className="text-[9px] uppercase font-bold text-slate-400 mb-0.5 block truncate">Wgt</label>
-                      <input className="w-full bg-white p-1 rounded-md text-[11px] font-bold outline-none border border-slate-100 focus:border-slate-300 text-center" placeholder="lbs" />
+                      <input className="w-full bg-white p-1 rounded-md text-[11px] font-bold outline-none border border-slate-100 focus:border-brand-gold text-center" placeholder="lbs" />
                    </div>
                    <div className="col-span-1">
                       <label className="text-[9px] uppercase font-bold text-slate-400 mb-0.5 block truncate">D1</label>
-                      <input className="w-full bg-white p-1 rounded-md text-[11px] font-bold outline-none border border-slate-100 focus:border-slate-300 text-center" placeholder="in" />
+                      <input className="w-full bg-white p-1 rounded-md text-[11px] font-bold outline-none border border-slate-100 focus:border-brand-gold text-center" placeholder="in" />
                    </div>
                    <div className="col-span-1">
                       <label className="text-[9px] uppercase font-bold text-slate-400 mb-0.5 block truncate">D2</label>
-                      <input className="w-full bg-white p-1 rounded-md text-[11px] font-bold outline-none border border-slate-100 focus:border-slate-300 text-center" placeholder="in" />
+                      <input className="w-full bg-white p-1 rounded-md text-[11px] font-bold outline-none border border-slate-100 focus:border-brand-gold text-center" placeholder="in" />
                    </div>
                    <div className="col-span-1">
                       <label className="text-[9px] uppercase font-bold text-slate-400 mb-0.5 block truncate">D3</label>
-                      <input className="w-full bg-white p-1 rounded-md text-[11px] font-bold outline-none border border-slate-100 focus:border-slate-300 text-center" placeholder="in" />
+                      <input className="w-full bg-white p-1 rounded-md text-[11px] font-bold outline-none border border-slate-100 focus:border-brand-gold text-center" placeholder="in" />
                    </div>
                 </div>
               ))}
             </div>
 
-            <input className="w-full bg-white/70 p-2.5 rounded-xl text-xs font-bold border border-transparent focus:border-slate-200 outline-none transition-all duration-200" placeholder="Total Cartons" />
-            <input className="w-full bg-white/70 p-2.5 rounded-xl text-xs font-bold border border-transparent focus:border-slate-200 outline-none transition-all duration-200" placeholder="Shipping Cost" />
+            <input className="w-full bg-white border border-slate-200 p-2.5 rounded-xl text-xs font-bold outline-none focus:border-brand-gold" placeholder="Total Cartons" />
             
             <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none">
               <input type="checkbox" className="accent-brand-gold w-3.5 h-3.5" /> Residential?
             </label>
 
-            <select className="w-full bg-white/70 p-2.5 rounded-xl text-xs font-bold border border-transparent focus:border-slate-200 outline-none text-slate-700 transition-all duration-200">
-              <option>FedEx Small Box</option>
-              <option>UPS Envelope</option>
-              <option>Custom Box</option>
-            </select>
-
-            <button className="w-full bg-brand-gold text-white py-3 rounded-xl text-xs font-black hover:scale-[1.01] transition-all duration-200 mt-2 shadow-md">
-              Ship Now
+            <button 
+              onClick={() => {
+                setOrderStatus('Shipped');
+                setFulfillOpen(false);
+              }}
+              className="w-full bg-brand-gold text-white py-3 rounded-xl text-xs font-black shadow-md transition-all hover:bg-amber-500"
+            >
+              Simulate Fulfillment
             </button>
           </div>
         </div>
@@ -156,251 +269,170 @@ export default function OrderDetailsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
         {/* Main Content (2/3) */}
         <div className="lg:col-span-2 space-y-5 w-full min-w-0">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          
+          <div className="flex flex-wrap items-center gap-3 bg-white/40 border border-white/60 p-4 rounded-2xl shadow-sm">
+            <span className="text-sm font-black text-slate-800">Order: {currentOrder.orderNumber}</span>
+            <span className="px-2.5 py-1 text-[10px] uppercase font-black tracking-widest bg-slate-200 text-slate-600 rounded-md">
+              {creationDate}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             {/* Status Selector */}
-            <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-4 rounded-2xl flex flex-col justify-between min-h-[120px] transition-all duration-300">
+            <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-4 rounded-2xl flex flex-col justify-between min-h-[120px] transition-all duration-300 shadow-sm">
                <h3 className="text-[9px] font-black uppercase text-slate-400 mb-1.5">Order Status</h3>
-               <select value={orderStatus} onChange={(e) => setOrderStatus(e.target.value)} className="w-full bg-white/60 text-[11px] font-bold px-2.5 py-2 rounded-lg border border-slate-200 cursor-pointer outline-none transition-all duration-200">
-                    <option>Awaiting Shipment</option>
-                    <option>Packed</option>
-                    <option>Shipped</option>
-                    <option>Delivered</option>
+               <select 
+                 value={orderStatus} 
+                 onChange={(e) => setOrderStatus(e.target.value)} 
+                 className="w-full bg-white text-[11px] font-bold px-2.5 py-2 rounded-lg border border-slate-200 cursor-pointer outline-none focus:border-brand-gold transition-all"
+                >
+                    <option value="Pending">Pending</option>
+                    <option value="Processing">Processing</option>
+                    <option value="Ready to Ship">Ready to Ship</option>
+                    <option value="Shipped">Shipped</option>
+                    <option value="Delivered">Delivered</option>
+                    <option value="Cancelled">Cancelled</option>
+                    <option value="On Hold">On Hold</option>
                 </select>
             </div>
 
-            {/* Editable Timeline Dates */}
-            <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-4 rounded-2xl flex flex-col justify-between min-h-[120px] transition-all duration-300">
-               <div className="flex justify-between items-center mb-1.5">
-                <h3 className="text-[9px] font-black uppercase text-slate-400 flex items-center gap-1"><Calendar size={12}/> Timeline</h3>
-                <button onClick={() => setEditing({...editing, dates: !editing.dates})} className="text-slate-400 hover:text-slate-900 transition-colors duration-200 shrink-0">
-                    {editing.dates ? <Check size={14} className="text-emerald-600"/> : <Edit2 size={14}/>}
-                </button>
-               </div>
-               {editing.dates ? (
-                   <div className="space-y-1">
-                       <div className="flex items-center gap-1">
-                         <span className="text-[8px] uppercase font-bold text-slate-400 w-6 shrink-0">Ord</span>
-                         <input type="date" className="w-full bg-white/60 p-0.5 rounded text-[10px] font-semibold border border-transparent focus:border-slate-200 outline-none" value={dates.order} onChange={(e) => setDates({...dates, order: e.target.value})} />
-                       </div>
-                       <div className="flex items-center gap-1">
-                         <span className="text-[8px] uppercase font-bold text-slate-400 w-6 shrink-0">Pck</span>
-                         <input type="date" className="w-full bg-white/60 p-0.5 rounded text-[10px] font-semibold border border-transparent focus:border-slate-200 outline-none" value={dates.pick} onChange={(e) => setDates({...dates, pick: e.target.value})} />
-                       </div>
-                       <div className="flex items-center gap-1">
-                         <span className="text-[8px] uppercase font-bold text-slate-400 w-6 shrink-0">Shp</span>
-                         <input type="date" className="w-full bg-white/60 p-0.5 rounded text-[10px] font-semibold border border-transparent focus:border-slate-200 outline-none" value={dates.ship} onChange={(e) => setDates({...dates, ship: e.target.value})} />
-                       </div>
-                   </div>
-               ) : (
-                   <div className="text-[11px] font-bold text-slate-900 space-y-1">
-                       <div className="flex justify-between border-b border-slate-100/60 pb-0.5">
-                         <span className="text-slate-400 font-medium">Ordered:</span> 
-                         <span className="break-all pl-1">{dates.order || '—'}</span>
-                       </div>
-                       <div className="flex justify-between border-b border-slate-100/60 pb-0.5">
-                         <span className="text-slate-400 font-medium">Picked:</span> 
-                         <span className="break-all pl-1">{dates.pick || '—'}</span>
-                       </div>
-                       <div className="flex justify-between">
-                         <span className="text-slate-400 font-medium">Shipped:</span> 
-                         <span className={`break-all pl-1 ${dates.ship ? "text-brand-gold" : ""}`}>{dates.ship || '—'}</span>
-                       </div>
-                   </div>
-               )}
-            </div>
-
             {/* Logistics & Carriers */}
-            <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-4 rounded-2xl flex flex-col justify-between min-h-[120px] transition-all duration-300">
+            <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-4 rounded-2xl flex flex-col justify-between min-h-[120px] transition-all duration-300 shadow-sm">
                <div className="flex justify-between items-center mb-1.5">
-                <h3 className="text-[9px] font-black uppercase text-slate-400 flex items-center gap-1"><Truck size={12}/> Shipping</h3>
-                <button onClick={() => setEditing({...editing, logistics: !editing.logistics})} className="text-slate-400 hover:text-slate-900 transition-colors duration-200 shrink-0">
+                <h3 className="text-[9px] font-black uppercase text-slate-400 flex items-center gap-1"><Truck size={12}/> Shipping Method</h3>
+                <button onClick={() => setEditing({...editing, logistics: !editing.logistics})} className="text-slate-400 hover:text-brand-gold transition-colors duration-200 shrink-0">
                     {editing.logistics ? <Check size={14} className="text-emerald-600"/> : <Edit2 size={14}/>}
                 </button>
                </div>
                {editing.logistics ? (
-                   <div className="space-y-1">
-                       <input className="w-full bg-white/60 p-1 rounded text-xs border border-transparent focus:border-slate-200 outline-none" value={shipping.carrier} onChange={(e) => setShipping({...shipping, carrier: e.target.value})} />
-                       <input className="w-full bg-white/60 p-1 rounded text-xs border border-transparent focus:border-slate-200 outline-none" value={shipping.tracking} onChange={(e) => setShipping({...shipping, tracking: e.target.value})} />
+                   <div className="space-y-1.5">
+                       <input className="w-full bg-white p-1.5 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none" value={shipping.carrierType} onChange={(e) => setShipping({...shipping, carrierType: e.target.value})} placeholder="Carrier (e.g. FedEx)" />
+                       <input className="w-full bg-white p-1.5 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none" value={shipping.serviceCode} onChange={(e) => setShipping({...shipping, serviceCode: e.target.value})} placeholder="Service Code" />
+                       <input className="w-full bg-white p-1.5 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none" value={shipping.trackingNumber} onChange={(e) => setShipping({...shipping, trackingNumber: e.target.value})} placeholder="Tracking Number" />
+                       <input type="number" className="w-full bg-white p-1.5 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none" value={shipping.shippingCost} onChange={(e) => setShipping({...shipping, shippingCost: e.target.value})} placeholder="Shipping Cost ($)" />
                    </div>
                ) : (
                    <div className="text-xs font-bold text-slate-900 min-w-0">
-                       <p className="truncate">{shipping.carrier}</p>
-                       <p className="text-slate-500 text-[11px] break-all select-all font-mono mt-0.5" title={shipping.tracking}>{shipping.tracking}</p>
-                       <p className="text-emerald-600 mt-0.5 text-[11px] truncate">ETA: {shipping.eta}</p>
+                       <p className="truncate text-slate-800">{shipping.carrierType || 'No Carrier'} {shipping.serviceCode && `- ${shipping.serviceCode}`}</p>
+                       <p className="text-slate-500 font-medium mt-1">Cost: ${Number(shipping.shippingCost).toFixed(2)}</p>
+                       {shipping.trackingNumber && <p className="text-emerald-600 text-[10px] break-all font-mono mt-1 pt-1 border-t border-slate-200">{shipping.trackingNumber}</p>}
                    </div>
                )}
             </div>
 
             {/* Consolidated Total Weight Metrics Card */}
-            <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-4 rounded-2xl flex flex-col justify-between min-h-[120px] transition-all duration-300">
+            <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-4 rounded-2xl flex flex-col justify-between min-h-[120px] transition-all duration-300 shadow-sm">
                <h3 className="text-[9px] font-black uppercase text-slate-400 mb-1.5 flex items-center gap-1">
-                 <Weight size={12}/> Total Weight
+                 <Weight size={12}/> Est. Weight
                </h3>
-               <div className="text-xs font-bold text-slate-900">
-                   <p className="text-lg font-black text-slate-800 tracking-tight truncate">{totalWeight.toFixed(2)} lbs</p>
-                   <p className="text-slate-400 text-[9px] font-medium mt-0.5">Aggregated cargo</p>
+               <div className="text-xs font-bold text-slate-900 mt-auto">
+                   <p className="text-xl font-black text-slate-800 tracking-tight truncate">{totalWeight.toFixed(2)} lbs</p>
+                   <p className="text-slate-400 text-[9px] font-medium mt-0.5">Calculated from items</p>
                 </div>
             </div>
           </div>
 
           {/* Editable Shipping Address */}
-          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-4 rounded-2xl transition-all duration-300">
+          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-4 rounded-2xl transition-all duration-300 shadow-sm">
             <div className="flex justify-between items-center mb-3">
                 <h3 className="text-[9px] font-black uppercase text-slate-400 flex items-center gap-1.5"><MapPin size={12}/> Shipping Address</h3>
-                <button onClick={() => setEditing({...editing, address: !editing.address})} className="text-slate-400 hover:text-slate-900 transition-colors duration-200 shrink-0">
+                <button onClick={() => setEditing({...editing, address: !editing.address})} className="text-slate-400 hover:text-brand-gold transition-colors duration-200 shrink-0">
                     {editing.address ? <Check size={14} className="text-emerald-600"/> : <Edit2 size={14}/>}
                 </button>
             </div>
             {editing.address ? (
                 <div className="grid grid-cols-2 gap-2 transition-all duration-300">
-                    <input className="col-span-2 bg-white/60 p-1.5 rounded-lg text-xs border border-transparent focus:border-slate-200 outline-none" value={address.name} onChange={(e) => setAddress({...address, name: e.target.value})} placeholder="Name" />
-                    <input className="col-span-2 bg-white/60 p-1.5 rounded-lg text-xs border border-transparent focus:border-slate-200 outline-none" value={address.street} onChange={(e) => setAddress({...address, street: e.target.value})} placeholder="Street" />
-                    <input className="bg-white/60 p-1.5 rounded-lg text-xs border border-transparent focus:border-slate-200 outline-none" value={address.city} onChange={(e) => setAddress({...address, city: e.target.value})} placeholder="City" />
+                    <input className="col-span-2 bg-white p-2 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none" value={address.name} onChange={(e) => setAddress({...address, name: e.target.value})} placeholder="Recipient Name" />
+                    <input className="col-span-1 bg-white p-2 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none" value={address.email} onChange={(e) => setAddress({...address, email: e.target.value})} placeholder="Email Address" type="email" />
+                    <input className="col-span-1 bg-white p-2 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none" value={address.phone} onChange={(e) => setAddress({...address, phone: e.target.value})} placeholder="Phone Number" />
+                    <input className="col-span-2 bg-white p-2 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none" value={address.street} onChange={(e) => setAddress({...address, street: e.target.value})} placeholder="Address Line 1" />
+                    <input className="col-span-2 bg-white p-2 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none" value={address.line2} onChange={(e) => setAddress({...address, line2: e.target.value})} placeholder="Address Line 2 (Optional)" />
+                    <input className="bg-white p-2 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none" value={address.city} onChange={(e) => setAddress({...address, city: e.target.value})} placeholder="City" />
                     <div className="flex gap-2">
-                        <input className="w-full bg-white/60 p-1.5 rounded-lg text-xs border border-transparent focus:border-slate-200 outline-none min-w-0" value={address.state} onChange={(e) => setAddress({...address, state: e.target.value})} placeholder="ST" />
-                        <input className="w-full bg-white/60 p-1.5 rounded-lg text-xs border border-transparent focus:border-slate-200 outline-none min-w-0" value={address.zip} onChange={(e) => setAddress({...address, zip: e.target.value})} placeholder="Zip" />
+                        <input className="w-full bg-white p-2 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none min-w-0" value={address.state} onChange={(e) => setAddress({...address, state: e.target.value})} placeholder="ST" />
+                        <input className="w-full bg-white p-2 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none min-w-0" value={address.zip} onChange={(e) => setAddress({...address, zip: e.target.value})} placeholder="Zip" />
                     </div>
                 </div>
             ) : (
-                <div className="text-xs font-bold text-slate-900 space-y-0.5 break-words">
-                    <p>{address.name}</p>
-                    <p className="text-slate-500 font-medium">{address.street}</p>
-                    <p className="text-slate-500 font-medium">{address.city}, {address.state} {address.zip}</p>
+                <div className="text-sm font-bold text-slate-900 space-y-0.5 break-words">
+                    <p>{address.name || 'No recipient set'}</p>
+                    
+                    {(address.email || address.phone) && (
+                      <div className="py-1">
+                        {address.email && <p className="text-slate-500 font-medium text-[11px] flex items-center gap-1.5"><Mail size={11}/> {address.email}</p>}
+                        {address.phone && <p className="text-slate-500 font-medium text-[11px] flex items-center gap-1.5 mt-0.5"><Phone size={11}/> {address.phone}</p>}
+                      </div>
+                    )}
+
+                    <p className="text-slate-500 font-medium text-xs mt-1">{address.street || 'No street address'}</p>
+                    {address.line2 && <p className="text-slate-500 font-medium text-xs">{address.line2}</p>}
+                    <p className="text-slate-500 font-medium text-xs">
+                      {address.city ? `${address.city}, ` : ''}{address.state} {address.zip}
+                    </p>
                 </div>
             )}
           </div>
 
-          {/* Manifest Section without scrollbars */}
-          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-4 rounded-2xl transition-all duration-300">
+          {/* Manifest Section */}
+          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-4 rounded-2xl transition-all duration-300 shadow-sm">
             <h3 className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-1.5">Manifest Items</h3>
             
-            {/* Mobile Adaptive Layout - Block Stack layout (Hidden on desktop) */}
-            <div className="space-y-3 md:hidden">
-              {items.map((item) => (
-                <div key={item.id} className="bg-white/50 p-3 rounded-xl border border-white/40 space-y-2 relative">
-                  <button 
-                    onClick={() => setItems(items.filter(i => i.id !== item.id))} 
-                    className="absolute top-3 right-3 text-red-400 hover:text-red-600 transition-colors duration-200 p-1"
-                  >
-                    <Trash2 size={14}/>
-                  </button>
-                  <div>
-                    <p className="text-xs font-black text-slate-900 break-words pr-6">{item.name}</p>
-                    <p className="text-[10px] font-mono text-slate-500 break-all mt-0.5">{item.sku}</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 pt-1.5 text-xs border-t border-slate-100">
-                    <div>
-                      <span className="text-[9px] uppercase font-bold text-slate-400 block">Quantity</span>
-                      <span className="font-bold text-slate-800">{item.qty}</span>
-                    </div>
-                    <div>
-                      <span className="text-[9px] uppercase font-bold text-slate-400 block">Price</span>
-                      <span className="font-bold text-slate-800">${item.price.toFixed(2)}</span>
-                    </div>
-                    <div>
-                      <span className="text-[9px] uppercase font-bold text-slate-400 block">Unit Wt</span>
-                      <span className="font-medium text-slate-600">{item.weight.toFixed(2)} lbs</span>
-                    </div>
-                    <div>
-                      <span className="text-[9px] uppercase font-bold text-slate-400 block">Total Wt</span>
-                      <span className="font-black text-slate-700">{(item.weight * item.qty).toFixed(2)} lbs</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-              
-              {/* Add Item Form Block on Mobile */}
-              <div className="bg-white/30 p-3 rounded-xl border border-dashed border-slate-300 space-y-2">
-                <select 
-                  className="w-full bg-white/80 p-2 rounded-lg text-xs font-bold border border-slate-100 outline-none text-slate-700"
-                  value={AVAILABLE_INVENTORIES.find(i => i.name === newItem.name)?.id || ''}
-                  onChange={handleInventoryChange}
-                >
-                  <option value="">Select Inventory Item...</option>
-                  {AVAILABLE_INVENTORIES.map(inv => (
-                    <option key={inv.id} value={inv.id}>{inv.name}</option>
-                  ))}
-                </select>
-                <input className="w-full bg-slate-100/60 p-2 rounded-lg text-xs font-mono text-slate-500 border border-slate-100 outline-none select-all" placeholder="SKU" value={newItem.sku} readOnly disabled />
-                <div className="grid grid-cols-3 gap-1.5 items-center">
-                  <div>
-                    <label className="text-[8px] uppercase font-bold text-slate-400 block mb-0.5 pl-0.5">Qty</label>
-                    <input type="number" min="1" className="w-full bg-white/80 p-2 rounded-lg text-xs font-bold border border-slate-100 outline-none" placeholder="Qty" value={newItem.qty} onChange={(e) => setNewItem({...newItem, qty: e.target.value})} />
-                  </div>
-                  <div>
-                    <label className="text-[8px] uppercase font-bold text-slate-400 block mb-0.5 pl-0.5 text-right">Unit Wt</label>
-                    <div className="w-full bg-slate-100/80 p-2 rounded-lg text-xs font-bold border border-slate-100 text-slate-500 text-right select-none">
-                      {newItem.weight ? `${newItem.weight.toFixed(2)} lbs` : '—'}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[8px] uppercase font-bold text-slate-400 block mb-0.5 pl-0.5 text-right">Price ($)</label>
-                    <input type="number" step="0.01" min="0" className="w-full bg-white/80 p-2 rounded-lg text-xs font-bold border border-slate-100 outline-none text-right" placeholder="$" value={newItem.price || ''} onChange={(e) => setNewItem({...newItem, price: e.target.value})} />
-                  </div>
-                </div>
-                <button onClick={handleAddItem} className="w-full bg-slate-900 text-white py-2 rounded-lg hover:bg-slate-800 transition-all duration-200 shadow-sm font-bold text-xs flex items-center justify-center gap-1 mt-1">
-                  <Plus size={14}/> Add Manifest Item
-                </button>
-              </div>
-            </div>
-
-            {/* Desktop Structured View Grid (Hidden on mobile) */}
-            <div className="hidden md:block">
-              <table className="w-full table-fixed">
-                <thead className="text-left text-[9px] uppercase font-black text-slate-400 border-b border-white/20">
+            <div className="overflow-x-auto">
+              <table className="w-full table-fixed min-w-[600px]">
+                <thead className="text-left text-[9px] uppercase font-black text-slate-400 border-b border-white/40">
                   <tr>
-                    <th className="pb-2 w-[32%]">Item</th>
-                    <th className="pb-2 w-[16%]">SKU</th>
-                    <th className="pb-2 w-[8%] text-center">Qty</th>
-                    <th className="pb-2 w-[13%] text-right">Unit Wt</th>
-                    <th className="pb-2 w-[13%] text-right">Total Wt</th>
-                    <th className="pb-2 w-[13%] text-right">Price</th>
-                    <th className="pb-2 w-[5%]"></th>
+                    <th className="pb-3 w-[32%]">Item</th>
+                    <th className="pb-3 w-[16%]">SKU</th>
+                    <th className="pb-3 w-[8%] text-center">Qty</th>
+                    <th className="pb-3 w-[13%] text-right">Unit Wt</th>
+                    <th className="pb-3 w-[13%] text-right">Price</th>
+                    <th className="pb-3 w-[5%]"></th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/10 text-xs">
+                <tbody className="divide-y divide-white/40 text-xs">
                   {items.map((item) => (
-                    <tr key={item.id} className="transition-colors duration-200 hover:bg-white/10">
-                      <td className="py-2 font-bold text-slate-900 break-words pr-2" title={item.name}>{item.name}</td>
-                      <td className="py-2 font-mono text-[11px] text-slate-500 break-all pr-2" title={item.sku}>{item.sku}</td>
-                      <td className="py-2 font-bold text-center">{item.qty}</td>
-                      <td className="py-2 font-medium text-slate-500 text-right">{item.weight.toFixed(2)} lbs</td>
-                      <td className="py-2 font-black text-slate-700 text-right">{(item.weight * item.qty).toFixed(2)} lbs</td>
-                      <td className="py-2 font-bold text-right">${item.price.toFixed(2)}</td>
-                      <td className="py-2 text-right">
-                         <button onClick={() => setItems(items.filter(i => i.id !== item.id))} className="text-red-400 hover:text-red-600 transition-colors duration-200 p-1"><Trash2 size={13}/></button>
+                    <tr key={item.id} className="transition-colors duration-200 hover:bg-white/50">
+                      <td className="py-3 font-bold text-slate-900 break-words pr-2">{item.name}</td>
+                      <td className="py-3 font-mono text-[10px] text-slate-500 break-all pr-2">{item.sku}</td>
+                      <td className="py-3 font-bold text-center bg-slate-50/50 rounded-lg">{item.qty}</td>
+                      <td className="py-3 font-medium text-slate-500 text-right">{Number(item.weight).toFixed(2)} lbs</td>
+                      <td className="py-3 font-black text-slate-700 text-right">${Number(item.price).toFixed(2)}</td>
+                      <td className="py-3 text-right">
+                         <button onClick={() => setItems(items.filter(i => i.id !== item.id))} className="text-red-400 hover:text-red-600 transition-colors duration-200 p-1">
+                           <Trash2 size={14}/>
+                         </button>
                       </td>
                     </tr>
                   ))}
-                  {/* Add Row - Desktop */}
-                  <tr className="border-t border-white/40 bg-white/5">
-                    <td className="pt-2 pb-1 pr-1.5">
+                  
+                  {/* Add Row Component */}
+                  <tr className="border-t border-white/60 bg-white/20">
+                    <td className="pt-3 pb-2 pr-2">
                       <select 
-                        className="w-full bg-white/80 p-1 rounded text-xs font-bold border border-slate-100 outline-none text-slate-700 transition-colors duration-150"
+                        className="w-full bg-white p-2 rounded-lg text-xs font-bold border border-slate-200 outline-none focus:border-brand-gold text-slate-700"
                         value={AVAILABLE_INVENTORIES.find(i => i.name === newItem.name)?.id || ''}
                         onChange={handleInventoryChange}
                       >
-                        <option value="">Select Item...</option>
+                        <option value="">Select Item to Add...</option>
                         {AVAILABLE_INVENTORIES.map(inv => (
                           <option key={inv.id} value={inv.id}>{inv.name}</option>
                         ))}
                       </select>
                     </td>
-                    <td className="pt-2 pb-1 pr-1.5">
-                      <input className="w-full bg-slate-100/60 p-1 rounded text-xs font-mono text-slate-500 border border-slate-100 outline-none select-all" placeholder="SKU" value={newItem.sku} readOnly disabled />
+                    <td className="pt-3 pb-2 pr-2">
+                      <input className="w-full bg-slate-100 p-2 rounded-lg text-xs font-mono text-slate-500 border border-slate-200 outline-none" placeholder="SKU" value={newItem.sku} readOnly disabled />
                     </td>
-                    <td className="pt-2 pb-1 pr-1.5">
-                      <input type="number" min="1" className="w-full bg-white/80 p-1 rounded text-xs font-bold border border-slate-100 text-center outline-none" placeholder="1" value={newItem.qty} onChange={(e) => setNewItem({...newItem, qty: e.target.value})} />
+                    <td className="pt-3 pb-2 pr-2">
+                      <input type="number" min="1" className="w-full bg-white p-2 rounded-lg text-xs font-bold border border-slate-200 text-center outline-none focus:border-brand-gold" value={newItem.qty} onChange={(e) => setNewItem({...newItem, qty: e.target.value})} />
                     </td>
-                    <td className="pt-2 pb-1 pr-1.5">
-                      <input type="text" className="w-full bg-slate-100/80 p-1 rounded text-xs font-bold border border-slate-100 text-right text-slate-500 outline-none select-none" placeholder="0.00 lbs" value={newItem.weight ? `${newItem.weight.toFixed(2)} lbs` : ''} readOnly disabled />
+                    <td className="pt-3 pb-2 pr-2 text-right">
+                      <span className="text-slate-400 font-medium">{newItem.weight ? `${Number(newItem.weight).toFixed(2)} lbs` : '-'}</span>
                     </td>
-                    <td className="pt-2 pb-1 text-center text-xs font-bold text-slate-400 px-2 self-center">—</td>
-                    <td className="pt-2 pb-1 pr-1.5">
-                      <input type="number" step="0.01" min="0" className="w-full bg-white/80 p-1 rounded text-xs font-bold border border-slate-100 text-right outline-none" placeholder="0.00" value={newItem.price || ''} onChange={(e) => setNewItem({...newItem, price: e.target.value})} />
+                    <td className="pt-3 pb-2 pr-2">
+                      <input type="number" step="0.01" min="0" className="w-full bg-white p-2 rounded-lg text-xs font-bold border border-slate-200 text-right outline-none focus:border-brand-gold" placeholder="0.00" value={newItem.price || ''} onChange={(e) => setNewItem({...newItem, price: e.target.value})} />
                     </td>
-                    <td className="pt-2 pb-1 text-right">
-                      <button onClick={handleAddItem} className="bg-slate-900 text-white p-1 rounded hover:bg-slate-800 transition-all duration-200 shadow-sm"><Plus size={13}/></button>
+                    <td className="pt-3 pb-2 text-right">
+                      <button onClick={handleAddItem} className="bg-slate-900 text-white p-2 rounded-lg hover:bg-slate-800 transition-all shadow-sm"><Plus size={14}/></button>
                     </td>
                   </tr>
                 </tbody>
@@ -411,56 +443,58 @@ export default function OrderDetailsPage() {
 
         {/* Sidebar */}
         <div className="space-y-5 w-full min-w-0">
-          {/* Enhanced High-Contrast Customer Card */}
-          <div className="bg-slate-950 text-white p-5 rounded-2xl shadow-xl border border-slate-900 transition-all duration-300">
+          
+          {/* Enhanced Customer Card */}
+          <div className="bg-slate-950 text-white p-5 rounded-2xl shadow-xl border border-slate-900">
              <div className="flex justify-between items-start gap-4 mb-4 pb-3 border-b border-white/10">
                 <div className="min-w-0">
-                    <h3 className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-0.5">Customer</h3>
-                    <p className="font-black text-lg tracking-tight text-white truncate">Sarah Jenkins</p>
-                    <span className="inline-flex items-center text-[10px] font-bold bg-brand-gold/15 text-brand-gold px-2.5 py-0.5 rounded-full mt-1.5 border border-brand-gold/20">
-                      VIP Member
-                    </span>
+                    <h3 className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-0.5">Billed To</h3>
+                    <p className="font-black text-lg tracking-tight text-white truncate" title={currentOrder.customer?.customerName}>
+                      {currentOrder.customer?.customerName || 'Unknown Customer'}
+                    </p>
                 </div>
                 <div className="w-10 h-10 bg-brand-gold text-slate-950 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-brand-gold/20">
                   <User size={20} strokeWidth={2.5}/>
                 </div>
              </div>
              <div className="space-y-2 text-xs font-medium">
-                <div className="flex items-center gap-2.5 min-w-0 bg-white/5 p-2.5 rounded-xl border border-white/5 hover:bg-white/10 transition-colors duration-150">
-                  <Mail size={14} className="text-slate-400 shrink-0"/> 
-                  <span className="break-all select-all font-semibold tracking-wide text-slate-200">sarah.j@email.com</span>
-                </div>
-                <div className="flex items-center gap-2.5 min-w-0 bg-white/5 p-2.5 rounded-xl border border-white/5 hover:bg-white/10 transition-colors duration-150">
-                  <Phone size={14} className="text-slate-400 shrink-0"/> 
-                  <span className="truncate font-semibold tracking-wide text-slate-200">(555) 123-4567</span>
-                </div>
+                {currentOrder.customer?.contactEmail && (
+                  <div className="flex items-center gap-2.5 min-w-0 bg-white/5 p-2.5 rounded-xl border border-white/5">
+                    <Mail size={14} className="text-slate-400 shrink-0"/> 
+                    <span className="break-all select-all text-slate-200">{currentOrder.customer.contactEmail}</span>
+                  </div>
+                )}
+                {currentOrder.customer?.contactNumber && (
+                  <div className="flex items-center gap-2.5 min-w-0 bg-white/5 p-2.5 rounded-xl border border-white/5">
+                    <Phone size={14} className="text-slate-400 shrink-0"/> 
+                    <span className="truncate text-slate-200">{currentOrder.customer.contactNumber}</span>
+                  </div>
+                )}
              </div>
           </div>
 
-          {/* Internal Notes */}
+          {/* Notes Section */}
           <div className="bg-amber-50 border border-amber-200 p-5 rounded-2xl transition-all duration-300">
-             <h3 className="text-[9px] font-black uppercase text-amber-800 mb-3 flex items-center gap-1.5"><MessageSquare size={12}/> Internal Notes</h3>
-             <div className="space-y-1.5 mb-3 max-h-36 overflow-y-auto pr-1">
-               {notes.map(note => (
-                 <div key={note.id} className="flex justify-between items-start bg-amber-100/60 p-2 rounded-lg text-xs font-medium text-amber-900 gap-2 break-words">
-                   <span className="flex-1 min-w-0 break-words">{note.text}</span>
-                   <button onClick={() => setNotes(notes.filter(n => n.id !== note.id))} className="text-amber-500 hover:text-amber-700 transition-colors duration-200 p-0.5 shrink-0"><X size={12}/></button>
-                 </div>
-               ))}
-             </div>
-             <div className="flex gap-2 items-center">
-               <input className="flex-1 bg-white p-2 rounded-lg text-xs border border-amber-200 outline-none transition-all duration-200 min-w-0" value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder="Add internal note..." onKeyDown={(e) => { if(e.key === 'Enter') { setNotes([...notes, {id: Date.now(), text: newNote}]); setNewNote(''); } }} />
-               <button onClick={() => { if(!newNote.trim()) return; setNotes([...notes, {id: Date.now(), text: newNote}]); setNewNote(''); }} className="bg-amber-900 text-white p-2 rounded-lg hover:bg-amber-800 transition-all duration-200 shrink-0 shadow-sm"><Plus size={14}/></button>
-             </div>
+             <h3 className="text-[9px] font-black uppercase text-amber-800 mb-3 flex items-center gap-1.5"><MessageSquare size={12}/> Order Notes</h3>
+             <textarea 
+               value={notes} 
+               onChange={(e) => setNotes(e.target.value)}
+               className="w-full bg-white border border-amber-200 rounded-xl p-3 text-xs font-medium text-slate-700 focus:border-amber-400 outline-none resize-none min-h-[120px]"
+               placeholder="Add internal notes or customer requests here..."
+             />
           </div>
 
           {/* Payment Summary */}
-          <div className="bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-white/60 transition-all duration-300">
-             <h3 className="text-[9px] font-black uppercase text-slate-400 flex items-center gap-1.5 mb-3"><CreditCard size={12}/> Payment Summary</h3>
-             <div className="text-xs sm:text-sm font-bold space-y-2">
+          <div className="bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-white/60 shadow-sm">
+             <h3 className="text-[9px] font-black uppercase text-slate-400 flex items-center gap-1.5 mb-3"><CreditCard size={12}/> Order Summary</h3>
+             <div className="text-sm font-bold space-y-2">
                <div className="flex justify-between text-slate-500"><span>Subtotal</span> <span className="font-mono">${subtotal.toFixed(2)}</span></div>
-               <div className="flex justify-between text-slate-500"><span>Tax (8%)</span> <span className="font-mono">${tax.toFixed(2)}</span></div>
-               <div className="flex justify-between border-t pt-2 mt-1.5 border-slate-900/10 text-slate-900"><span>Total</span> <span className="font-mono text-sm sm:text-base font-black">${total.toFixed(2)}</span></div>
+               <div className="flex justify-between text-slate-500"><span>Shipping</span> <span className="font-mono">${shippingCost.toFixed(2)}</span></div>
+               <div className="flex justify-between text-slate-500"><span>Estimated Tax</span> <span className="font-mono">${tax.toFixed(2)}</span></div>
+               <div className="flex justify-between border-t pt-3 mt-2 border-slate-200 text-slate-900">
+                 <span>Total</span> 
+                 <span className="font-mono text-lg font-black text-blue-600">${grandTotal.toFixed(2)}</span>
+               </div>
              </div>
           </div>
         </div>

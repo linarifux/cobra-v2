@@ -13,6 +13,7 @@ import CategoryPage from './pages/CategoryPage';
 import ReceivingOrders from './pages/ReceivingOrders';
 import ReceivingOrderDetail from './pages/ReceivingOrderDetail';
 import WarehouseLocations from './pages/WarehouseLocations';
+import CarrierManagement from './pages/CarrierManagement';
 
 export default function App() {
   return (
@@ -48,7 +49,7 @@ export default function App() {
 
           {/* New Routes for Locations and Shipping */}
           <Route path="locations" element={<WarehouseLocations />} />
-          
+          <Route path="carriers" element={<CarrierManagement />} />
           <Route path="shipping" element={<div className="p-6">ShipStation Integration Module</div>} />
           <Route path="settings" element={<div className="p-6">Platform Settings</div>} />
         </Route>

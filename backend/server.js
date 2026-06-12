@@ -19,6 +19,7 @@ import inventoryRoutes from './routes/inventoryRoutes.js';
 import locationRoutes from './routes/locationRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
 import addressRoutes from './routes/addressRoutes.js';
+import carrierRoutes from './routes/carrierRoutes.js';
 
 
 // 1. Initialize Database Connection
@@ -50,6 +51,8 @@ app.use('/api/v1/inventory', inventoryRoutes);
 app.use('/api/v1/locations', locationRoutes);
 app.use('/api/v1/orders', orderRoutes);
 app.use('/api/v1/addresses', addressRoutes);
+app.use('/api/v1/carriers', carrierRoutes);
+
 
 // 5. Unhandled Routes (404 handler)
 // app.all('*', (req, res, next) => {

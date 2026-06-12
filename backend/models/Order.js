@@ -1,26 +1,12 @@
 import mongoose from 'mongoose';
 
-// Sub-schema for individual items in the order
 const orderItemSchema = new mongoose.Schema({
-  inventoryItem: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Inventory',
-    required: [true, 'An order item must reference an inventory asset']
-  },
-  quantity: {
-    type: Number,
-    required: [true, 'Quantity is required'],
-    min: [1, 'Quantity must be at least 1']
-  },
-  unitPrice: {
-    type: Number,
-    required: [true, 'Unit price at time of order is required']
-  },
-  totalPrice: {
-    type: Number,
-    required: true
-  }
-});
+  sku: { type: String, required: true },
+  name: { type: String, required: true },
+  quantity: { type: Number, required: true, min: 1 },
+  unitPrice: { type: Number, required: true, min: 0 },
+  totalPrice: { type: Number, required: true }
+}, { _id: false });
 
 const orderSchema = new mongoose.Schema(
   {
@@ -28,50 +14,46 @@ const orderSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Order number is required'],
       unique: true,
-      trim: true,
-      uppercase: true, // e.g., ORD-99382
+      trim: true
     },
     customer: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Customer',
-      required: [true, 'An order must belong to a customer']
-    },
-    referencePO: {
-      type: String,
-      trim: true,
-      default: 'N/A' // e.g., Purchase Order number provided by the B2B client
+      required: [true, 'Order must belong to a customer']
     },
     status: {
       type: String,
-      enum: ['Pending', 'Allocated', 'Processing', 'Shipped', 'Delivered', 'Cancelled', 'On Hold'],
+      enum: ['Pending', 'Processing', 'Ready to Ship', 'Shipped', 'Delivered', 'Cancelled', 'On Hold'],
       default: 'Pending'
     },
-    priority: {
-      type: String,
-      enum: ['Standard', 'Expedited', 'Urgent'],
-      default: 'Standard'
-    },
-    
-    // Financials & Line Items
     items: [orderItemSchema],
-    orderTotal: {
+    totalAmount: {
       type: Number,
       required: true,
       default: 0
     },
-
-    // Logistics
-    shippingDetails: {
-      carrier: { type: String, trim: true, default: 'Pending' },
-      trackingCode: { type: String, trim: true, default: 'Pending' },
-      shippingMethod: { type: String, trim: true, default: 'Standard Ground' },
-      estimatedDelivery: { type: Date }
+    shippingAddress: {
+      recipientName: { type: String, required: true },
+      email: { type: String, required: true },
+      phone: { type: String, required: true },
+      line1: { type: String, required: true },
+      line2: { type: String, default: '' },
+      city: { type: String, required: true },
+      state: { type: String, required: true },
+      zip: { type: String, required: true },
+      country: { type: String, default: 'US' }
     },
-    
-    assignedStaff: {
+    // Integration with the Carrier module
+    shippingDetails: {
+      carrierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Carrier' },
+      carrierType: { type: String }, // e.g., 'FedEx'
+      serviceCode: { type: String }, // e.g., 'FEDEX_GROUND'
+      trackingNumber: { type: String, default: '' },
+      shippingCost: { type: Number, default: 0 }
+    },
+    notes: {
       type: String,
-      trim: true,
-      default: 'Unassigned'
+      default: ''
     }
   },
   { 
@@ -79,21 +61,13 @@ const orderSchema = new mongoose.Schema(
   }
 );
 
-// Auto-calculate the order total before saving if items are modified
-orderSchema.pre('save', function (next) {
-  if (this.isModified('items')) {
-    this.orderTotal = this.items.reduce((sum, item) => {
-      // Ensure the line item total is also correct
-      item.totalPrice = item.quantity * item.unitPrice;
-      return sum + item.totalPrice;
-    }, 0);
+// FIX: Removed the `next` callback parameter entirely. 
+// Modern Mongoose natively supports synchronous hooks without requiring a callback,
+// preventing the "next is not a function" crash during creation.
+orderSchema.pre('save', function() {
+  if (this.items && this.items.length > 0) {
+    this.totalAmount = this.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0);
   }
-  next();
 });
-
-// Indexes for faster dashboard queries
-orderSchema.index({ customer: 1 });
-orderSchema.index({ status: 1 });
-orderSchema.index({ orderNumber: 1 });
 
 export default mongoose.model('Order', orderSchema);
