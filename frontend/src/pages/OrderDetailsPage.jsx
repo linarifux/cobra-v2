@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { 
@@ -6,18 +6,12 @@ import {
   Trash2, Edit2, Check, Plus, Minus,
   MessageSquare, Mail, Phone, X, Weight, Loader2, Save
 } from 'lucide-react';
+
+// Redux Actions
 import { fetchOrderById, updateOrder, clearCurrentOrder } from '../store/slices/orderSlice';
+import { fetchInventory } from '../store/slices/inventorySlice';
 
-// Placeholder mock data source for available inventory items
-const AVAILABLE_INVENTORIES = [
-  { id: 'inv-1', name: 'Premium Leather Component', sku: 'PL-001', price: 47.50, weight: 2.50 },
-  { id: 'inv-2', name: 'Chakku Carbon Steel Blade', sku: 'CH-202', price: 85.00, weight: 1.15 },
-  { id: 'inv-3', name: 'Ergonomic Walnut Handle', sku: 'HD-044', price: 18.00, weight: 0.40 },
-  { id: 'inv-4', name: 'Heavy Duty Brass Rivets (Pack)', sku: 'RV-009', price: 6.25, weight: 0.15 },
-  { id: 'inv-5', name: 'bala bla', sku: 'DSM-BLA', price: 45.00, weight: 1.50 } 
-];
-
-// Helper to generate safe local IDs for new items
+// Helper to generate safe local IDs for new items mapped in UI
 const generateLocalId = () => `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
 export default function OrderDetailsPage() {
@@ -25,7 +19,9 @@ export default function OrderDetailsPage() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
 
-  const { currentOrder, status } = useSelector((state) => state.orders || {});
+  // Redux States
+  const { currentOrder, status: orderLoadStatus } = useSelector((state) => state.orders || {});
+  const { items: inventoryData = [], status: inventoryStatus } = useSelector((state) => state.inventory || {});
 
   // Local editable states mapped directly to the API JSON structure
   const [orderStatus, setOrderStatus] = useState('Pending');
@@ -41,18 +37,31 @@ export default function OrderDetailsPage() {
   const [editing, setEditing] = useState({ logistics: false, address: false });
   const [isSaving, setIsSaving] = useState(false);
 
-  // Load Order Data
+  // 1. Fetch Order and Global Inventory on Mount
   useEffect(() => {
     if (id) dispatch(fetchOrderById(id));
+    if (inventoryStatus === 'idle') dispatch(fetchInventory());
+    
     return () => dispatch(clearCurrentOrder());
-  }, [id, dispatch]);
+  }, [id, inventoryStatus, dispatch]);
 
-  // Sync Redux API Data to Local State for editing
+  // 2. Format Inventory Data for the UI Dropdowns
+  const availableInventories = useMemo(() => {
+    console.log(inventoryData)
+    return inventoryData.map(inv => ({
+      id: inv._id,
+      name: inv.itemName || 'Unnamed Item',
+      sku: inv.sku,
+      price: inv.unitCost || 0,
+      weight: inv.weight || 0
+    }));
+  }, [inventoryData]);
+
+  // 3. Sync Redux Order Data to Local State for editing
   useEffect(() => {
     if (currentOrder) {
       setOrderStatus(currentOrder.status || 'Pending');
       
-      // Match shippingDetails from JSON
       setShipping({ 
         carrierType: currentOrder.shippingDetails?.carrierType || '', 
         serviceCode: currentOrder.shippingDetails?.serviceCode || '', 
@@ -60,7 +69,6 @@ export default function OrderDetailsPage() {
         shippingCost: currentOrder.shippingDetails?.shippingCost || 0
       });
       
-      // Match shippingAddress from JSON (Added email & phone)
       setAddress({ 
         name: currentOrder.shippingAddress?.recipientName || '', 
         email: currentOrder.shippingAddress?.email || '',
@@ -75,30 +83,50 @@ export default function OrderDetailsPage() {
       
       setNotes(currentOrder.notes || '');
       
-      // Map backend items to frontend items
-      const mappedItems = currentOrder.items?.map((i) => ({
-        id: generateLocalId(), 
-        name: i.name,
-        sku: i.sku,
-        qty: i.quantity,
-        price: i.unitPrice,
-        weight: AVAILABLE_INVENTORIES.find(inv => inv.sku === i.sku)?.weight || 1.0 
-      })) || [];
+      // Initialize items mapping (attempting to match stock immediately if loaded)
+      const mappedItems = currentOrder.items?.map((i) => {
+        const matchedStock = availableInventories.find(inv => inv.sku === i.sku);
+        return {
+          id: generateLocalId(), 
+          name: i.name,
+          sku: i.sku,
+          qty: i.quantity,
+          price: i.unitPrice,
+          weight: matchedStock?.weight || 0 
+        };
+      }) || [];
+      
       setItems(mappedItems);
     }
-  }, [currentOrder]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentOrder]); // Run only when currentOrder changes to prevent overwriting user edits
+
+  // 4. Backfill Weights if inventory data finishes loading AFTER the order maps
+  useEffect(() => {
+    if (availableInventories.length > 0 && items.length > 0) {
+      setItems(prevItems => prevItems.map(item => {
+        if (!item.weight || item.weight === 0) {
+          const matchedStock = availableInventories.find(inv => inv.sku === item.sku);
+          if (matchedStock) {
+            return { ...item, weight: matchedStock.weight };
+          }
+        }
+        return item;
+      }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableInventories]);
 
   // Financial Calculations
   const subtotal = items.reduce((acc, item) => acc + (Number(item.price) * Number(item.qty)), 0);
   const shippingCost = Number(shipping.shippingCost) || 0;
   const tax = subtotal * 0.08; 
   const grandTotal = subtotal + shippingCost + tax;
-  
   const totalWeight = items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
 
   const handleInventoryChange = (e) => {
     const selectedId = e.target.value;
-    const matchedStock = AVAILABLE_INVENTORIES.find(inv => inv.id === selectedId);
+    const matchedStock = availableInventories.find(inv => inv.id === selectedId);
     if (matchedStock) {
       setNewItem({ ...newItem, name: matchedStock.name, sku: matchedStock.sku, price: matchedStock.price, weight: matchedStock.weight });
     } else {
@@ -121,11 +149,10 @@ export default function OrderDetailsPage() {
     setNewItem({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
   };
 
-  // Push changes to MongoDB
+  // Push changes to MongoDB via Redux
   const handleSaveOrder = async () => {
     setIsSaving(true);
     
-    // Format strictly to match backend Schema
     const payload = {
       status: orderStatus,
       notes: notes,
@@ -167,7 +194,7 @@ export default function OrderDetailsPage() {
   };
 
   // Render loading state
-  if (status === 'loading' || !currentOrder) {
+  if (orderLoadStatus === 'loading' || !currentOrder) {
     return (
       <div className="h-full flex items-center justify-center min-h-[600px]">
         <div className="flex flex-col items-center gap-3 text-slate-400">
@@ -178,7 +205,6 @@ export default function OrderDetailsPage() {
     );
   }
 
-  // Safe Date parsing
   const creationDate = currentOrder.createdAt 
     ? new Date(currentOrder.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
     : 'Unknown Date';
@@ -409,12 +435,15 @@ export default function OrderDetailsPage() {
                   <tr className="border-t border-white/60 bg-white/20">
                     <td className="pt-3 pb-2 pr-2">
                       <select 
-                        className="w-full bg-white p-2 rounded-lg text-xs font-bold border border-slate-200 outline-none focus:border-brand-gold text-slate-700"
-                        value={AVAILABLE_INVENTORIES.find(i => i.name === newItem.name)?.id || ''}
+                        className="w-full bg-white p-2 rounded-lg text-xs font-bold border border-slate-200 outline-none focus:border-brand-gold text-slate-700 cursor-pointer transition-all"
+                        value={availableInventories.find(i => i.name === newItem.name)?.id || ''}
                         onChange={handleInventoryChange}
+                        disabled={inventoryStatus === 'loading'}
                       >
-                        <option value="">Select Item to Add...</option>
-                        {AVAILABLE_INVENTORIES.map(inv => (
+                        <option
+                        className="text-slate-400"
+                        value="">{inventoryStatus === 'loading' ? 'Loading Catalog...' : 'Select Item to Add...'}</option>
+                        {availableInventories.map(inv => (
                           <option key={inv.id} value={inv.id}>{inv.name}</option>
                         ))}
                       </select>
