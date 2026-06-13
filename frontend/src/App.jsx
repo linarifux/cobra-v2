@@ -24,6 +24,7 @@ import ReceivingOrderDetail from './pages/ReceivingOrderDetail';
 import WarehouseLocations from './pages/WarehouseLocations';
 import CarrierManagement from './pages/CarrierManagement';
 import AdminUsersPage from './pages/AdminUsersPage';
+import AccountSettingsPage from './pages/AccountSettingsPage';
 
 /**
  * ProtectedRoute Wrapper
@@ -92,7 +93,7 @@ export default function App() {
           <Route path="carriers" element={<CarrierManagement />} />
           <Route path="shipping" element={<div className="p-6">ShipStation Integration Module</div>} />
           <Route path="staff" element={<AdminUsersPage />} />
-          <Route path="settings" element={<div className="p-6">Platform Settings</div>} />
+          <Route path="settings" element={<AccountSettingsPage />} />
         </Route>
 
         {/* Catch-all redirect for 404s */}

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useDispatch, useSelector } from 'react-redux'; // Added Redux hooks
+import { useDispatch, useSelector } from 'react-redux';
 import { Menu, Transition } from '@headlessui/react';
 import {
   Search, Bell, User, ChevronDown, Settings, LogOut, HelpCircle,
@@ -8,9 +8,9 @@ import {
 } from 'lucide-react';
 
 // Import logout action
-import { logout } from '../store/slices/authSlice'; // Adjust path if necessary based on your folder structure
+import { logout } from '../store/slices/authSlice';
 
-// Mock Data - In a real app, this would come from an API or search index
+// Mock Data
 const SEARCH_INDEX = [
   { id: 1, title: 'Order #ORD-092', type: 'Order', icon: Package, path: '/orders/092' },
   { id: 2, title: 'Order #ORD-091', type: 'Order', icon: Package, path: '/orders/091' },
@@ -30,6 +30,8 @@ export default function Topbar() {
 
   // Extract the current logged-in user from Redux
   const { user } = useSelector((state) => state.auth || {});
+  console.log(user);
+  
 
   // Close search on Escape or Click Outside
   useEffect(() => {
@@ -181,12 +183,31 @@ export default function Topbar() {
               <div className="px-1 py-1 space-y-1">
                 <Menu.Item>
                   {({ active }) => (
-                    <button className={`${active ? 'bg-white shadow-sm ring-1 ring-slate-900/5 text-slate-900' : 'text-slate-600'} group flex w-full items-center rounded-xl px-3 py-2.5 text-sm font-bold transition-all duration-200`}>
+                    <button 
+                      onClick={() => handleNavigate('/settings')}
+                      className={`${active ? 'bg-white shadow-sm ring-1 ring-slate-900/5 text-slate-900' : 'text-slate-600'} group flex w-full items-center rounded-xl px-3 py-2.5 text-sm font-bold transition-all duration-200`}
+                    >
                       <Settings className={`mr-3 h-4 w-4 transition-all duration-300 ${active ? 'text-brand-gold rotate-90' : 'text-slate-400'}`} />
                       Account Settings
                     </button>
                   )}
                 </Menu.Item>
+                
+                {/* ONLY SHOW IF ADMIN OR SUPER_ADMIN */}
+                {['admin', 'super_admin'].includes(user?.role) && (
+                  <Menu.Item>
+                    {({ active }) => (
+                      <button 
+                        onClick={() => handleNavigate('/staff')}
+                        className={`${active ? 'bg-white shadow-sm ring-1 ring-slate-900/5 text-slate-900' : 'text-slate-600'} group flex w-full items-center rounded-xl px-3 py-2.5 text-sm font-bold transition-all duration-200`}
+                      >
+                        <Users className={`mr-3 h-4 w-4 transition-all duration-300 ${active ? 'text-brand-gold scale-110' : 'text-slate-400'}`} />
+                        User Management
+                      </button>
+                    )}
+                  </Menu.Item>
+                )}
+                
                 <Menu.Item>
                   {({ active }) => (
                     <button className={`${active ? 'bg-white shadow-sm ring-1 ring-slate-900/5 text-slate-900' : 'text-slate-600'} group flex w-full items-center rounded-xl px-3 py-2.5 text-sm font-bold transition-all duration-200`}>
