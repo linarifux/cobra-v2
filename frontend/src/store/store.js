@@ -1,4 +1,10 @@
 import { configureStore } from '@reduxjs/toolkit';
+
+// Auth & Users
+import authReducer from './slices/authSlice';
+import userReducer from './slices/userSlice';
+
+// App Data
 import customerReducer from './slices/customerSlice';
 import divisionReducer from './slices/divisionSlice';
 import categoryReducer from './slices/categorySlice';
@@ -9,6 +15,11 @@ import orderReducer from './slices/orderSlice';
 
 export const store = configureStore({
   reducer: {
+    // 1. Security & Access
+    auth: authReducer,
+    users: userReducer,
+    
+    // 2. Core Logistics Data
     customers: customerReducer,
     divisions: divisionReducer,
     categories: categoryReducer,

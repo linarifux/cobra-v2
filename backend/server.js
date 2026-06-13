@@ -20,7 +20,7 @@ import locationRoutes from './routes/locationRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
 import addressRoutes from './routes/addressRoutes.js';
 import carrierRoutes from './routes/carrierRoutes.js';
-
+import userRoutes from './routes/userRoutes.js';
 
 // 1. Initialize Database Connection
 connectDB();
@@ -29,8 +29,24 @@ connectDB();
 const app = express();
 
 // 3. Security & Utility Middlewares
-app.use(helmet());
-app.use(cors({ origin: ["http://localhost:5173", "http://localhost:5000", "https://cobra-v2.vercel.app", "https://cobra-v2.netlify.app", "https://dsm-mi-orders.netlify.app"] }));
+
+// FIX: Bulletproof Helmet config for local development with Vite
+app.use(helmet({
+  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
+  crossOriginResourcePolicy: { policy: "cross-origin" } // Prevents Helmet from blocking external images/assets
+}));
+
+app.use(cors({ 
+  origin: [
+    "http://localhost:5173", 
+    "http://localhost:5000", 
+    "https://cobra-v2.vercel.app", 
+    "https://cobra-v2.netlify.app", 
+    "https://dsm-mi-orders.netlify.app"
+  ],
+  credentials: true 
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -52,23 +68,18 @@ app.use('/api/v1/locations', locationRoutes);
 app.use('/api/v1/orders', orderRoutes);
 app.use('/api/v1/addresses', addressRoutes);
 app.use('/api/v1/carriers', carrierRoutes);
+app.use('/api/v1/users', userRoutes);
 
-
-// 5. Unhandled Routes (404 handler)
-// app.all('*', (req, res, next) => {
-//   next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
-// });
-
-// 6. Global Error Handler
+// 5. Global Error Handler
 app.use(globalErrorHandler);
 
-// 7. Start Server
+// 6. Start Server
 const PORT = process.env.PORT || 5000;
 const server = app.listen(PORT, () => {
-  console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+  console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
 });
 
-// 8. Handle Unhandled Rejections (e.g., bad database credentials)
+// 7. Handle Unhandled Rejections
 process.on('unhandledRejection', (err) => {
   console.error('UNHANDLED REJECTION! 💥 Shutting down...');
   console.error(err.name, err.message);

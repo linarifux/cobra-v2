@@ -1,56 +1,61 @@
-import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
+import User from '../models/User.js';
 import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 
 const signToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d'
   });
 };
 
-export const register = catchAsync(async (req, res, next) => {
-  const { name, email, password, role } = req.body;
-
-  const userExists = await User.findOne({ email });
-  if (userExists) return next(new AppError('Email already in use', 400));
-
-  // Security Note: In a true production app, you might want to strip 'role' from 
-  // public registrations to prevent someone from passing {"role": "admin"} in Postman.
-  // For internal apps where admins create accounts, passing 'role' is fine.
-  const user = await User.create({ name, email, password, role });
+const createSendToken = (user, statusCode, res) => {
   const token = signToken(user._id);
 
-  res.status(201).json({
+  // Remove password from output
+  user.password = undefined;
+
+  res.status(statusCode).json({
     status: 'success',
     token,
-    data: { 
-      user: { id: user._id, name: user.name, email: user.email, role: user.role } 
-    }
+    data: { user }
   });
+};
+
+// @desc    Login user (Automatically routes based on portal type)
+// @route   POST /api/v1/auth/login
+export const login = catchAsync(async (req, res, next) => {
+  const { email, password, portal } = req.body;
+
+  // 1. Check if email, password, and portal exist
+  if (!email || !password || !portal) {
+    return next(new AppError('Please provide email, password, and portal target', 400));
+  }
+
+  // 2. Check if user exists && password is correct (specifically for that portal)
+  const user = await User.findOne({ email, portal }).select('+password');
+
+  if (!user || !(await user.matchPassword(password, user.password))) {
+    return next(new AppError('Incorrect email or password for this portal', 401));
+  }
+
+  // 3. Check if account is active
+  if (!user.isActive) {
+    return next(new AppError('This account has been deactivated.', 403));
+  }
+
+  // 4. Send token
+  createSendToken(user, 200, res);
 });
 
-export const login = catchAsync(async (req, res, next) => {
-  const { email, password } = req.body;
-
-  if (!email || !password) {
-    return next(new AppError('Please provide email and password', 400));
-  }
-
-  // Find user and explicitly select the password since we hid it by default
-  const user = await User.findOne({ email }).select('+password');
-  
-  if (!user || !(await user.matchPassword(password, user.password))) {
-    return next(new AppError('Incorrect email or password', 401));
-  }
-
-  const token = signToken(user._id);
+// @desc    Get current logged in user
+// @route   GET /api/v1/auth/me
+export const getMe = catchAsync(async (req, res, next) => {
+  // req.user is injected by the `protect` middleware
+  const user = await User.findById(req.user._id).populate('customer', 'customerName status');
 
   res.status(200).json({
     status: 'success',
-    token,
-    data: {
-      user: { id: user._id, name: user.name, email: user.email, role: user.role }
-    }
+    data: { user }
   });
 });

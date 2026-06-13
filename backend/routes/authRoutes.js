@@ -1,9 +1,14 @@
 import express from 'express';
-import { register, login } from '../controllers/authController.js';
+import { login, getMe } from '../controllers/authController.js';
+import { protect } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
-router.post('/register', register);
+// Public routes
 router.post('/login', login);
+
+// Protected routes
+router.use(protect);
+router.get('/me', getMe);
 
 export default router;

@@ -1,10 +1,14 @@
 import { useState, useRef, useEffect, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux'; // Added Redux hooks
 import { Menu, Transition } from '@headlessui/react';
 import {
   Search, Bell, User, ChevronDown, Settings, LogOut, HelpCircle,
   Package, FileText, Users, Command
 } from 'lucide-react';
+
+// Import logout action
+import { logout } from '../store/slices/authSlice'; // Adjust path if necessary based on your folder structure
 
 // Mock Data - In a real app, this would come from an API or search index
 const SEARCH_INDEX = [
@@ -20,7 +24,12 @@ export default function Topbar() {
   const [results, setResults] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const searchRef = useRef(null);
+  
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+
+  // Extract the current logged-in user from Redux
+  const { user } = useSelector((state) => state.auth || {});
 
   // Close search on Escape or Click Outside
   useEffect(() => {
@@ -55,6 +64,12 @@ export default function Topbar() {
     navigate(path);
     setIsOpen(false);
     setQuery('');
+  };
+
+  // Securely terminate session and redirect
+  const handleLogout = () => {
+    dispatch(logout());
+    navigate('/login', { replace: true });
   };
 
   return (
@@ -112,7 +127,7 @@ export default function Topbar() {
         )}
       </div>
 
-      {/* Right Section (Kept for consistency) */}
+      {/* Right Section */}
       <div className="flex items-center space-x-3 sm:space-x-5 pl-4 sm:pl-6">
 
         {/* Notifications Button */}
@@ -139,11 +154,13 @@ export default function Topbar() {
                 <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700"></div>
               </div>
               <div className="hidden sm:flex flex-col items-start text-left">
-                <span className="text-sm font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-slate-800 to-slate-600 group-hover:from-slate-900 group-hover:to-brand-black leading-none tracking-wide transition-all">
-                  Operations Admin
+                {/* Dynamically display user's name */}
+                <span className="text-sm font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-slate-800 to-slate-600 group-hover:from-slate-900 group-hover:to-brand-black leading-none tracking-wide transition-all truncate max-w-[120px]">
+                  {user?.name || 'Administrator'}
                 </span>
+                {/* Dynamically display user's role, removing underscores */}
                 <span className="text-[10px] font-bold uppercase tracking-wider text-brand-gold mt-1 leading-none">
-                  System Manager
+                  {user?.role ? user.role.replace('_', ' ') : 'System Manager'}
                 </span>
               </div>
               <ChevronDown className="hidden sm:block h-4 w-4 text-slate-500 group-hover:text-slate-900 transition-colors duration-300" />
@@ -183,7 +200,10 @@ export default function Topbar() {
               <div className="px-1 py-1 mt-1">
                 <Menu.Item>
                   {({ active }) => (
-                    <button className={`${active ? 'bg-red-50 shadow-sm ring-1 ring-red-100 text-red-700' : 'text-red-500'} group flex w-full items-center rounded-xl px-3 py-2.5 text-sm font-bold transition-all duration-200`}>
+                    <button 
+                      onClick={handleLogout}
+                      className={`${active ? 'bg-red-50 shadow-sm ring-1 ring-red-100 text-red-700' : 'text-red-500'} group flex w-full items-center rounded-xl px-3 py-2.5 text-sm font-bold transition-all duration-200`}
+                    >
                       <LogOut className={`mr-3 h-4 w-4 transition-all duration-300 ${active ? 'text-red-600 -translate-x-1' : 'text-red-400'}`} />
                       Sign Out
                     </button>

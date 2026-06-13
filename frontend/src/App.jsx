@@ -1,5 +1,14 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useSelector } from 'react-redux';
+
+// Layouts
 import DashboardLayout from './layouts/DashboardLayout';
+
+// Auth Pages
+import AdminLoginPage from './pages/auth/AdminLoginPage';
+
+// Dashboard Pages
 import DashboardHome from './pages/DashboardHome';
 import OrdersPage from './pages/OrdersPage';
 import OrderDetailsPage from './pages/OrderDetailsPage';
@@ -14,16 +23,50 @@ import ReceivingOrders from './pages/ReceivingOrders';
 import ReceivingOrderDetail from './pages/ReceivingOrderDetail';
 import WarehouseLocations from './pages/WarehouseLocations';
 import CarrierManagement from './pages/CarrierManagement';
+import AdminUsersPage from './pages/AdminUsersPage';
+
+/**
+ * ProtectedRoute Wrapper
+ * Checks the Redux auth state. If the user doesn't have a valid session, 
+ * it securely redirects them to the login page.
+ */
+const ProtectedRoute = ({ children }) => {
+  const authState = useSelector((state) => state.auth);
+  const isAuthenticated = authState?.isAuthenticated;
+  
+  const location = useLocation();
+
+  if (!isAuthenticated) {
+    // Redirect to login but save the attempted URL
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  return children;
+};
 
 export default function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<DashboardLayout />}>
+        
+        {/* PUBLIC AUTH ROUTES */}
+        <Route path="/login" element={<AdminLoginPage />} />
+        
+        {/* PROTECTED DASHBOARD ROUTES */}
+        <Route 
+          path="/" 
+          element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }
+        >
+          {/* Default Dashboard Route */}
           <Route index element={<DashboardHome />} />
           
           <Route path="orders">
             <Route index element={<OrdersPage />} />
+            <Route path="new" element={<div className="p-6">Create Order Module</div>} /> 
             <Route path=":id" element={<OrderDetailsPage />} />
           </Route>
           
@@ -35,7 +78,6 @@ export default function App() {
           
           <Route path="/divisions" element={<DivisionsPage />} />
           
-          {/* Updated Inventory Architecture Routes */}
           <Route path="inventory">
             <Route index element={<InventoryPage />} />
             <Route path=":inventoryId" element={<InventoryDetailPage />} />
@@ -43,16 +85,19 @@ export default function App() {
           
           <Route path="/categories" element={<CategoryPage />} />
           
-          {/* Updated Receiving Routes */}
           <Route path="/receiving" element={<ReceivingOrders />} />
           <Route path="/receiving/:id" element={<ReceivingOrderDetail />} />
 
-          {/* New Routes for Locations and Shipping */}
           <Route path="locations" element={<WarehouseLocations />} />
           <Route path="carriers" element={<CarrierManagement />} />
           <Route path="shipping" element={<div className="p-6">ShipStation Integration Module</div>} />
+          <Route path="staff" element={<AdminUsersPage />} />
           <Route path="settings" element={<div className="p-6">Platform Settings</div>} />
         </Route>
+
+        {/* Catch-all redirect for 404s */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+
       </Routes>
     </Router>
   );

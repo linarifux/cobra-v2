@@ -1,10 +1,12 @@
 import jwt from 'jsonwebtoken';
+import User from '../models/User.js';
 import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
-import User from '../models/User.js';
 
+// 1. Protect routes (Verify token and inject User into request)
 export const protect = catchAsync(async (req, res, next) => {
   let token;
+
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     token = req.headers.authorization.split(' ')[1];
   }
@@ -13,28 +15,41 @@ export const protect = catchAsync(async (req, res, next) => {
     return next(new AppError('You are not logged in. Please log in to get access.', 401));
   }
 
+  // Verify token
   const decoded = jwt.verify(token, process.env.JWT_SECRET);
-  const currentUser = await User.findById(decoded.id);
 
+  // Check if user still exists
+  const currentUser = await User.findById(decoded.id);
   if (!currentUser) {
     return next(new AppError('The user belonging to this token no longer exists.', 401));
   }
 
-  // Attach the user to the request object so subsequent middlewares can use it
+  // Check if user is active/disabled
+  if (!currentUser.isActive) {
+    return next(new AppError('Your account has been deactivated. Contact support.', 403));
+  }
+
+  // Grant access to protected route
   req.user = currentUser;
   next();
 });
 
-// --- NEW ROLE MIDDLEWARE ---
-// Pass in allowed roles, e.g., restrictTo('admin', 'staff')
+// 2. Restrict to specific portals (e.g., Only 'admin' portal users can access this route)
+export const requirePortal = (portalType) => {
+  return (req, res, next) => {
+    if (req.user.portal !== portalType) {
+      return next(new AppError(`Access denied. This route requires ${portalType} portal access.`, 403));
+    }
+    next();
+  };
+};
+
+// 3. Restrict to specific roles (e.g., ['super_admin', 'admin'])
 export const restrictTo = (...roles) => {
   return (req, res, next) => {
-    // If the user's role is not in the array of allowed roles
     if (!roles.includes(req.user.role)) {
-      return next(new AppError('You do not have permission to perform this action', 403));
+      return next(new AppError('You do not have permission to perform this action.', 403));
     }
-    
-    // User is authorized, move to the next middleware/controller
     next();
   };
 };
