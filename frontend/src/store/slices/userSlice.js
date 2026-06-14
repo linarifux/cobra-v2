@@ -23,7 +23,6 @@ export const fetchUsers = createAsyncThunk(
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Failed to fetch users');
 
-      // Depending on your API wrapper, it might be data.data.users or data.data
       return data.data.users || data.data; 
     } catch (error) {
       return rejectWithValue(error.message);
@@ -36,11 +35,8 @@ export const createUser = createAsyncThunk(
   'users/createUser',
   async (userData, { rejectWithValue }) => {
     try {
-      // Clean up payload (remove customer ID if it's an admin)
       const payload = { ...userData };
-      if (payload.portal === 'admin') {
-        delete payload.customer;
-      }
+      if (payload.portal === 'admin') delete payload.customer;
 
       const response = await fetch(`${API_URL}/users`, {
         method: 'POST',
@@ -58,7 +54,34 @@ export const createUser = createAsyncThunk(
   }
 );
 
-// 3. Delete User
+// 3. Update Existing User
+export const updateUser = createAsyncThunk(
+  'users/updateUser',
+  async ({ id, ...userData }, { rejectWithValue }) => {
+    try {
+      const payload = { ...userData };
+      if (payload.portal === 'admin') delete payload.customer;
+      
+      // If password is empty, don't send it to backend so we don't accidentally overwrite it
+      if (!payload.password) delete payload.password;
+
+      const response = await fetch(`${API_URL}/users/${id}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Failed to update user');
+
+      return data.data.user || data.data;
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+// 4. Delete User
 export const deleteUser = createAsyncThunk(
   'users/deleteUser',
   async (id, { rejectWithValue }) => {
@@ -108,6 +131,7 @@ const userSlice = createSlice({
         state.status = 'failed';
         state.error = action.payload;
       })
+      
       // Create
       .addCase(createUser.pending, (state) => {
         state.createStatus = 'loading';
@@ -121,6 +145,24 @@ const userSlice = createSlice({
         state.createStatus = 'failed';
         state.error = action.payload;
       })
+      
+      // Update
+      .addCase(updateUser.pending, (state) => {
+        state.createStatus = 'loading';
+        state.error = null;
+      })
+      .addCase(updateUser.fulfilled, (state, action) => {
+        state.createStatus = 'succeeded';
+        // Replace the old user data with the updated user data in the array
+        state.items = state.items.map(user => 
+          user._id === action.payload._id ? action.payload : user
+        );
+      })
+      .addCase(updateUser.rejected, (state, action) => {
+        state.createStatus = 'failed';
+        state.error = action.payload;
+      })
+
       // Delete
       .addCase(deleteUser.fulfilled, (state, action) => {
         state.items = state.items.filter(u => u._id !== action.payload);

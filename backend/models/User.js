@@ -38,6 +38,18 @@ const userSchema = new mongoose.Schema({
       return this.portal === 'order';
     }
   },
+  divisions: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Division',
+    // Require at least one division for order portal users
+    validate: [
+      function(val) {
+        if (this.portal === 'order') return val && val.length > 0;
+        return true;
+      },
+      'Order portal users must have at least one division assigned'
+    ]
+  }],
   isActive: {
     type: Boolean,
     default: true
