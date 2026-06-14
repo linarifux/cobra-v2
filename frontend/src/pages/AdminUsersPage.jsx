@@ -35,13 +35,15 @@ export default function AdminUsersPage() {
   const [activeTab, setActiveTab] = useState('admin'); // 'admin' | 'order'
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
+  const [customerFilter, setCustomerFilter] = useState('all');
+  const [divisionFilter, setDivisionFilter] = useState('all');
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingUserId, setEditingUserId] = useState(null); // Tracks if we are creating or updating
+  const [editingUserId, setEditingUserId] = useState(null); 
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
 
-  // Permissions (Based on your backend router: admin & super_admin can edit/create, only super_admin can delete)
+  // Permissions 
   const canManageUsers = ['admin', 'super_admin'].includes(currentUser?.role);
   const isSuperAdmin = currentUser?.role === 'super_admin';
 
@@ -54,13 +56,57 @@ export default function AdminUsersPage() {
 
   // --- Filtering Logic ---
   const filteredUsers = users.filter(user => {
+    // 1. Tab & Search Match
     const matchesPortal = user.portal === activeTab;
     const matchesSearch = user.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           user.email?.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    // 2. Role Match
     const matchesRole = roleFilter === 'all' || user.role === roleFilter;
     
-    return matchesPortal && matchesSearch && matchesRole;
+    // 3. Customer Match (Order Portal Only)
+    let matchesCustomer = true;
+    if (activeTab === 'order' && customerFilter !== 'all') {
+      const uCustId = typeof user.customer === 'object' ? user.customer?._id : user.customer;
+      matchesCustomer = uCustId === customerFilter;
+    }
+
+    // 4. Division Match (Order Portal Only)
+    let matchesDivision = true;
+    if (activeTab === 'order' && divisionFilter !== 'all') {
+      const userDivIds = user.divisions?.map(d => typeof d === 'object' ? d._id : d) || [];
+      matchesDivision = userDivIds.includes(divisionFilter);
+    }
+    
+    return matchesPortal && matchesSearch && matchesRole && matchesCustomer && matchesDivision;
   });
+
+  // Get divisions for the FILTER dropdown (dependent on the selected customer filter)
+  const availableDivisionsForFilter = customerFilter === 'all' 
+    ? divisions 
+    : divisions.filter(d => {
+        const cId = typeof d.customer === 'object' ? d.customer?._id : d.customer;
+        return cId === customerFilter;
+      });
+
+  // Get divisions for the FORM modal (dependent on the selected customer in the form)
+  const availableDivisionsForForm = divisions.filter(d => {
+    const cId = typeof d.customer === 'object' ? d.customer?._id : d.customer;
+    return cId === formData.customer;
+  });
+
+  // --- Tab & Filter Handlers ---
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    setRoleFilter('all');
+    setCustomerFilter('all');
+    setDivisionFilter('all');
+  };
+
+  const handleCustomerFilterChange = (e) => {
+    setCustomerFilter(e.target.value);
+    setDivisionFilter('all'); // Reset division filter when customer changes
+  };
 
   // --- Modal & Form Handlers ---
   const handleOpenCreateModal = () => {
@@ -148,12 +194,6 @@ export default function AdminUsersPage() {
     }
   };
 
-  // Get divisions matching the currently selected customer in the form
-  const availableDivisionsForForm = divisions.filter(d => {
-    const cId = typeof d.customer === 'object' ? d.customer?._id : d.customer;
-    return cId === formData.customer;
-  });
-
   return (
     <div className="h-full p-6 space-y-6 relative animate-fade-in">
       <PageHeader 
@@ -162,27 +202,29 @@ export default function AdminUsersPage() {
       />
 
       {/* Tabs & Controls Panel */}
-      <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-4 rounded-3xl flex flex-col xl:flex-row xl:items-center gap-4 shadow-sm">
+      <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-4 rounded-3xl flex flex-col 2xl:flex-row 2xl:items-center gap-4 shadow-sm">
         
         {/* Portal Tabs */}
-        <div className="flex bg-slate-100/50 border border-slate-200/60 p-1 rounded-xl w-full sm:w-auto">
+        <div className="flex bg-slate-100/50 border border-slate-200/60 p-1 rounded-xl w-full sm:w-auto shrink-0">
           <button 
-            onClick={() => { setActiveTab('admin'); setRoleFilter('all'); }}
+            onClick={() => handleTabChange('admin')}
             className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${activeTab === 'admin' ? 'bg-white shadow-sm text-brand-gold' : 'text-slate-500 hover:text-slate-700'}`}
           >
-            <ShieldCheck size={14} /> Admin Portal (AP)
+            <ShieldCheck size={14} /> Admin Portal
           </button>
           <button 
-            onClick={() => { setActiveTab('order'); setRoleFilter('all'); }}
+            onClick={() => handleTabChange('order')}
             className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${activeTab === 'order' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
           >
-            <Building2 size={14} /> Order Portal (CP)
+            <Building2 size={14} /> Order Portal
           </button>
         </div>
 
         {/* Search & Filters */}
-        <div className="flex flex-1 gap-3">
-          <div className="relative flex-1 max-w-sm">
+        <div className="flex flex-wrap flex-1 gap-3 items-center">
+          
+          {/* Search */}
+          <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
             <input 
               className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 bg-white/50 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-brand-gold/50 outline-none transition-all"
@@ -192,7 +234,8 @@ export default function AdminUsersPage() {
             />
           </div>
           
-          <div className="relative w-40">
+          {/* Role Filter */}
+          <div className="relative w-full sm:w-40 shrink-0">
             <Filter className="absolute left-3 top-2.5 text-slate-400" size={14} />
             <select 
               value={roleFilter}
@@ -214,8 +257,43 @@ export default function AdminUsersPage() {
               )}
             </select>
           </div>
+
+          {/* Customer Filter (Order Portal Only) */}
+          {activeTab === 'order' && (
+            <div className="relative w-full sm:w-48 shrink-0 animate-in fade-in zoom-in-95 duration-200">
+              <Building2 className="absolute left-3 top-2.5 text-slate-400" size={14} />
+              <select 
+                value={customerFilter}
+                onChange={handleCustomerFilterChange}
+                className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-200 bg-white/50 text-xs font-bold text-slate-700 outline-none appearance-none cursor-pointer truncate"
+              >
+                <option value="all">All Customers</option>
+                {customers.map(c => (
+                  <option key={c._id} value={c._id}>{c.customerName}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Division Filter (Order Portal Only) */}
+          {activeTab === 'order' && (
+            <div className="relative w-full sm:w-48 shrink-0 animate-in fade-in zoom-in-95 duration-200">
+              <MapPin className="absolute left-3 top-2.5 text-slate-400" size={14} />
+              <select 
+                value={divisionFilter}
+                onChange={(e) => setDivisionFilter(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-200 bg-white/50 text-xs font-bold text-slate-700 outline-none appearance-none cursor-pointer truncate"
+              >
+                <option value="all">All Divisions</option>
+                {availableDivisionsForFilter.map(d => (
+                  <option key={d._id} value={d._id}>{d.divisionName}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
         
+        {/* Create Button */}
         {canManageUsers && (
           <button 
             onClick={handleOpenCreateModal}
@@ -394,7 +472,7 @@ export default function AdminUsersPage() {
                       <Lock size={16} className="absolute left-3.5 top-3 text-slate-400" />
                       <input 
                         type="password" 
-                        required={!editingUserId} // Only required when creating
+                        required={!editingUserId} 
                         minLength={8} 
                         value={formData.password} 
                         onChange={(e) => setFormData({...formData, password: e.target.value})} 
