@@ -11,6 +11,9 @@ import {
 import { fetchOrderById, updateOrder, clearCurrentOrder } from '../store/slices/orderSlice';
 import { fetchInventory } from '../store/slices/inventorySlice';
 
+// 404 Fallback Component
+import NotFoundPage from './NotFoundPage';
+
 // Helper to generate safe local IDs for new items mapped in UI
 const generateLocalId = () => `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -19,8 +22,12 @@ export default function OrderDetailsPage() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
 
+  // --- Security Check: Validate MongoDB ObjectID Format ---
+  // A valid Mongo ID is exactly 24 hex characters. If it's not, we immediately know it's a bad URL.
+  const isValidMongoId = /^[0-9a-fA-F]{24}$/.test(id || '');
+
   // Redux States
-  const { currentOrder, status: orderLoadStatus } = useSelector((state) => state.orders || {});
+  const { currentOrder, status: orderLoadStatus, error: orderError } = useSelector((state) => state.orders || {});
   const { items: inventoryData = [], status: inventoryStatus } = useSelector((state) => state.inventory || {});
 
   // Local editable states mapped directly to the API JSON structure
@@ -37,17 +44,20 @@ export default function OrderDetailsPage() {
   const [editing, setEditing] = useState({ logistics: false, address: false });
   const [isSaving, setIsSaving] = useState(false);
 
-  // 1. Fetch Order and Global Inventory on Mount
+  // 1. Fetch Order and Global Inventory on Mount (Only if ID is valid)
   useEffect(() => {
-    if (id) dispatch(fetchOrderById(id));
-    if (inventoryStatus === 'idle') dispatch(fetchInventory());
+    if (isValidMongoId) {
+      dispatch(fetchOrderById(id));
+    }
+    if (inventoryStatus === 'idle') {
+      dispatch(fetchInventory());
+    }
     
     return () => dispatch(clearCurrentOrder());
-  }, [id, inventoryStatus, dispatch]);
+  }, [id, isValidMongoId, inventoryStatus, dispatch]);
 
   // 2. Format Inventory Data for the UI Dropdowns
   const availableInventories = useMemo(() => {
-    console.log(inventoryData)
     return inventoryData.map(inv => ({
       id: inv._id,
       name: inv.itemName || 'Unnamed Item',
@@ -99,7 +109,7 @@ export default function OrderDetailsPage() {
       setItems(mappedItems);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentOrder]); // Run only when currentOrder changes to prevent overwriting user edits
+  }, [currentOrder]); 
 
   // 4. Backfill Weights if inventory data finishes loading AFTER the order maps
   useEffect(() => {
@@ -185,7 +195,7 @@ export default function OrderDetailsPage() {
 
     try {
       await dispatch(updateOrder({ id: currentOrder._id, updateData: payload })).unwrap();
-      setEditing({ logistics: false, address: false }); // Close edit inputs
+      setEditing({ logistics: false, address: false }); 
     } catch (error) {
       alert(`Failed to save order: ${error}`);
     } finally {
@@ -193,7 +203,19 @@ export default function OrderDetailsPage() {
     }
   };
 
-  // Render loading state
+  // --- RENDERING GUARDS ---
+  
+  // Guard 1: Garbage URL (e.g., /orders/bldgslgs or /orders/new when disabled)
+  if (!isValidMongoId) {
+    return <NotFoundPage />;
+  }
+
+  // Guard 2: Order explicitly not found or backend error
+  if (orderLoadStatus === 'failed' || orderError) {
+    return <NotFoundPage />;
+  }
+
+  // Guard 3: Legitimate Loading State
   if (orderLoadStatus === 'loading' || !currentOrder) {
     return (
       <div className="h-full flex items-center justify-center min-h-[600px]">
@@ -297,7 +319,7 @@ export default function OrderDetailsPage() {
         <div className="lg:col-span-2 space-y-5 w-full min-w-0">
           
           <div className="flex flex-wrap items-center gap-3 bg-white/40 border border-white/60 p-4 rounded-2xl shadow-sm">
-            <span className="text-sm font-black text-slate-800">Order: {currentOrder.orderNumber}</span>
+            <span className="text-sm font-black text-slate-800">Order: {currentOrder.orderReference || currentOrder._id}</span>
             <span className="px-2.5 py-1 text-[10px] uppercase font-black tracking-widest bg-slate-200 text-slate-600 rounded-md">
               {creationDate}
             </span>

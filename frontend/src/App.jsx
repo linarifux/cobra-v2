@@ -25,6 +25,9 @@ import WarehouseLocations from './pages/WarehouseLocations';
 import CarrierManagement from './pages/CarrierManagement';
 import AdminUsersPage from './pages/AdminUsersPage';
 import AccountSettingsPage from './pages/AccountSettingsPage';
+import NotFoundPage from './pages/NotFoundPage';
+
+// import CreateOrderPage from './pages/CreateOrderPage'; // Commented out for now
 
 /**
  * ProtectedRoute Wrapper
@@ -64,40 +67,33 @@ export default function App() {
         >
           {/* Default Dashboard Route */}
           <Route index element={<DashboardHome />} />
-          
-          <Route path="orders">
-            <Route index element={<OrdersPage />} />
-            <Route path="new" element={<div className="p-6">Create Order Module</div>} /> 
-            <Route path=":id" element={<OrderDetailsPage />} />
-          </Route>
-          
-          <Route path="customers">
-            <Route index element={<CustomersPage />} />
-            <Route path=":id" element={<CustomerDetailsPage />} />
-            <Route path=":id/edit" element={<EditCustomerDetailsPage />} />
-          </Route>
-          
+          <Route path="/orders" element={<OrdersPage />} />
+          <Route path="/orders/:id" element={<OrderDetailsPage />} />
+          <Route path="/customers" element={<CustomersPage />} />
+          <Route path="/customers/:id" element={<CustomerDetailsPage />} />
+          <Route path="/customers/:id/edit" element={<EditCustomerDetailsPage />} />
           <Route path="/divisions" element={<DivisionsPage />} />
-          
-          <Route path="inventory">
-            <Route index element={<InventoryPage />} />
-            <Route path=":inventoryId" element={<InventoryDetailPage />} />
-          </Route>
-          
+          <Route path="/inventory" element={<InventoryPage />} />
+          <Route path="/inventory/:inventoryId" element={<InventoryDetailPage />} />
           <Route path="/categories" element={<CategoryPage />} />
-          
           <Route path="/receiving" element={<ReceivingOrders />} />
           <Route path="/receiving/:id" element={<ReceivingOrderDetail />} />
+          <Route path="/locations" element={<WarehouseLocations />} />
+          <Route path="/carriers" element={<CarrierManagement />} />
+          <Route path="/shipping" element={<div className="p-6">ShipStation Integration Module</div>} />
+          <Route path="/staff" element={<AdminUsersPage />} />
+          <Route path="/settings" element={<AccountSettingsPage />} />
 
           <Route path="locations" element={<WarehouseLocations />} />
           <Route path="carriers" element={<CarrierManagement />} />
           <Route path="shipping" element={<div className="p-6">ShipStation Integration Module</div>} />
-          <Route path="staff" element={<AdminUsersPage />} />
-          <Route path="settings" element={<AccountSettingsPage />} />
+
+          {/* Catch-all 404 for undefined routes INSIDE the dashboard */}
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
 
-        {/* Catch-all redirect for 404s */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {/* Global Catch-all 404 for completely undefined root URLs */}
+        <Route path="*" element={<NotFoundPage />} />
 
       </Routes>
     </Router>

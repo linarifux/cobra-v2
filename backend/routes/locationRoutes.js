@@ -8,7 +8,7 @@ import {
 } from '../controllers/locationController.js';
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
-const router = express.Router();
+const router = express.Router({ mergeParams: true }); // Merge params to access :customerId in nested routes
 
 // Require valid authentication for all location routes
 // router.use(protect);

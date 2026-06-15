@@ -7,7 +7,7 @@ import {
 } from '../controllers/userController.js';
 import { protect, requirePortal, restrictTo } from '../middlewares/authMiddleware.js';
 
-const router = express.Router();
+const router = express.Router({ mergeParams: true }); // Merge params to access :customerId in nested routes
 
 // ALL user management requires the user to be logged in
 router.use(protect);

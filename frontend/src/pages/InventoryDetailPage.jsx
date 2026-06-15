@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { 
-  ArrowLeft, Edit, Trash2, Package, Tag, User, MapPin, 
+  ArrowLeft, Edit2, Trash2, Package, Tag, User, MapPin, 
   DollarSign, TrendingUp, History, ShieldAlert, Layers, ExternalLink, Loader2 
 } from 'lucide-react';
 
@@ -10,7 +10,6 @@ import {
 import { fetchInventoryById, deleteInventory, clearCurrentInventoryItem } from '../store/slices/inventorySlice';
 
 export default function InventoryDetail() {
-  // CRITICAL FIX: Extract 'inventoryId' to match the parameter defined in App.jsx routes
   const { inventoryId } = useParams();
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -31,7 +30,7 @@ export default function InventoryDetail() {
     if (window.confirm("Are you sure you want to permanently delete this inventory asset item?")) {
       try {
         await dispatch(deleteInventory(inventoryId)).unwrap();
-        navigate('/inventory'); // Send user back to the main list after deletion
+        navigate('/inventory', { replace: true }); 
       } catch (err) {
         console.error("Failed to delete inventory:", err);
         alert(`Failed to delete: ${err}`);
@@ -44,8 +43,9 @@ export default function InventoryDetail() {
   // -------------------------------------------------------------
   if (status === 'loading' || !item) {
     return (
-      <div className="h-full flex justify-center items-center py-32 text-slate-400">
+      <div className="h-full flex flex-col justify-center items-center py-32 text-slate-400 gap-4">
         <Loader2 className="animate-spin text-brand-gold" size={32} />
+        <p className="text-xs font-black uppercase tracking-widest">Retrieving Asset Node...</p>
       </div>
     );
   }
@@ -53,9 +53,14 @@ export default function InventoryDetail() {
   if (status === 'failed') {
     return (
       <div className="h-full max-w-[1400px] mx-auto p-6 flex justify-center items-center">
-        <div className="bg-red-50 text-red-600 p-6 rounded-3xl text-center text-sm font-bold border border-red-200 shadow-sm">
-          Failed to load inventory item: {error}
-          <button onClick={() => navigate('/inventory')} className="block mt-4 mx-auto text-xs underline text-slate-500 hover:text-slate-800">
+        <div className="bg-red-50 text-red-600 p-8 rounded-[2rem] text-center text-sm font-bold border border-red-200 shadow-sm max-w-md w-full">
+          <ShieldAlert size={32} className="mx-auto mb-3 text-red-500" />
+          <p>Failed to load inventory item.</p>
+          <p className="text-xs font-medium mt-1 opacity-80">{error}</p>
+          <button 
+            onClick={() => navigate('/inventory', { replace: true })} 
+            className="mt-6 px-6 py-2.5 bg-red-600 text-white rounded-xl text-xs uppercase tracking-wider font-black hover:bg-red-700 transition-colors"
+          >
             Return to Registry
           </button>
         </div>
@@ -66,16 +71,24 @@ export default function InventoryDetail() {
   // -------------------------------------------------------------
   // DATA MAPPING: Safely deriving values from the backend schema
   // -------------------------------------------------------------
-  const totalAssetValue = (item.unitCost || 0) * (item.unitsOnHand || 0);
-  const isLowStock = item.unitsOnHand <= (item.safetyBuffer || 20);
+  // Use fallbacks for price/qty field names in case the API shape varies
+  const unitPrice = Number(item.unitCost || item.price || item.retailPrice || 0);
+  const onHand = Number(item.unitsOnHand || item.quantity || 0);
+  const totalAssetValue = unitPrice * onHand;
+  
+  const safetyBuffer = Number(item.safetyBuffer || 20);
+  const isLowStock = onHand <= safetyBuffer;
   
   // Safely extract populated relational data
   const customerName = item.customer?.customerName || 'Unassigned Pool';
   const divisionName = item.divisions?.[0]?.divisionName || 'Unassigned';
   const categoryName = item.categories?.[0]?.categoryName || 'Unassigned';
 
+  // Format currency nicely
+  const formatCurrency = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+
   return (
-    <div className="h-full max-w-[1400px] mx-auto p-6 space-y-6 animate-fade-in">
+    <div className="h-full max-w-[1400px] mx-auto p-6 space-y-6 animate-fade-in pb-20">
       
       {/* 1. Upper Breadcrumb / Context Action Row */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200/60 pb-4">
@@ -87,15 +100,16 @@ export default function InventoryDetail() {
         </button>
 
         <div className="flex items-center gap-2">
-          {/* If you implement a standalone edit page, route it here, or open a modal */}
+          {/* Navigate to edit page */}
           <button 
-            className="flex items-center gap-1.5 px-4 py-2 bg-white/60 hover:bg-white border border-slate-200 text-slate-700 hover:text-brand-gold rounded-xl text-[11px] font-black uppercase tracking-wider transition-all shadow-sm"
+            onClick={() => navigate(`/inventory/${inventoryId}/edit`)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-white/60 hover:bg-white border border-slate-200 text-slate-700 hover:text-brand-gold rounded-xl text-[11px] font-black uppercase tracking-wider transition-all shadow-sm active:scale-95"
           >
-            <Edit size={13} /> Edit Asset Node
+            <Edit2 size={13} /> Edit Asset Node
           </button>
           <button 
             onClick={handleDelete}
-            className="flex items-center gap-1.5 px-4 py-2 bg-white/60 hover:bg-red-50 border border-slate-200 text-slate-500 hover:text-red-600 hover:border-red-200 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all shadow-sm"
+            className="flex items-center gap-1.5 px-4 py-2 bg-white/60 hover:bg-red-50 border border-slate-200 text-slate-500 hover:text-red-600 hover:border-red-200 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all shadow-sm active:scale-95"
           >
             <Trash2 size={13} /> Decommission
           </button>
@@ -118,33 +132,33 @@ export default function InventoryDetail() {
                 {item.status || (isLowStock ? 'Low Stock Warning' : 'Stable Inventory Pool')}
               </span>
             </div>
-            <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white">{item.itemName}</h1>
+            <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white">{item.itemName || item.name || 'Unnamed Asset'}</h1>
             <p className="text-xs text-slate-400 font-medium pt-1">
-              Last audited on <span className="text-slate-200 font-bold">{new Date(item.lastAuditedAt).toLocaleString()}</span> by <span className="text-brand-gold font-bold">{item.lastAuditedBy || 'System'}</span>
+              Last audited on <span className="text-slate-200 font-bold">{new Date(item.lastAuditedAt || item.updatedAt).toLocaleString()}</span> by <span className="text-brand-gold font-bold">{item.lastAuditedBy || 'System Protocol'}</span>
             </p>
           </div>
           
           <div className="bg-white/10 backdrop-blur-md border border-white/10 px-5 py-4 rounded-2xl text-right shrink-0 shadow-inner">
             <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Total Asset Pool Valuation</span>
-            <span className="text-3xl font-mono font-black text-emerald-400">${totalAssetValue.toFixed(2)}</span>
+            <span className="text-3xl font-mono font-black text-emerald-400">{formatCurrency(totalAssetValue)}</span>
           </div>
         </div>
       </div>
 
       {/* 3. Primary Performance Indicator Matrix Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         
         {/* On-Hand Stock Card */}
         <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl shadow-sm space-y-1.5 transition-all hover:bg-white/60">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Units Available On-Hand</span>
           <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-mono font-black text-slate-900">{item.unitsOnHand}</span>
+            <span className="text-3xl font-mono font-black text-slate-900">{onHand}</span>
             <span className="text-xs font-bold text-slate-400">Units</span>
           </div>
-          <div className="w-full bg-white/60 h-1.5 rounded-full overflow-hidden mt-3 shadow-inner">
+          <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden mt-3 shadow-inner">
             <div 
               className={`h-full ${isLowStock ? 'bg-red-500' : 'bg-brand-gold'}`} 
-              style={{ width: `${Math.min((item.unitsOnHand / ((item.safetyBuffer || 20) * 2)) * 100, 100)}%` }}
+              style={{ width: `${Math.min((onHand / (safetyBuffer * 2 || 1)) * 100, 100)}%` }}
             />
           </div>
         </div>
@@ -153,10 +167,10 @@ export default function InventoryDetail() {
         <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl shadow-sm space-y-1.5 transition-all hover:bg-white/60">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Pipeline Supply (On-Order)</span>
           <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-mono font-black text-blue-600">+{item.pipelineSupply}</span>
+            <span className="text-3xl font-mono font-black text-blue-600">+{item.pipelineSupply || 0}</span>
             <span className="text-xs font-bold text-slate-400">Inbound</span>
           </div>
-          <span className="text-[10px] text-slate-500 font-bold block mt-3">Dynamic pool sizing to {item.unitsOnHand + item.pipelineSupply}</span>
+          <span className="text-[10px] text-slate-500 font-bold block mt-3">Dynamic pool sizing to {onHand + (item.pipelineSupply || 0)}</span>
         </div>
 
         {/* Unit Cost Valuation Card */}
@@ -164,7 +178,7 @@ export default function InventoryDetail() {
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Base Unit Cost</span>
           <div className="flex items-baseline gap-1">
             <DollarSign size={20} className="text-brand-gold self-center -mb-1" />
-            <span className="text-3xl font-mono font-black text-slate-900">{item.unitCost?.toFixed(2) || '0.00'}</span>
+            <span className="text-3xl font-mono font-black text-slate-900">{unitPrice.toFixed(2)}</span>
           </div>
           <span className="text-[10px] text-slate-400 font-bold block mt-3">USD standard market valuation</span>
         </div>
@@ -173,7 +187,7 @@ export default function InventoryDetail() {
         <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl shadow-sm space-y-1.5 transition-all hover:bg-white/60">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Safety Buffer Threshold</span>
           <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-mono font-black text-slate-700">{item.safetyBuffer || 20}</span>
+            <span className="text-3xl font-mono font-black text-slate-700">{safetyBuffer}</span>
             <span className="text-xs font-bold text-slate-400">Minimum Pool</span>
           </div>
           <span className={`text-[10px] font-bold flex items-center gap-1.5 mt-3 ${isLowStock ? 'text-red-500' : 'text-slate-500'}`}>
@@ -266,8 +280,8 @@ export default function InventoryDetail() {
             <table className="w-full text-left border-collapse text-xs font-bold">
               <thead>
                 <tr className="border-b border-white/40 text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                  <th className="pb-3 w-[20%]">Timestamp Date</th>
-                  <th className="pb-3 w-[40%]">Adjustment Transaction Event</th>
+                  <th className="pb-3 w-[25%]">Timestamp</th>
+                  <th className="pb-3 w-[35%]">Adjustment Event</th>
                   <th className="pb-3 w-[25%]">Reference ID</th>
                   <th className="pb-3 text-center w-[15%]">Quantity Δ</th>
                 </tr>
@@ -277,11 +291,17 @@ export default function InventoryDetail() {
                   // Slice and reverse so the newest transactions appear at the top
                   item.auditLedger.slice().reverse().map((log) => (
                     <tr key={log._id} className="hover:bg-white/40 transition-colors group">
-                      <td className="py-3.5 font-mono text-slate-500 font-semibold">{new Date(log.timestamp).toLocaleDateString()}</td>
+                      {/* Formatted Date & Time */}
+                      <td className="py-3.5 font-mono text-slate-500 font-semibold text-[10px]">
+                        {new Date(log.timestamp).toLocaleString('en-US', {
+                          month: 'short', day: 'numeric', year: 'numeric', 
+                          hour: 'numeric', minute: '2-digit'
+                        })}
+                      </td>
                       <td className="py-3.5 font-extrabold text-slate-900">{log.event}</td>
                       <td className="py-3.5 font-mono text-slate-500">
-                        <span className="inline-flex items-center gap-1 hover:text-brand-gold transition-colors cursor-pointer bg-white/40 px-2 py-0.5 rounded border border-white/60 shadow-sm">
-                          {log.referenceId} <ExternalLink size={10} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <span className="inline-flex items-center gap-1 hover:text-brand-gold transition-colors cursor-pointer bg-white/40 px-2 py-0.5 rounded border border-white/60 shadow-sm truncate max-w-[150px]">
+                          {log.referenceId} <ExternalLink size={10} className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                         </span>
                       </td>
                       <td className="py-3.5 text-center font-mono font-black">

@@ -106,12 +106,12 @@ export default function OrdersPage() {
             />
             
             {/* Create Order Button */}
-            <button 
+            {/* <button 
               onClick={() => navigate('/orders/new')}
               className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors shadow-md ml-auto"
             >
               <Plus size={14} /> Create Order
-            </button>
+            </button> */}
           </div>
         </div>
       </div>

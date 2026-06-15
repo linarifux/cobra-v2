@@ -51,6 +51,62 @@ export const fetchCustomerById = createAsyncThunk(
   }
 );
 
+// --- NEW RELATIONAL FETCHES FOR SPECIFIC CUSTOMER ---
+
+export const fetchCustomerCarriers = createAsyncThunk(
+  'customers/fetchCustomerCarriers',
+  async (customerId, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`${API_URL}/customers/${customerId}/carriers`, {
+        method: 'GET',
+        headers: getAuthHeaders()
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Failed to fetch customer carriers');
+      // Adjust according to your API wrapper format
+      return data.data.carriers || data.data; 
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+export const fetchCustomerInventory = createAsyncThunk(
+  'customers/fetchCustomerInventory',
+  async (customerId, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`${API_URL}/customers/${customerId}/inventory`, {
+        method: 'GET',
+        headers: getAuthHeaders()
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Failed to fetch customer inventory');
+      return data.data.inventory || data.data; 
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+export const fetchCustomerUsers = createAsyncThunk(
+  'customers/fetchCustomerUsers',
+  async (customerId, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`${API_URL}/customers/${customerId}/users`, {
+        method: 'GET',
+        headers: getAuthHeaders()
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Failed to fetch customer users');
+      return data.data.users || data.data; 
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+// ----------------------------------------------------
+
 // 3. Create New Customer
 export const createCustomer = createAsyncThunk(
   'customers/createCustomer',
@@ -128,7 +184,7 @@ export const deleteCustomer = createAsyncThunk(
         throw new Error(data.message || 'Failed to delete customer');
       }
 
-      return id; // Return the ID so the reducer knows which item to remove from state
+      return id; 
     } catch (error) {
       return rejectWithValue(error.message);
     }
@@ -140,20 +196,25 @@ const customerSlice = createSlice({
   initialState: {
     items: [],
     currentCustomer: null,
-    status: 'idle', // 'idle' | 'loading' | 'succeeded' | 'failed'
+    // Store relational data specifically for the currently viewed customer
+    customerCarriers: [],
+    customerInventory: [],
+    customerUsers: [],
+    status: 'idle', 
     error: null
   },
   reducers: {
     clearCurrentCustomer: (state) => {
       state.currentCustomer = null;
+      state.customerCarriers = [];
+      state.customerInventory = [];
+      state.customerUsers = [];
     }
   },
   extraReducers: (builder) => {
     builder
       // --- Fetch All ---
-      .addCase(fetchCustomers.pending, (state) => {
-        state.status = 'loading';
-      })
+      .addCase(fetchCustomers.pending, (state) => { state.status = 'loading'; })
       .addCase(fetchCustomers.fulfilled, (state, action) => {
         state.status = 'succeeded';
         state.items = action.payload;
@@ -164,9 +225,7 @@ const customerSlice = createSlice({
       })
 
       // --- Fetch Single ---
-      .addCase(fetchCustomerById.pending, (state) => {
-        state.status = 'loading';
-      })
+      .addCase(fetchCustomerById.pending, (state) => { state.status = 'loading'; })
       .addCase(fetchCustomerById.fulfilled, (state, action) => {
         state.status = 'succeeded';
         state.currentCustomer = action.payload;
@@ -174,6 +233,17 @@ const customerSlice = createSlice({
       .addCase(fetchCustomerById.rejected, (state, action) => {
         state.status = 'failed';
         state.error = action.payload;
+      })
+
+      // --- Fetch Relational Data ---
+      .addCase(fetchCustomerCarriers.fulfilled, (state, action) => {
+        state.customerCarriers = action.payload;
+      })
+      .addCase(fetchCustomerInventory.fulfilled, (state, action) => {
+        state.customerInventory = action.payload;
+      })
+      .addCase(fetchCustomerUsers.fulfilled, (state, action) => {
+        state.customerUsers = action.payload;
       })
 
       // --- Create ---
@@ -208,6 +278,9 @@ const customerSlice = createSlice({
         state.items = state.items.filter(c => c._id !== action.payload);
         if (state.currentCustomer && state.currentCustomer._id === action.payload) {
           state.currentCustomer = null;
+          state.customerCarriers = [];
+          state.customerInventory = [];
+          state.customerUsers = [];
         }
       });
   }
