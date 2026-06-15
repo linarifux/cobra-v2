@@ -12,16 +12,18 @@ import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 const router = express.Router({ mergeParams: true });
 
 // Protect all category routes via JWT
-// router.use(protect);
+router.use(protect);
 
 router.route('/')
   .get(getAllCategories)
-//   .post(restrictTo('admin', 'staff'), createCategory);
-    .post(createCategory);
+  .post(restrictTo('admin', 'staff', 'super_admin'), createCategory);
+
 
 router.route('/:id')
   .get(getCategory)
-  .put(restrictTo('admin', 'staff'), updateCategory)
-  .delete(restrictTo('admin', 'staff'), deleteCategory);
+  // .put(restrictTo('admin', 'staff'), updateCategory)
+  .put(restrictTo('admin', 'staff', 'super_admin'), updateCategory)
+  // .delete(restrictTo('admin', 'staff'), deleteCategory);
+  .delete(restrictTo('admin', 'staff', 'super_admin'), deleteCategory);
 
 export default router;

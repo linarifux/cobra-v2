@@ -27,7 +27,8 @@ import AdminUsersPage from './pages/AdminUsersPage';
 import AccountSettingsPage from './pages/AccountSettingsPage';
 import NotFoundPage from './pages/NotFoundPage';
 
-// import CreateOrderPage from './pages/CreateOrderPage'; // Commented out for now
+// 1. IMPORT THE GLOBAL CONFIRM PROVIDER
+import { ConfirmProvider } from './providers/ConfirmProvider';
 
 /**
  * ProtectedRoute Wrapper
@@ -50,52 +51,51 @@ const ProtectedRoute = ({ children }) => {
 
 export default function App() {
   return (
-    <Router>
-      <Routes>
-        
-        {/* PUBLIC AUTH ROUTES */}
-        <Route path="/login" element={<AdminLoginPage />} />
-        
-        {/* PROTECTED DASHBOARD ROUTES */}
-        <Route 
-          path="/" 
-          element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }
-        >
-          {/* Default Dashboard Route */}
-          <Route index element={<DashboardHome />} />
-          <Route path="/orders" element={<OrdersPage />} />
-          <Route path="/orders/:id" element={<OrderDetailsPage />} />
-          <Route path="/customers" element={<CustomersPage />} />
-          <Route path="/customers/:id" element={<CustomerDetailsPage />} />
-          <Route path="/customers/:id/edit" element={<EditCustomerDetailsPage />} />
-          <Route path="/divisions" element={<DivisionsPage />} />
-          <Route path="/inventory" element={<InventoryPage />} />
-          <Route path="/inventory/:inventoryId" element={<InventoryDetailPage />} />
-          <Route path="/categories" element={<CategoryPage />} />
-          <Route path="/receiving" element={<ReceivingOrders />} />
-          <Route path="/receiving/:id" element={<ReceivingOrderDetail />} />
-          <Route path="/locations" element={<WarehouseLocations />} />
-          <Route path="/carriers" element={<CarrierManagement />} />
-          <Route path="/shipping" element={<div className="p-6">ShipStation Integration Module</div>} />
-          <Route path="/staff" element={<AdminUsersPage />} />
-          <Route path="/settings" element={<AccountSettingsPage />} />
+    // 2. WRAP THE ROUTER IN THE CONFIRM PROVIDER
+    <ConfirmProvider>
+      <Router>
+        <Routes>
+          
+          {/* PUBLIC AUTH ROUTES */}
+          <Route path="/login" element={<AdminLoginPage />} />
+          
+          {/* PROTECTED DASHBOARD ROUTES */}
+          <Route 
+            path="/" 
+            element={
+              <ProtectedRoute>
+                <DashboardLayout />
+              </ProtectedRoute>
+            }
+          >
+            {/* Default Dashboard Route */}
+            <Route index element={<DashboardHome />} />
+            <Route path="/orders" element={<OrdersPage />} />
+            <Route path="/orders/:id" element={<OrderDetailsPage />} />
+            <Route path="/customers" element={<CustomersPage />} />
+            <Route path="/customers/:id" element={<CustomerDetailsPage />} />
+            <Route path="/customers/:id/edit" element={<EditCustomerDetailsPage />} />
+            <Route path="/divisions" element={<DivisionsPage />} />
+            <Route path="/inventory" element={<InventoryPage />} />
+            <Route path="/inventory/:inventoryId" element={<InventoryDetailPage />} />
+            <Route path="/categories" element={<CategoryPage />} />
+            <Route path="/receiving" element={<ReceivingOrders />} />
+            <Route path="/receiving/:id" element={<ReceivingOrderDetail />} />
+            <Route path="/locations" element={<WarehouseLocations />} />
+            <Route path="/carriers" element={<CarrierManagement />} />
+            <Route path="/shipping" element={<div className="p-6">ShipStation Integration Module</div>} />
+            <Route path="/staff" element={<AdminUsersPage />} />
+            <Route path="/settings" element={<AccountSettingsPage />} />
 
-          <Route path="locations" element={<WarehouseLocations />} />
-          <Route path="carriers" element={<CarrierManagement />} />
-          <Route path="shipping" element={<div className="p-6">ShipStation Integration Module</div>} />
+            {/* Catch-all 404 for undefined routes INSIDE the dashboard */}
+            <Route path="*" element={<NotFoundPage />} />
+          </Route>
 
-          {/* Catch-all 404 for undefined routes INSIDE the dashboard */}
+          {/* Global Catch-all 404 for completely undefined root URLs */}
           <Route path="*" element={<NotFoundPage />} />
-        </Route>
 
-        {/* Global Catch-all 404 for completely undefined root URLs */}
-        <Route path="*" element={<NotFoundPage />} />
-
-      </Routes>
-    </Router>
+        </Routes>
+      </Router>
+    </ConfirmProvider>
   );
 }

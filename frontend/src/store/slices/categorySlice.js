@@ -1,7 +1,9 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
 
+// Helper function to generate auth headers
 const getAuthHeaders = () => {
   const token = localStorage.getItem('token');
   return {
@@ -15,15 +17,14 @@ export const fetchCategories = createAsyncThunk(
   'categories/fetchCategories',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/categories`, {
-        method: 'GET',
+      const response = await axios.get(`${API_URL}/categories`, {
         headers: getAuthHeaders()
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to fetch categories');
-      return data.data.categories; 
+      // Axios auto-parses JSON into the `data` property
+      return response.data.data.categories; 
     } catch (error) {
-      return rejectWithValue(error.message);
+      // Safely extract the backend error message, fallback to generic message
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch categories');
     }
   }
 );
@@ -33,16 +34,12 @@ export const createCategory = createAsyncThunk(
   'categories/createCategory',
   async (categoryData, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/categories`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(categoryData)
+      const response = await axios.post(`${API_URL}/categories`, categoryData, {
+        headers: getAuthHeaders()
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to create category');
-      return data.data.category;
+      return response.data.data.category;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to create category');
     }
   }
 );
@@ -52,16 +49,12 @@ export const updateCategory = createAsyncThunk(
   'categories/updateCategory',
   async ({ id, categoryData }, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/categories/${id}`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(categoryData)
+      const response = await axios.put(`${API_URL}/categories/${id}`, categoryData, {
+        headers: getAuthHeaders()
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to update category');
-      return data.data.category;
+      return response.data.data.category;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to update category');
     }
   }
 );
@@ -71,17 +64,14 @@ export const deleteCategory = createAsyncThunk(
   'categories/deleteCategory',
   async (id, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/categories/${id}`, {
-        method: 'DELETE',
+      await axios.delete(`${API_URL}/categories/${id}`, {
         headers: getAuthHeaders()
       });
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to delete category');
-      }
+      
+      // CRITICAL: Return the ID so the reducer can filter it out of the UI state
       return id; 
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to delete category');
     }
   }
 );
@@ -96,6 +86,7 @@ const categorySlice = createSlice({
   reducers: {},
   extraReducers: (builder) => {
     builder
+      // --- Fetch ---
       .addCase(fetchCategories.pending, (state) => { state.status = 'loading'; })
       .addCase(fetchCategories.fulfilled, (state, action) => {
         state.status = 'succeeded';
@@ -105,14 +96,21 @@ const categorySlice = createSlice({
         state.status = 'failed';
         state.error = action.payload;
       })
+      
+      // --- Create ---
       .addCase(createCategory.fulfilled, (state, action) => {
         state.items.push(action.payload);
       })
+      
+      // --- Update ---
       .addCase(updateCategory.fulfilled, (state, action) => {
         const index = state.items.findIndex(cat => cat._id === action.payload._id);
         if (index !== -1) state.items[index] = action.payload;
       })
+      
+      // --- Delete ---
       .addCase(deleteCategory.fulfilled, (state, action) => {
+        // Automatically removes the deleted category from the Redux store
         state.items = state.items.filter(cat => cat._id !== action.payload);
       });
   }

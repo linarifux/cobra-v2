@@ -48,8 +48,8 @@ export default function CategoryTable({ filteredCategories, onEdit, onDelete }) 
                       >
                         <Edit2 size={14} />
                       </button>
-                      <button 
-                        onClick={() => { if(window.confirm("Are you sure you want to delete this category hierarchy mapping?")) onDelete(cat.id); }} 
+                      <button
+                        onClick={() => onDelete(cat.id)} 
                         className="p-2 text-slate-400 hover:text-red-500 bg-white/40 hover:bg-red-50 hover:border-red-100 rounded-xl transition-all shadow-sm border border-transparent"
                         title="Remove Category"
                       >

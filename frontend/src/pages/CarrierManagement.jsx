@@ -4,10 +4,17 @@ import { fetchCarriers, addCarrier, removeCarrierProfile } from '../store/slices
 import CarrierSettingsModal from '../components/carrier/CarrierSettingsModal';
 import { Loader2 } from 'lucide-react';
 
+// IMPORT THE CONFIRM HOOK
+import { useConfirm } from '../providers/ConfirmProvider';
+
 const AVAILABLE_CARRIERS = ['FedEx', 'USPS', 'UPS', 'LTL'];
 
 export default function CarrierManagement() {
   const dispatch = useDispatch();
+  
+  // INITIALIZE THE HOOK
+  const confirm = useConfirm();
+
   const { items: configuredCarriers = [], status } = useSelector((state) => state.carriers || {});
   
   const [selectedCarrier, setSelectedCarrier] = useState('');
@@ -46,8 +53,17 @@ export default function CarrierManagement() {
     }
   };
 
-  const handleUnlink = (id) => {
-    if (window.confirm('Are you sure you want to disconnect this carrier integration? All API keys will be deleted.')) {
+  // UPDATED: Using the custom glassmorphic confirm modal
+  const handleUnlink = async (id) => {
+    const isConfirmed = await confirm({
+      title: 'Disconnect Carrier?',
+      message: 'Are you sure you want to disconnect this carrier integration? All API keys and routing configurations will be permanently deleted.',
+      confirmText: 'Disconnect Carrier',
+      cancelText: 'Cancel',
+      variant: 'danger'
+    });
+
+    if (isConfirmed) {
       dispatch(removeCarrierProfile(id));
     }
   };
