@@ -95,8 +95,7 @@ inventorySchema.virtual('totalValuation').get(function() {
   return (this.unitsOnHand * this.unitCost).toFixed(2);
 });
 
-// Indexes for fast lookup by customer or SKU
+// Indexes for fast lookup by customer
 inventorySchema.index({ customer: 1 });
-inventorySchema.index({ sku: 1 });
 
 export default mongoose.model('Inventory', inventorySchema);
