@@ -19,6 +19,8 @@ export const fetchCarriers = createAsyncThunk('carriers/fetchCarriers', async (_
 });
 
 export const addCarrier = createAsyncThunk('carriers/addCarrier', async (carrierData, { rejectWithValue }) => {
+  console.log(carrierData);
+  
   try {
     const res = await fetch(`${API_URL}/carriers`, {
       method: 'POST',

@@ -86,38 +86,57 @@ export const deleteCarrier = catchAsync(async (req, res, next) => {
 // @desc    Get all active carriers & services formatted for a specific customer's assignments
 // @route   GET /api/v1/customers/:customerId/carriers
 export const getCarriersForCustomer = catchAsync(async (req, res, next) => {
-  // 1. Validate customer exists
-  const customer = await Customer.findById(req.params.customerId);
+
+  // 1. Fetch customer AND populate the carrier references in one query
+  const customer = await Customer.findById(req.params.customerId).populate({
+    path: 'carrierConfigurations.carrier', // Path to the ObjectId
+    select: 'carrierType accountName isActive' // Only fetch the fields we need from Carrier
+  });
+
+
   if (!customer) {
     return next(new AppError('No customer found with that ID', 404));
   }
 
-  // 2. Fetch all global carriers that are currently active in the system
-  const activeCarriers = await Carrier.find({ isActive: true });
-
-  // 3. Flatten the live services for the frontend dropdown UI
+  // 2. Flatten the live services for the frontend dropdown UI
   let availableServices = [];
-  
-  activeCarriers.forEach(carrier => {
-    // Only extract services the global admin has marked as LIVE
-    const liveServices = carrier.enabledServices.filter(service => service.isActive === true);
-    
-    liveServices.forEach(service => {
-      availableServices.push({
-        carrierId: carrier._id,
-        carrierType: carrier.carrierType, 
-        serviceCode: service.serviceCode, 
-        serviceName: service.serviceName, 
-        displayLabel: `${carrier.carrierType} - ${service.serviceName}` 
+
+  // Safely iterate over the customer's carrier configurations
+  if (customer.carrierConfigurations && Array.isArray(customer.carrierConfigurations)) {
+    customer.carrierConfigurations.forEach(config => {
+
+      // Because we used .populate(), config.carrier is now the actual Carrier document!
+      const carrierDoc = config.carrier;
+      // Safety check: Ensure the config is active, the carrier document exists, 
+      // AND the carrier hasn't been globally deactivated.
+      if (!config.isActive || !carrierDoc || !carrierDoc.isActive) return;
+      
+      // Only extract services the customer has marked as LIVE
+      const liveServices = config.allowedServices.filter(service => service.isActive === true);
+
+
+
+      // Map it out flat for the frontend dropdowns
+      liveServices.forEach(service => {
+        availableServices.push({
+          carrierId: carrierDoc._id,           // From the populated Carrier
+          carrierType: carrierDoc.carrierType, // From the populated Carrier
+          accountName: carrierDoc.accountName, // From the populated Carrier
+          serviceCode: service.serviceCode,    // From the Customer Config array
+          serviceName: service.serviceName,    // From the Customer Config array
+          displayLabel: `${carrierDoc.carrierType} - ${service.serviceName}`
+        });
       });
     });
-  });
+  }
 
+  // 3. Send the response
   res.status(200).json({
     status: 'success',
     results: availableServices.length,
-    data: { 
-      carriers: availableServices 
+    data: {
+      // We pass the flattened array directly into the carriers key
+      carriers: availableServices
     }
   });
 });
