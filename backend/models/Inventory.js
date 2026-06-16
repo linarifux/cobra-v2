@@ -73,13 +73,6 @@ const inventorySchema = new mongoose.Schema(
       ref: 'Category'
     }],
 
-    // Logistics
-    locationCoordinates: {
-      type: String,
-      trim: true,
-      default: 'Unassigned'
-    },
-
     // Embedded Ledger
     auditLedger: [auditLedgerSchema]
   },
@@ -93,6 +86,15 @@ const inventorySchema = new mongoose.Schema(
 // Virtual field to calculate Total Asset Pool Valuation on the fly
 inventorySchema.virtual('totalValuation').get(function() {
   return (this.unitsOnHand * this.unitCost).toFixed(2);
+});
+
+// CRITICAL UPDATE: Two-Way Binding Virtual for Locations
+// This dynamically queries the Location collection to find all physical 
+// storage units (racks/bins/pallets) holding this specific inventory item.
+inventorySchema.virtual('storageLocations', {
+  ref: 'Location',
+  localField: '_id',
+  foreignField: 'assignedMaterials.inventory'
 });
 
 // Indexes for fast lookup by customer

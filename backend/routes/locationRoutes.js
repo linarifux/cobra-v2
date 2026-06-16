@@ -8,21 +8,24 @@ import {
 } from '../controllers/locationController.js';
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
-const router = express.Router({ mergeParams: true }); // Merge params to access :customerId in nested routes
+const router = express.Router({ mergeParams: true });
 
 // Require valid authentication for all location routes
+// (Uncomment this when local auth is fully active)
 // router.use(protect);
 
 router.route('/')
+  // Anyone logged into the warehouse system needs to see locations
   .get(getAllLocations)
-//   .post(restrictTo('admin', 'staff', 'warehouse'), createLocation);
-.post(createLocation); // Allow all authenticated users to create locations for flexibility
+  // Only Admins and Warehouse Managers should be able to create new physical racks
+  .post(restrictTo('admin', 'super_admin', 'warehouse_manager'), createLocation);
 
 router.route('/:id')
+  // Open to all staff to view what is inside a specific rack
   .get(getLocationById)
-//   .put(restrictTo('admin', 'staff', 'warehouse'), updateLocation)
-    .put(updateLocation) // Allow all authenticated users to update locations for flexibility
-//   .delete(restrictTo('admin', 'staff'), deleteLocation); // Restrict structural deletion to higher roles
-.delete(deleteLocation); // Allow all authenticated users to delete locations for flexibility
+  // Staff need to update locations to move inventory in/out
+  .put(restrictTo('admin', 'super_admin', 'warehouse_manager', 'staff'), updateLocation)
+  // Only Admins can physically delete/decommission a rack from the database
+  .delete(restrictTo('admin', 'super_admin'), deleteLocation); 
 
 export default router;

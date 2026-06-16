@@ -1,11 +1,12 @@
 import mongoose from 'mongoose';
 
-// Sub-schema for the "Assigned Material Records" (Mixed Items)
+// Sub-schema for the "Assigned Material Records"
 const materialRecordSchema = new mongoose.Schema({
-  itemReference: { 
-    type: String, 
-    required: [true, 'Item/SKU reference is required'],
-    trim: true
+  // 1. CRITICAL UPDATE: Link directly to the Inventory Document
+  inventory: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Inventory',
+    required: [true, 'Inventory reference is required']
   },
   lotBatchId: { 
     type: String, 
@@ -40,7 +41,6 @@ const locationSchema = new mongoose.Schema(
     level: {
       type: String,
       trim: true,
-      // e.g., "Tier 3" or "Row A"
     },
     assignedMaterials: [materialRecordSchema],
     status: {
