@@ -33,7 +33,6 @@ const receivingSchema = new mongoose.Schema(
     location: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Location',
-      // Optional: You might receive items into a temporary staging area first
     },
 
     // Item Details
@@ -97,16 +96,15 @@ const receivingSchema = new mongoose.Schema(
   }
 );
 
-// Pre-save hook to automatically generate a unique Receiving ID if one isn't provided
-receivingSchema.pre('save', function (next) {
+// FIX: Removed 'next' parameter. Modern Mongoose handles this synchronously
+// if no 'next' argument is defined, avoiding the "next is not a function" crash.
+receivingSchema.pre('save', function () {
   if (!this.receivingId) {
-    // Generates a random 6-character alphanumeric string appended to RCV-
     this.receivingId = `RCV-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
   }
-  next();
 });
 
-// Indexes to speed up common queries (e.g., finding all receipts for a customer or item)
+// Indexes
 receivingSchema.index({ customer: 1 });
 receivingSchema.index({ inventoryItem: 1 });
 receivingSchema.index({ receivingId: 1 });

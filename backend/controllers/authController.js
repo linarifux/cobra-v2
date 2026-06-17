@@ -14,6 +14,7 @@ const createSendToken = (user, statusCode, res) => {
 
   // Remove password from output
   user.password = undefined;
+  
 
   res.status(statusCode).json({
     status: 'success',
@@ -43,6 +44,9 @@ export const login = catchAsync(async (req, res, next) => {
   if (!user.isActive) {
     return next(new AppError('This account has been deactivated.', 403));
   }
+
+  req.user = user
+  
 
   // 4. Send token
   createSendToken(user, 200, res);

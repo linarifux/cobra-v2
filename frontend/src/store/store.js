@@ -12,6 +12,7 @@ import inventoryReducer from './slices/inventorySlice';
 import locationReducer from './slices/locationSlice';
 import carrierReducer from './slices/carrierSlice';
 import orderReducer from './slices/orderSlice';
+import receivingReducer from './slices/receivingSlice';
 
 export const store = configureStore({
   reducer: {
@@ -27,5 +28,6 @@ export const store = configureStore({
     locations: locationReducer,
     carriers: carrierReducer,
     orders: orderReducer,
+    receiving: receivingReducer,
   },
 });

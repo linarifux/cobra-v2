@@ -21,6 +21,7 @@ import orderRoutes from './routes/orderRoutes.js';
 import addressRoutes from './routes/addressRoutes.js';
 import carrierRoutes from './routes/carrierRoutes.js';
 import userRoutes from './routes/userRoutes.js';
+import receivingRoutes from './routes/receivingRoutes.js'
 
 // 1. Initialize Database Connection
 connectDB();
@@ -70,6 +71,7 @@ app.use('/api/v1/orders', orderRoutes);
 app.use('/api/v1/addresses', addressRoutes);
 app.use('/api/v1/carriers', carrierRoutes);
 app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/receiving', receivingRoutes);
 
 // 5. Global Error Handler
 app.use(globalErrorHandler);
