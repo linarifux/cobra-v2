@@ -32,7 +32,6 @@ export const protect = catchAsync(async (req, res, next) => {
     return next(new AppError('Your account has been deactivated. Contact support.', 403));
   }
 
-  console.log(currentUser);
   
   // Grant access to protected route
   req.user = currentUser;
@@ -52,8 +51,6 @@ export const requirePortal = (portalType) => {
 // 3. Restrict to specific roles (e.g., ['super_admin', 'admin'])
 export const restrictTo = (...roles) => {
   return (req, res, next) => {
-    console.log('request object ', req.user);
-    console.log('roles: ', roles)
     if (!roles.includes(req.user.role)) {
       return next(new AppError('You do not have permission to perform this action.', 403));
     }
