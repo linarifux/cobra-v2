@@ -27,17 +27,23 @@ export default function ReceivingOrderDetail() {
     };
   }, [id, dispatch]);
 
-  // Construct a standard array for the table, even though our schema is 1 item per receiving log
+  // Construct a standard array for the table, now including Division and Category
   const enrichedItems = useMemo(() => {
     if (!currentLog) return [];
     
     const qty = Number(currentLog.quantity) || 0;
     const unitWeight = Number(currentLog.unitWeight) || 0;
     
+    // Safely extract division and category names (assuming they are populated from the backend)
+    const divisionName = currentLog.inventoryItem?.divisions?.[0]?.divisionName || 'Unassigned Division';
+    const categoryName = currentLog.inventoryItem?.categories?.[0]?.categoryName || 'Unassigned Category';
+    
     return [{
       id: currentLog._id,
       name: currentLog.inventoryItem?.itemName || 'Unknown Item',
       sku: currentLog.inventoryItem?.sku || 'N/A',
+      division: divisionName,
+      category: categoryName,
       cartons: currentLog.numberOfCartons || 0,
       unitsPerCarton: currentLog.unitsPerCarton || 0,
       qty: qty,
@@ -134,7 +140,7 @@ export default function ReceivingOrderDetail() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
         {[
           { label: 'Customer', val: currentLog.customer?.customerName || '—', icon: Building2 },
-          { label: 'Vendor', val: currentLog.vendor || '—', icon: Truck },
+          { label: 'Vendor / Carrier', val: currentLog.vendor || '—', icon: Truck },
           { label: 'Skids Rcvd', val: `${currentLog.skids || 0} Skids`, icon: Package },
           { label: 'Storage Location', val: currentLog.location?.designation || 'Unassigned', icon: MapPin },
           { label: 'Total Weight', val: calculatedTotalWeight, icon: Weight }, 
@@ -179,7 +185,19 @@ export default function ReceivingOrderDetail() {
                     <tr key={i} className="hover:bg-white transition-colors">
                       <td className="p-5">
                         <p className="text-sm font-black text-slate-900">{item.name}</p>
-                        <p className="text-[10px] text-slate-500 font-mono font-bold mt-1 bg-slate-100 inline-block px-1.5 rounded">{item.sku}</p>
+                        
+                        {/* UPDATED: SKU, Division, and Category badges */}
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                          <span className="text-[10px] text-slate-500 font-mono font-bold bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200/60 shadow-sm">
+                            {item.sku}
+                          </span>
+                          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest bg-white px-1.5 py-0.5 rounded border border-slate-200/60 shadow-sm">
+                            {item.division}
+                          </span>
+                          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest bg-white px-1.5 py-0.5 rounded border border-slate-200/60 shadow-sm">
+                            {item.category}
+                          </span>
+                        </div>
                       </td>
                       <td className="p-5 text-center text-xs font-bold text-slate-600">
                         {item.cartons} ctn <span className="text-slate-400 font-normal mx-1">×</span> {item.unitsPerCarton} units
@@ -254,4 +272,4 @@ export default function ReceivingOrderDetail() {
       </div>
     </div>
   );
-} 
+}

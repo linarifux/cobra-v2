@@ -4,7 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Package, Plus, Download, Trash2, Edit2, 
-  Search, X, Eye, Loader2, ArrowRightLeft, DollarSign
+  Search, X, Eye, Loader2, ArrowRightLeft, DollarSign, Filter
 } from 'lucide-react';
 
 // Redux Thunks
@@ -17,6 +17,8 @@ import {
 import { fetchCustomers } from '../store/slices/customerSlice';
 import { fetchInventory } from '../store/slices/inventorySlice';
 import { fetchLocations } from '../store/slices/locationSlice';
+import { fetchDivisions } from '../store/slices/divisionSlice';
+import { fetchCategories } from '../store/slices/categorySlice';
 
 // Providers
 import { useConfirm } from '../providers/ConfirmProvider';
@@ -25,6 +27,8 @@ const INITIAL_FORM_STATE = {
   dateReceived: new Date().toISOString().split('T')[0],
   vendor: '',
   customer: '',
+  division: '',     // Added for Cascading Filter
+  category: '',     // Added for Cascading Filter
   inventoryItem: '',
   description: '',
   description2: '',
@@ -48,6 +52,8 @@ export default function ReceivingOrders() {
   const { items: customers = [], status: custStatus } = useSelector(state => state.customers || {});
   const { items: inventory = [], status: invStatus } = useSelector(state => state.inventory || {});
   const { items: locations = [], status: locStatus } = useSelector(state => state.locations || {});
+  const { items: divisions = [], status: divStatus } = useSelector(state => state.divisions || {});
+  const { items: categories = [], status: catStatus } = useSelector(state => state.categories || {});
 
   // Load all required data on mount
   useEffect(() => {
@@ -55,7 +61,9 @@ export default function ReceivingOrders() {
     if (custStatus === 'idle') dispatch(fetchCustomers());
     if (invStatus === 'idle') dispatch(fetchInventory());
     if (locStatus === 'idle') dispatch(fetchLocations());
-  }, [status, custStatus, invStatus, locStatus, dispatch]);
+    if (divStatus === 'idle') dispatch(fetchDivisions());
+    if (catStatus === 'idle') dispatch(fetchCategories());
+  }, [status, custStatus, invStatus, locStatus, divStatus, catStatus, dispatch]);
 
   // --- UI State ---
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -68,12 +76,11 @@ export default function ReceivingOrders() {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
 
-  // --- Data Processing ---
+  // --- Data Processing (Table) ---
   const filteredData = useMemo(() => {
     return receivingData.filter(row => {
       const searchTarget = searchTerm.toLowerCase();
       
-      // Safely access populated fields
       const vendor = row.vendor?.toLowerCase() || '';
       const customerName = row.customer?.customerName?.toLowerCase() || '';
       const itemName = row.inventoryItem?.itemName?.toLowerCase() || '';
@@ -84,7 +91,6 @@ export default function ReceivingOrders() {
                             itemName.includes(searchTarget) ||
                             receivingId.includes(searchTarget);
 
-      // Handle Dates securely
       const rowDate = new Date(row.dateReceived).toISOString().split('T')[0];
       const matchesFrom = !fromDate || rowDate >= fromDate;
       const matchesTo = !toDate || rowDate <= toDate;
@@ -92,6 +98,58 @@ export default function ReceivingOrders() {
       return matchesSearch && matchesFrom && matchesTo;
     });
   }, [receivingData, searchTerm, fromDate, toDate]);
+
+  // --- CASCADING DROPDOWN LOGIC ---
+
+  // 1. Available Divisions (Filtered by Selected Customer's existing inventory)
+  const availableDivisions = useMemo(() => {
+    if (!formData.customer) return [];
+    
+    // Find all divisions tied to inventory items owned by this customer
+    const validDivIds = new Set(
+      inventory
+        .filter(inv => (inv.customer?._id || inv.customer) === formData.customer)
+        .flatMap(inv => inv.divisions?.map(d => d._id || d) || [])
+    );
+    return divisions.filter(d => validDivIds.has(d._id));
+  }, [inventory, divisions, formData.customer]);
+
+  // 2. Available Categories (Filtered by Selected Customer AND Selected Division)
+  const availableCategories = useMemo(() => {
+    if (!formData.customer || !formData.division) return [];
+    
+    const validCatIds = new Set(
+      inventory
+        .filter(inv => 
+          (inv.customer?._id || inv.customer) === formData.customer &&
+          inv.divisions?.some(d => (d._id || d) === formData.division)
+        )
+        .flatMap(inv => inv.categories?.map(c => c._id || c) || [])
+    );
+    return categories.filter(c => validCatIds.has(c._id));
+  }, [inventory, categories, formData.customer, formData.division]);
+
+  // 3. Final Available Inventory (Filtered by Customer + Division + Category)
+  const availableInventory = useMemo(() => {
+    if (!formData.customer || !formData.division || !formData.category) return [];
+    
+    return inventory.filter(inv => 
+      (inv.customer?._id || inv.customer) === formData.customer &&
+      inv.divisions?.some(d => (d._id || d) === formData.division) &&
+      inv.categories?.some(c => (c._id || c) === formData.category)
+    );
+  }, [inventory, formData.customer, formData.division, formData.category]);
+
+  // Cascade Change Handlers (Clears downstream fields when upstream changes)
+  const handleCustomerChange = (e) => {
+    setFormData({ ...formData, customer: e.target.value, division: '', category: '', inventoryItem: '' });
+  };
+  const handleDivisionChange = (e) => {
+    setFormData({ ...formData, division: e.target.value, category: '', inventoryItem: '' });
+  };
+  const handleCategoryChange = (e) => {
+    setFormData({ ...formData, category: e.target.value, inventoryItem: '' });
+  };
 
   // --- Modal Controls ---
   const openNewModal = () => {
@@ -103,12 +161,19 @@ export default function ReceivingOrders() {
   const openEditModal = (row) => {
     setActiveRecordId(row._id);
     
-    // Safely map populated objects back to their raw IDs for the select dropdowns
+    // Reverse-engineer the Division and Category to pre-fill the cascading dropdowns
+    const invId = row.inventoryItem?._id || row.inventoryItem;
+    const matchedInv = inventory.find(i => i._id === invId);
+    const mappedDivision = matchedInv?.divisions?.[0]?._id || matchedInv?.divisions?.[0] || '';
+    const mappedCategory = matchedInv?.categories?.[0]?._id || matchedInv?.categories?.[0] || '';
+
     setFormData({
       dateReceived: new Date(row.dateReceived).toISOString().split('T')[0],
       vendor: row.vendor || '',
       customer: row.customer?._id || row.customer || '',
-      inventoryItem: row.inventoryItem?._id || row.inventoryItem || '',
+      division: mappedDivision,
+      category: mappedCategory,
+      inventoryItem: invId || '',
       description: row.description || '',
       description2: row.description2 || '',
       lot: row.lot || '',
@@ -136,7 +201,7 @@ export default function ReceivingOrders() {
     e.preventDefault();
     setIsSubmitting(true);
 
-    // Map String inputs to strict Numbers for Mongoose
+    // Filter out division & category since they are UI helpers, not DB schema fields
     const payload = {
       dateReceived: formData.dateReceived,
       vendor: formData.vendor,
@@ -145,7 +210,7 @@ export default function ReceivingOrders() {
       description: formData.description,
       description2: formData.description2,
       lot: formData.lot,
-      location: formData.location || null, // Null if left unassigned
+      location: formData.location || null, 
       quantity: Number(formData.quantity) || 0,
       skids: Number(formData.skids) || 0,
       cartonsPerSkid: Number(formData.cartonsPerSkid) || 0,
@@ -187,7 +252,6 @@ export default function ReceivingOrders() {
     }
   };
 
-  // --- Helpers ---
   const clearFilters = () => {
     setSearchTerm('');
     setFromDate('');
@@ -219,8 +283,6 @@ export default function ReceivingOrders() {
     a.click();
     window.URL.revokeObjectURL(url);
   };
-
-  const hasFilters = searchTerm || fromDate || toDate;
 
   // Render Loader
   if (status === 'loading' && receivingData.length === 0) {
@@ -278,7 +340,7 @@ export default function ReceivingOrders() {
           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block ml-1">Received To</label>
           <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-full px-4 py-2.5 bg-white/60 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-brand-gold/50 outline-none transition-all cursor-pointer" />
         </div>
-        {hasFilters && (
+        {(searchTerm || fromDate || toDate) && (
           <button onClick={clearFilters} className="flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-[11px] font-black uppercase tracking-wider transition-colors">
             <X size={14} /> Clear
           </button>
@@ -389,24 +451,62 @@ export default function ReceivingOrders() {
 
                   <div>
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Customer / Depositor <span className="text-red-400">*</span></label>
-                    <select required value={formData.customer} onChange={(e) => setFormData({...formData, customer: e.target.value})} disabled={isSubmitting} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer">
-                      <option value="">Select Customer...</option>
+                    <select required value={formData.customer} onChange={handleCustomerChange} disabled={isSubmitting} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer">
+                      <option value="">1. Select Customer...</option>
                       {customers.map(c => <option key={c._id} value={c._id}>{c.customerName}</option>)}
                     </select>
                   </div>
                 </div>
 
-                {/* Section 2: Inventory Mapping */}
+                {/* Section 2: Cascading Catalog Filter */}
                 <div className="space-y-4 pt-4 border-t border-slate-100">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Filter className="text-brand-gold" size={14} />
+                    <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Inventory Filtering Pipeline</h3>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Division Segment</label>
+                      <select 
+                        value={formData.division} 
+                        onChange={handleDivisionChange} 
+                        disabled={!formData.customer || isSubmitting || availableDivisions.length === 0} 
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        <option value="">2. Select Division...</option>
+                        {availableDivisions.map(d => <option key={d._id} value={d._id}>{d.divisionName}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Product Category</label>
+                      <select 
+                        value={formData.category} 
+                        onChange={handleCategoryChange} 
+                        disabled={!formData.division || isSubmitting || availableCategories.length === 0} 
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        <option value="">3. Select Category...</option>
+                        {availableCategories.map(c => <option key={c._id} value={c._id}>{c.categoryName}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
                   <div>
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Inventory Asset <span className="text-red-400">*</span></label>
-                    <select required value={formData.inventoryItem} onChange={(e) => setFormData({...formData, inventoryItem: e.target.value})} disabled={isSubmitting} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer">
-                      <option value="">Select Item from Catalog...</option>
-                      {inventory.map(inv => <option key={inv._id} value={inv._id}>{inv.sku} — {inv.itemName}</option>)}
+                    <select 
+                      required 
+                      value={formData.inventoryItem} 
+                      onChange={(e) => setFormData({...formData, inventoryItem: e.target.value})} 
+                      disabled={!formData.category || isSubmitting || availableInventory.length === 0} 
+                      className={`w-full px-4 py-2.5 border rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer disabled:opacity-50 ${formData.category && availableInventory.length > 0 ? 'bg-brand-gold/5 border-brand-gold/30 text-slate-900' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
+                    >
+                      <option value="">4. Select Final Asset...</option>
+                      {availableInventory.map(inv => <option key={inv._id} value={inv._id}>{inv.sku} — {inv.itemName}</option>)}
                     </select>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-4 pt-2">
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Lot / Batch ID</label>
                       <input type="text" placeholder="e.g., LOT-8812" value={formData.lot} onChange={(e) => setFormData({...formData, lot: e.target.value})} disabled={isSubmitting} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
