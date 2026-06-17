@@ -30,8 +30,6 @@ export default function Topbar() {
 
   // Extract the current logged-in user from Redux
   const { user } = useSelector((state) => state.auth || {});
-  console.log(user);
-  
 
   // Close search on Escape or Click Outside
   useEffect(() => {

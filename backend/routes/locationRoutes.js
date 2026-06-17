@@ -12,17 +12,17 @@ const router = express.Router({ mergeParams: true });
 
 // Require valid authentication for all location routes
 // (Uncomment this when local auth is fully active)
-// router.use(protect);
+router.use(protect);
 
 router.route('/')
   // Anyone logged into the warehouse system needs to see locations
-  .get(getAllLocations)
+  .get(restrictTo('admin', 'super_admin', 'warehouse_manager'), getAllLocations)
   // Only Admins and Warehouse Managers should be able to create new physical racks
   .post(restrictTo('admin', 'super_admin', 'warehouse_manager'), createLocation);
 
 router.route('/:id')
   // Open to all staff to view what is inside a specific rack
-  .get(getLocationById)
+  .get(restrictTo('admin', 'super_admin', 'warehouse_manager'),getLocationById)
   // Staff need to update locations to move inventory in/out
   .put(restrictTo('admin', 'super_admin', 'warehouse_manager', 'staff'), updateLocation)
   // Only Admins can physically delete/decommission a rack from the database

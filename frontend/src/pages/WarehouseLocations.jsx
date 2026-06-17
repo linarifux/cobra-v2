@@ -148,6 +148,7 @@ export default function WarehouseLocations() {
     };
 
     try {
+      console.log(activeLocation);
       if (activeLocation) {
         await dispatch(updateLocation({ id: activeLocation._id, locationData: payload })).unwrap();
       } else {
