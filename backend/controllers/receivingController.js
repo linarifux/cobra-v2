@@ -22,7 +22,15 @@ export const getAllReceiving = catchAsync(async (req, res, next) => {
   const receivingRecords = await Receiving.find()
     .sort({ dateReceived: -1 })
     .populate('customer', 'customerName contactEmail')
-    .populate('inventoryItem', 'itemName sku unitCost')
+    // Deep populate to get the division and category names for the frontend UI
+    .populate({
+      path: 'inventoryItem',
+      select: 'itemName sku unitCost divisions categories',
+      populate: [
+        { path: 'divisions', select: 'divisionName' },
+        { path: 'categories', select: 'categoryName' }
+      ]
+    })
     .populate('location', 'designation storageCategory');
 
   res.status(200).json({
@@ -37,7 +45,15 @@ export const getAllReceiving = catchAsync(async (req, res, next) => {
 export const getReceivingById = catchAsync(async (req, res, next) => {
   const receiving = await Receiving.findById(req.params.id)
     .populate('customer', 'customerName contactEmail')
-    .populate('inventoryItem', 'itemName sku unitCost')
+    // Deep populate to get the division and category names for the frontend UI
+    .populate({
+      path: 'inventoryItem',
+      select: 'itemName sku unitCost divisions categories',
+      populate: [
+        { path: 'divisions', select: 'divisionName' },
+        { path: 'categories', select: 'categoryName' }
+      ]
+    })
     .populate('location', 'designation storageCategory');
 
   if (!receiving) {
@@ -62,10 +78,17 @@ export const updateReceiving = catchAsync(async (req, res, next) => {
     return next(new AppError('No receiving record found with that ID', 404));
   }
 
-  // Repopulate before sending the response
+  // Repopulate before sending the response to keep the UI in sync
   receiving = await receiving.populate([
     { path: 'customer', select: 'customerName' },
-    { path: 'inventoryItem', select: 'itemName sku' },
+    { 
+      path: 'inventoryItem', 
+      select: 'itemName sku divisions categories',
+      populate: [
+        { path: 'divisions', select: 'divisionName' },
+        { path: 'categories', select: 'categoryName' }
+      ]
+    },
     { path: 'location', select: 'designation' }
   ]);
 
