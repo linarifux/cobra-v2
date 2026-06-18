@@ -26,9 +26,13 @@ import { useConfirm } from '../providers/ConfirmProvider';
 const INITIAL_FORM_STATE = {
   dateReceived: new Date().toISOString().split('T')[0],
   vendor: '',
+  carrier: '',
+  vendorAddress: '',
+  vendorCityStateZip: '',
+  vendorPhone: '',
   customer: '',
-  division: '',     // Added for Cascading Filter
-  category: '',     // Added for Cascading Filter
+  division: '',
+  category: '',
   inventoryItem: '',
   description: '',
   description2: '',
@@ -82,11 +86,13 @@ export default function ReceivingOrders() {
       const searchTarget = searchTerm.toLowerCase();
       
       const vendor = row.vendor?.toLowerCase() || '';
+      const carrier = row.carrier?.toLowerCase() || '';
       const customerName = row.customer?.customerName?.toLowerCase() || '';
       const itemName = row.inventoryItem?.itemName?.toLowerCase() || '';
       const receivingId = row.receivingId?.toLowerCase() || '';
 
       const matchesSearch = vendor.includes(searchTarget) || 
+                            carrier.includes(searchTarget) ||
                             customerName.includes(searchTarget) || 
                             itemName.includes(searchTarget) ||
                             receivingId.includes(searchTarget);
@@ -100,12 +106,8 @@ export default function ReceivingOrders() {
   }, [receivingData, searchTerm, fromDate, toDate]);
 
   // --- CASCADING DROPDOWN LOGIC ---
-
-  // 1. Available Divisions (Filtered by Selected Customer's existing inventory)
   const availableDivisions = useMemo(() => {
     if (!formData.customer) return [];
-    
-    // Find all divisions tied to inventory items owned by this customer
     const validDivIds = new Set(
       inventory
         .filter(inv => (inv.customer?._id || inv.customer) === formData.customer)
@@ -114,10 +116,8 @@ export default function ReceivingOrders() {
     return divisions.filter(d => validDivIds.has(d._id));
   }, [inventory, divisions, formData.customer]);
 
-  // 2. Available Categories (Filtered by Selected Customer AND Selected Division)
   const availableCategories = useMemo(() => {
     if (!formData.customer || !formData.division) return [];
-    
     const validCatIds = new Set(
       inventory
         .filter(inv => 
@@ -129,10 +129,8 @@ export default function ReceivingOrders() {
     return categories.filter(c => validCatIds.has(c._id));
   }, [inventory, categories, formData.customer, formData.division]);
 
-  // 3. Final Available Inventory (Filtered by Customer + Division + Category)
   const availableInventory = useMemo(() => {
     if (!formData.customer || !formData.division || !formData.category) return [];
-    
     return inventory.filter(inv => 
       (inv.customer?._id || inv.customer) === formData.customer &&
       inv.divisions?.some(d => (d._id || d) === formData.division) &&
@@ -140,16 +138,9 @@ export default function ReceivingOrders() {
     );
   }, [inventory, formData.customer, formData.division, formData.category]);
 
-  // Cascade Change Handlers (Clears downstream fields when upstream changes)
-  const handleCustomerChange = (e) => {
-    setFormData({ ...formData, customer: e.target.value, division: '', category: '', inventoryItem: '' });
-  };
-  const handleDivisionChange = (e) => {
-    setFormData({ ...formData, division: e.target.value, category: '', inventoryItem: '' });
-  };
-  const handleCategoryChange = (e) => {
-    setFormData({ ...formData, category: e.target.value, inventoryItem: '' });
-  };
+  const handleCustomerChange = (e) => setFormData({ ...formData, customer: e.target.value, division: '', category: '', inventoryItem: '' });
+  const handleDivisionChange = (e) => setFormData({ ...formData, division: e.target.value, category: '', inventoryItem: '' });
+  const handleCategoryChange = (e) => setFormData({ ...formData, category: e.target.value, inventoryItem: '' });
 
   // --- Modal Controls ---
   const openNewModal = () => {
@@ -160,8 +151,6 @@ export default function ReceivingOrders() {
 
   const openEditModal = (row) => {
     setActiveRecordId(row._id);
-    
-    // Reverse-engineer the Division and Category to pre-fill the cascading dropdowns
     const invId = row.inventoryItem?._id || row.inventoryItem;
     const matchedInv = inventory.find(i => i._id === invId);
     const mappedDivision = matchedInv?.divisions?.[0]?._id || matchedInv?.divisions?.[0] || '';
@@ -170,6 +159,10 @@ export default function ReceivingOrders() {
     setFormData({
       dateReceived: new Date(row.dateReceived).toISOString().split('T')[0],
       vendor: row.vendor || '',
+      carrier: row.carrier || '',
+      vendorAddress: row.vendorAddress || '',
+      vendorCityStateZip: row.vendorCityStateZip || '',
+      vendorPhone: row.vendorPhone || '',
       customer: row.customer?._id || row.customer || '',
       division: mappedDivision,
       category: mappedCategory,
@@ -201,10 +194,13 @@ export default function ReceivingOrders() {
     e.preventDefault();
     setIsSubmitting(true);
 
-    // Filter out division & category since they are UI helpers, not DB schema fields
     const payload = {
       dateReceived: formData.dateReceived,
       vendor: formData.vendor,
+      carrier: formData.carrier,
+      vendorAddress: formData.vendorAddress,
+      vendorCityStateZip: formData.vendorCityStateZip,
+      vendorPhone: formData.vendorPhone,
       customer: formData.customer,
       inventoryItem: formData.inventoryItem,
       description: formData.description,
@@ -259,13 +255,14 @@ export default function ReceivingOrders() {
   };
 
   const exportToCSV = () => {
-    const headers = ['Date', 'Receiving ID', 'Vendor', 'Customer', 'Inventory Item', 'Lot', 'Location', 'Qty', 'Skids'];
+    const headers = ['Date', 'Receiving ID', 'Vendor', 'Carrier', 'Customer', 'Inventory Item', 'Lot', 'Location', 'Qty', 'Skids'];
     const csvContent = [
       headers.join(','), 
       ...filteredData.map(row => [
         new Date(row.dateReceived).toLocaleDateString(),
         row.receivingId,
         `"${row.vendor || ''}"`,
+        `"${row.carrier || ''}"`,
         `"${row.customer?.customerName || ''}"`,
         `"${row.inventoryItem?.itemName || ''}"`,
         `"${row.lot || ''}"`,
@@ -284,7 +281,6 @@ export default function ReceivingOrders() {
     window.URL.revokeObjectURL(url);
   };
 
-  // Render Loader
   if (status === 'loading' && receivingData.length === 0) {
     return (
       <div className="h-full flex justify-center items-center py-20 text-slate-400">
@@ -308,10 +304,7 @@ export default function ReceivingOrders() {
           <button onClick={exportToCSV} className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-sm font-black text-slate-700 shadow-sm transition-all active:scale-95 uppercase tracking-wider">
             <Download size={16} /> Export
           </button>
-          <button 
-            onClick={openNewModal}
-            className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-brand-gold rounded-xl text-sm font-black shadow-lg shadow-slate-900/20 transition-all active:scale-95 uppercase tracking-wider"
-          >
+          <button onClick={openNewModal} className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-brand-gold rounded-xl text-sm font-black shadow-lg shadow-slate-900/20 transition-all active:scale-95 uppercase tracking-wider">
             <Plus size={16} /> Add Receipt
           </button>
         </div>
@@ -323,13 +316,7 @@ export default function ReceivingOrders() {
           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block ml-1">Search Database</label>
           <div className="relative">
             <Search className="absolute left-4 top-3 w-4 h-4 text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="Search by ID, Vendor, Customer, or Item..." 
-              value={searchTerm} 
-              onChange={(e) => setSearchTerm(e.target.value)} 
-              className="w-full pl-11 pr-4 py-2.5 bg-white/60 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-brand-gold/50 outline-none transition-all" 
-            />
+            <input type="text" placeholder="Search by ID, Vendor, Customer, or Item..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-2.5 bg-white/60 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-brand-gold/50 outline-none transition-all" />
           </div>
         </div>
         <div className="flex-1 min-w-[140px]">
@@ -374,7 +361,10 @@ export default function ReceivingOrders() {
                     <td className="p-5 text-xs font-mono font-black text-brand-gold tracking-wider bg-brand-gold/5 rounded-xl m-2 inline-flex border border-brand-gold/10">
                       {row.receivingId}
                     </td>
-                    <td className="p-5 text-sm font-black text-slate-800">{row.vendor}</td>
+                    <td className="p-5 text-sm font-black text-slate-800">
+                      <div>{row.vendor}</div>
+                      {row.carrier && <div className="text-[10px] text-slate-400 uppercase mt-0.5">VIA: {row.carrier}</div>}
+                    </td>
                     <td className="p-5 text-sm font-semibold text-slate-600">{row.customer?.customerName || '—'}</td>
                     <td className="p-5 text-sm font-bold text-slate-900">
                       <div className="flex flex-col">
@@ -436,7 +426,6 @@ export default function ReceivingOrders() {
               
               <form onSubmit={handleSaveShipment} className="flex-1 flex flex-col gap-y-5">
                 
-                {/* Section 1: Core Logistics */}
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -444,8 +433,32 @@ export default function ReceivingOrders() {
                       <input required type="date" value={formData.dateReceived} onChange={(e) => setFormData({...formData, dateReceived: e.target.value})} disabled={isSubmitting} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer" />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Vendor <span className="text-red-400">*</span></label>
-                      <input required type="text" placeholder="e.g., Ace Displays" value={formData.vendor} onChange={(e) => setFormData({...formData, vendor: e.target.value})} disabled={isSubmitting} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Carrier <span className="text-red-400">*</span></label>
+                      <input required type="text" placeholder="e.g., FedEx, UPS Freight" value={formData.carrier} onChange={(e) => setFormData({...formData, carrier: e.target.value})} disabled={isSubmitting} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-2">Vendor Information</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Vendor Name <span className="text-red-400">*</span></label>
+                        <input required type="text" placeholder="e.g., Terumo Medical" value={formData.vendor} onChange={(e) => setFormData({...formData, vendor: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:border-brand-gold transition-all" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Phone Number</label>
+                        <input type="text" placeholder="e.g., 800-283-7866" value={formData.vendorPhone} onChange={(e) => setFormData({...formData, vendorPhone: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:border-brand-gold transition-all" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Address</label>
+                        <input type="text" placeholder="e.g., 8655 Commerce Dr." value={formData.vendorAddress} onChange={(e) => setFormData({...formData, vendorAddress: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:border-brand-gold transition-all" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">City, State, ZIP</label>
+                        <input type="text" placeholder="e.g., Southaven, MS - 38671" value={formData.vendorCityStateZip} onChange={(e) => setFormData({...formData, vendorCityStateZip: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:border-brand-gold transition-all" />
+                      </div>
                     </div>
                   </div>
 
@@ -468,24 +481,14 @@ export default function ReceivingOrders() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Division Segment</label>
-                      <select 
-                        value={formData.division} 
-                        onChange={handleDivisionChange} 
-                        disabled={!formData.customer || isSubmitting || availableDivisions.length === 0} 
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer disabled:opacity-50"
-                      >
+                      <select value={formData.division} onChange={handleDivisionChange} disabled={!formData.customer || isSubmitting || availableDivisions.length === 0} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer disabled:opacity-50">
                         <option value="">2. Select Division...</option>
                         {availableDivisions.map(d => <option key={d._id} value={d._id}>{d.divisionName}</option>)}
                       </select>
                     </div>
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Product Category</label>
-                      <select 
-                        value={formData.category} 
-                        onChange={handleCategoryChange} 
-                        disabled={!formData.division || isSubmitting || availableCategories.length === 0} 
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer disabled:opacity-50"
-                      >
+                      <select value={formData.category} onChange={handleCategoryChange} disabled={!formData.division || isSubmitting || availableCategories.length === 0} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer disabled:opacity-50">
                         <option value="">3. Select Category...</option>
                         {availableCategories.map(c => <option key={c._id} value={c._id}>{c.categoryName}</option>)}
                       </select>
@@ -494,13 +497,7 @@ export default function ReceivingOrders() {
 
                   <div>
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Inventory Asset <span className="text-red-400">*</span></label>
-                    <select 
-                      required 
-                      value={formData.inventoryItem} 
-                      onChange={(e) => setFormData({...formData, inventoryItem: e.target.value})} 
-                      disabled={!formData.category || isSubmitting || availableInventory.length === 0} 
-                      className={`w-full px-4 py-2.5 border rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer disabled:opacity-50 ${formData.category && availableInventory.length > 0 ? 'bg-brand-gold/5 border-brand-gold/30 text-slate-900' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
-                    >
+                    <select required value={formData.inventoryItem} onChange={(e) => setFormData({...formData, inventoryItem: e.target.value})} disabled={!formData.category || isSubmitting || availableInventory.length === 0} className={`w-full px-4 py-2.5 border rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer disabled:opacity-50 ${formData.category && availableInventory.length > 0 ? 'bg-brand-gold/5 border-brand-gold/30 text-slate-900' : 'bg-slate-50 border-slate-200 text-slate-900'}`}>
                       <option value="">4. Select Final Asset...</option>
                       {availableInventory.map(inv => <option key={inv._id} value={inv._id}>{inv.sku} — {inv.itemName}</option>)}
                     </select>

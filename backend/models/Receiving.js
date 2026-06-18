@@ -13,10 +13,34 @@ const receivingSchema = new mongoose.Schema(
       default: Date.now,
       required: [true, 'Date received is required']
     },
+    
+    // --- UPDATED: Separated Vendor and Carrier ---
     vendor: {
       type: String,
       trim: true,
       required: [true, 'Vendor name is required']
+    },
+    carrier: {
+      type: String,
+      trim: true,
+      default: 'Unknown Carrier'
+    },
+    
+    // --- NEW: Vendor Contact Fields ---
+    vendorAddress: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    vendorCityStateZip: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    vendorPhone: {
+      type: String,
+      trim: true,
+      default: ''
     },
     
     // Relational Fields
