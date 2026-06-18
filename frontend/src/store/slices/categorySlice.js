@@ -1,25 +1,13 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
-
-// Helper function to generate auth headers
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('token');
-  return {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`
-  };
-};
+import api from '../../utils/api'; // Adjust the import path if necessary based on your folder structure
 
 // 1. Fetch Categories
 export const fetchCategories = createAsyncThunk(
   'categories/fetchCategories',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await axios.get(`${API_URL}/categories`, {
-        headers: getAuthHeaders()
-      });
+      // The interceptor automatically attaches the base URL and Auth Token
+      const response = await api.get('/categories');
       // Axios auto-parses JSON into the `data` property
       return response.data.data.categories; 
     } catch (error) {
@@ -34,9 +22,7 @@ export const createCategory = createAsyncThunk(
   'categories/createCategory',
   async (categoryData, { rejectWithValue }) => {
     try {
-      const response = await axios.post(`${API_URL}/categories`, categoryData, {
-        headers: getAuthHeaders()
-      });
+      const response = await api.post('/categories', categoryData);
       return response.data.data.category;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to create category');
@@ -49,9 +35,7 @@ export const updateCategory = createAsyncThunk(
   'categories/updateCategory',
   async ({ id, categoryData }, { rejectWithValue }) => {
     try {
-      const response = await axios.put(`${API_URL}/categories/${id}`, categoryData, {
-        headers: getAuthHeaders()
-      });
+      const response = await api.put(`/categories/${id}`, categoryData);
       return response.data.data.category;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to update category');
@@ -64,9 +48,7 @@ export const deleteCategory = createAsyncThunk(
   'categories/deleteCategory',
   async (id, { rejectWithValue }) => {
     try {
-      await axios.delete(`${API_URL}/categories/${id}`, {
-        headers: getAuthHeaders()
-      });
+      await api.delete(`/categories/${id}`);
       
       // CRITICAL: Return the ID so the reducer can filter it out of the UI state
       return id; 

@@ -1,31 +1,15 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
-
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('token');
-  return {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`
-  };
-};
+import api from '../../utils/api'; // Adjust the import path if necessary based on your file structure
 
 // 1. Fetch ALL Users
 export const fetchUsers = createAsyncThunk(
   'users/fetchUsers',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/users`, {
-        method: 'GET',
-        headers: getAuthHeaders()
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to fetch users');
-
-      return data.data.users || data.data; 
+      const response = await api.get('/users');
+      return response.data.data.users || response.data.data; 
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch users');
     }
   }
 );
@@ -36,20 +20,13 @@ export const createUser = createAsyncThunk(
   async (userData, { rejectWithValue }) => {
     try {
       const payload = { ...userData };
+      // Strip out customer assignment if the user is an internal admin
       if (payload.portal === 'admin') delete payload.customer;
 
-      const response = await fetch(`${API_URL}/users`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(payload)
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to create user');
-
-      return data.data.user || data.data;
+      const response = await api.post('/users', payload);
+      return response.data.data.user || response.data.data;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to create user');
     }
   }
 );
@@ -65,18 +42,10 @@ export const updateUser = createAsyncThunk(
       // If password is empty, don't send it to backend so we don't accidentally overwrite it
       if (!payload.password) delete payload.password;
 
-      const response = await fetch(`${API_URL}/users/${id}`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(payload)
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to update user');
-
-      return data.data.user || data.data;
+      const response = await api.put(`/users/${id}`, payload);
+      return response.data.data.user || response.data.data;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to update user');
     }
   }
 );
@@ -86,19 +55,10 @@ export const deleteUser = createAsyncThunk(
   'users/deleteUser',
   async (id, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/users/${id}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders()
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to delete user');
-      }
-
+      await api.delete(`/users/${id}`);
       return id; 
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to delete user');
     }
   }
 );

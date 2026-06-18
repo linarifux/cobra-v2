@@ -10,25 +10,84 @@ const auditLedgerSchema = new mongoose.Schema({
 
 const inventorySchema = new mongoose.Schema(
   {
-    itemName: {
+    // --- Core Identification ---
+    productCode: {
       type: String,
-      required: [true, 'Item name is required'],
-      trim: true,
-    },
-    sku: {
-      type: String,
-      required: [true, 'SKU is required'],
+      required: [true, 'Product Code is required'],
       unique: true,
       trim: true,
-      uppercase: true,
+    },
+    itemName: { 
+      type: String, 
+      required: [true, 'Item name is required'],
+      trim: true 
+    },
+    sku: { 
+      type: String, 
+      trim: true, 
+      uppercase: true 
     },
     status: {
       type: String,
-      enum: ['Stable Inventory Pool', 'Low Stock', 'Out of Stock', 'Discontinued'],
-      default: 'Stable Inventory Pool'
+      default: 'Active'
     },
+
+    // --- Media (Cloudinary Hosting) ---
+    productImage: { 
+      type: String, 
+      trim: true,
+      default: '' // Will store the secure URL returned by Cloudinary
+    },
+
+    // --- Descriptions & Classifications ---
+    description: { type: String, trim: true },
+    description2: { type: String, trim: true },
+    hssCode: { type: String, trim: true },
+    typePiece: { type: String, trim: true },
+    locationString: { type: String, trim: true }, // For the manual "Locations (+/-)" input field
+
+    // --- Relational Hierarchy ---
+    customer: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Customer',
+      required: [true, 'Inventory must belong to a Customer (Product Depositor)']
+    },
+    division: { type: mongoose.Schema.Types.ObjectId, ref: 'Division' },
+    category1: { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
+    category2: { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
+    category3: { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
+
+    // --- Toggles ---
+    admin: { type: Boolean, default: false },
+    offWeb: { type: Boolean, default: false },
+
+    // --- Pricing ---
+    price: { type: Number, default: 0, min: 0 },
+    price2: { type: Number, default: 0, min: 0 },
+    unitCost: { type: Number, default: 0, min: 0 }, // Base cost for valuation
+
+    // --- Inventory Thresholds ---
+    min: { type: Number, default: 0 },
+    max: { type: Number, default: 0 },
+    lowPoint: { type: Number, default: 0 },
+    lowPoint2: { type: Number, default: 0 },
+
+    // --- Live Quantitative Data ---
+    available: { 
+      type: Number, 
+      required: true, 
+      default: 0,
+      min: [0, 'Available units cannot be negative outside of ledger calculations']
+    },
+    unitsOnHand: { type: Number, default: 0 }, // Internal count fallback
+    openOrders: { type: Number, default: 0 },
+    qtyLastReceived: { type: Number, default: 0 },
+    dateLastReceived: { type: Date },
+    pipelineSupply: { type: Number, default: 0 },
+
+    // --- Auditing Metadata ---
     lastAuditedBy: {
-      type: String, // Tracks the staff member name
+      type: String,
       trim: true,
       default: 'System User'
     },
@@ -36,44 +95,8 @@ const inventorySchema = new mongoose.Schema(
       type: Date,
       default: Date.now
     },
-    
-    // Quantitative Data
-    unitsOnHand: {
-      type: Number,
-      required: true,
-      default: 0,
-      min: [0, 'Units on hand cannot be negative outside of ledger calculations']
-    },
-    pipelineSupply: {
-      type: Number,
-      default: 0
-    },
-    unitCost: {
-      type: Number,
-      required: [true, 'Base unit cost is required'],
-      min: 0
-    },
-    safetyBuffer: {
-      type: Number,
-      default: 100
-    },
 
-    // Relational Mapping
-    customer: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Customer',
-      required: [true, 'Inventory must belong to a Customer (Product Depositor)']
-    },
-    divisions: [{
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Division'
-    }],
-    categories: [{
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Category'
-    }],
-
-    // Embedded Ledger
+    // --- Embedded Ledger ---
     auditLedger: [auditLedgerSchema]
   },
   { 
@@ -85,7 +108,9 @@ const inventorySchema = new mongoose.Schema(
 
 // Virtual field to calculate Total Asset Pool Valuation on the fly
 inventorySchema.virtual('totalValuation').get(function() {
-  return (this.unitsOnHand * this.unitCost).toFixed(2);
+  const currentQty = this.available || this.unitsOnHand || 0;
+  const currentCost = this.price || this.unitCost || 0;
+  return (currentQty * currentCost).toFixed(2);
 });
 
 // CRITICAL UPDATE: Two-Way Binding Virtual for Locations
@@ -97,7 +122,8 @@ inventorySchema.virtual('storageLocations', {
   foreignField: 'assignedMaterials.inventory'
 });
 
-// Indexes for fast lookup by customer
+// Indexes for fast lookup
 inventorySchema.index({ customer: 1 });
+inventorySchema.index({ productCode: 1 });
 
 export default mongoose.model('Inventory', inventorySchema);

@@ -1,32 +1,15 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
-
-// Helper function to generate auth headers
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('token');
-  return {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`
-  };
-};
+import api from '../../utils/api'; // Adjust the import path based on your folder structure
 
 // 1. Fetch All Customers
 export const fetchCustomers = createAsyncThunk(
   'customers/fetchCustomers',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/customers`, {
-        method: 'GET',
-        headers: getAuthHeaders()
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to fetch customers');
-
-      return data.data.customers; 
+      const response = await api.get('/customers');
+      return response.data.data.customers; 
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch customers');
     }
   }
 );
@@ -36,17 +19,10 @@ export const fetchCustomerById = createAsyncThunk(
   'customers/fetchCustomerById',
   async (id, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/customers/${id}`, {
-        method: 'GET',
-        headers: getAuthHeaders()
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to fetch customer details');
-
-      return data.data.customer;
+      const response = await api.get(`/customers/${id}`);
+      return response.data.data.customer;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch customer details');
     }
   }
 );
@@ -57,16 +33,10 @@ export const fetchCustomerCarriers = createAsyncThunk(
   'customers/fetchCustomerCarriers',
   async (customerId, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/customers/${customerId}/carriers`, {
-        method: 'GET',
-        headers: getAuthHeaders()
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to fetch customer carriers');
-      // Adjust according to your API wrapper format
-      return data.data.carriers || data.data; 
+      const response = await api.get(`/customers/${customerId}/carriers`);
+      return response.data.data.carriers || response.data.data; 
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch customer carriers');
     }
   }
 );
@@ -75,15 +45,10 @@ export const fetchCustomerInventory = createAsyncThunk(
   'customers/fetchCustomerInventory',
   async (customerId, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/customers/${customerId}/inventory`, {
-        method: 'GET',
-        headers: getAuthHeaders()
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to fetch customer inventory');
-      return data.data.inventory || data.data; 
+      const response = await api.get(`/customers/${customerId}/inventory`);
+      return response.data.data.inventory || response.data.data; 
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch customer inventory');
     }
   }
 );
@@ -92,15 +57,10 @@ export const fetchCustomerUsers = createAsyncThunk(
   'customers/fetchCustomerUsers',
   async (customerId, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/customers/${customerId}/users`, {
-        method: 'GET',
-        headers: getAuthHeaders()
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to fetch customer users');
-      return data.data.users || data.data; 
+      const response = await api.get(`/customers/${customerId}/users`);
+      return response.data.data.users || response.data.data; 
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch customer users');
     }
   }
 );
@@ -112,18 +72,10 @@ export const createCustomer = createAsyncThunk(
   'customers/createCustomer',
   async (customerData, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/customers`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(customerData)
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to create customer');
-
-      return data.data.customer;
+      const response = await api.post('/customers', customerData);
+      return response.data.data.customer;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to create customer');
     }
   }
 );
@@ -133,18 +85,10 @@ export const updateCustomer = createAsyncThunk(
   'customers/updateCustomer',
   async ({ id, customerData }, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/customers/${id}`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(customerData)
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to update customer');
-
-      return data.data.customer;
+      const response = await api.put(`/customers/${id}`, customerData);
+      return response.data.data.customer;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to update customer');
     }
   }
 );
@@ -154,17 +98,10 @@ export const updateCustomerCarriersConfig = createAsyncThunk(
   'customers/updateCustomerCarriersConfig',
   async ({ id, carrierConfigurations }, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/customers/${id}/carriers`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ carrierConfigurations })
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to update carrier configuration');
-      
-      return data.data.customer;
+      const response = await api.put(`/customers/${id}/carriers`, { carrierConfigurations });
+      return response.data.data.customer;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to update carrier configuration');
     }
   }
 );
@@ -174,19 +111,10 @@ export const deleteCustomer = createAsyncThunk(
   'customers/deleteCustomer',
   async (id, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/customers/${id}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders()
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to delete customer');
-      }
-
+      await api.delete(`/customers/${id}`);
       return id; 
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to delete customer');
     }
   }
 );

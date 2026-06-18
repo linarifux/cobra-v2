@@ -12,21 +12,25 @@ export const createInventory = catchAsync(async (req, res, next) => {
   }
 
   // Automatically inject the initial baseline ledger entry if stock is provided
-  if (req.body.unitsOnHand > 0 && (!req.body.auditLedger || req.body.auditLedger.length === 0)) {
+  // UPDATED: Now checks 'available' and references 'productCode'
+  if (req.body.available > 0 && (!req.body.auditLedger || req.body.auditLedger.length === 0)) {
     req.body.auditLedger = [{
       event: 'Baseline Audit Intake',
-      referenceId: `SYS-REC-${req.body.sku}`,
-      quantityDelta: req.body.unitsOnHand
+      referenceId: `SYS-REC-${req.body.productCode || req.body.sku || 'NEW'}`,
+      quantityDelta: req.body.available
     }];
   }
 
   const inventory = await Inventory.create(req.body);
 
   // Populate relational data before sending back
+  // UPDATED: Now maps to the singular division and category1/2/3 fields
   await inventory.populate([
     { path: 'customer', select: 'customerName' },
-    { path: 'divisions', select: 'divisionName divisionCode' },
-    { path: 'categories', select: 'categoryName hierarchyDepth' }
+    { path: 'division', select: 'divisionName divisionCode' },
+    { path: 'category1', select: 'categoryName hierarchyDepth' },
+    { path: 'category2', select: 'categoryName hierarchyDepth' },
+    { path: 'category3', select: 'categoryName hierarchyDepth' }
   ]);
 
   res.status(201).json({
@@ -46,8 +50,10 @@ export const getAllInventory = catchAsync(async (req, res, next) => {
 
   const inventory = await Inventory.find(filter)
     .populate('customer', 'customerName')
-    .populate('divisions', 'divisionName')
-    .populate('categories', 'categoryName')
+    .populate('division', 'divisionName')
+    .populate('category1', 'categoryName')
+    .populate('category2', 'categoryName')
+    .populate('category3', 'categoryName')
     .sort('-createdAt');
 
   res.status(200).json({
@@ -62,8 +68,10 @@ export const getAllInventory = catchAsync(async (req, res, next) => {
 export const getInventoryById = catchAsync(async (req, res, next) => {
   const inventory = await Inventory.findById(req.params.id)
     .populate('customer', 'customerName contactEmail')
-    .populate('divisions', 'divisionName divisionCode')
-    .populate('categories', 'categoryName');
+    .populate('division', 'divisionName divisionCode')
+    .populate('category1', 'categoryName')
+    .populate('category2', 'categoryName')
+    .populate('category3', 'categoryName');
 
   if (!inventory) {
     return next(new AppError('No inventory item found with that ID', 404));
@@ -86,8 +94,9 @@ export const updateInventory = catchAsync(async (req, res, next) => {
   }
 
   // Handle manual stock adjustments pushing to the ledger
-  if (req.body.unitsOnHand !== undefined && req.body.unitsOnHand !== inventoryToUpdate.unitsOnHand) {
-    const delta = req.body.unitsOnHand - inventoryToUpdate.unitsOnHand;
+  // UPDATED: Tracks changes based on the 'available' threshold instead of unitsOnHand
+  if (req.body.available !== undefined && req.body.available !== inventoryToUpdate.available) {
+    const delta = req.body.available - inventoryToUpdate.available;
     
     inventoryToUpdate.auditLedger.push({
       event: req.body.updateReason || 'Manual Adjustment',
@@ -107,8 +116,10 @@ export const updateInventory = catchAsync(async (req, res, next) => {
 
   await inventoryToUpdate.populate([
     { path: 'customer', select: 'customerName' },
-    { path: 'divisions', select: 'divisionName' },
-    { path: 'categories', select: 'categoryName' }
+    { path: 'division', select: 'divisionName' },
+    { path: 'category1', select: 'categoryName' },
+    { path: 'category2', select: 'categoryName' },
+    { path: 'category3', select: 'categoryName' }
   ]);
 
   res.status(200).json({

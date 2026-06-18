@@ -1,29 +1,15 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
-
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('token');
-  return {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`
-  };
-};
+import api from '../../utils/api'; // Adjust the import path based on your folder structure
 
 // 1. Fetch All Inventory
 export const fetchInventory = createAsyncThunk(
   'inventory/fetchInventory',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/inventory`, {
-        method: 'GET',
-        headers: getAuthHeaders()
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to fetch inventory');
-      return data.data.inventory; 
+      const response = await api.get('/inventory');
+      return response.data.data.inventory; 
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch inventory');
     }
   }
 );
@@ -33,15 +19,10 @@ export const fetchInventoryById = createAsyncThunk(
   'inventory/fetchInventoryById',
   async (id, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/inventory/${id}`, {
-        method: 'GET',
-        headers: getAuthHeaders()
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to fetch inventory details');
-      return data.data.inventory;
+      const response = await api.get(`/inventory/${id}`);
+      return response.data.data.inventory;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch inventory details');
     }
   }
 );
@@ -51,16 +32,10 @@ export const createInventory = createAsyncThunk(
   'inventory/createInventory',
   async (inventoryData, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/inventory`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(inventoryData)
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to create inventory item');
-      return data.data.inventory;
+      const response = await api.post('/inventory', inventoryData);
+      return response.data.data.inventory;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to create inventory item');
     }
   }
 );
@@ -70,16 +45,10 @@ export const updateInventory = createAsyncThunk(
   'inventory/updateInventory',
   async ({ id, inventoryData }, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/inventory/${id}`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(inventoryData)
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to update inventory item');
-      return data.data.inventory;
+      const response = await api.put(`/inventory/${id}`, inventoryData);
+      return response.data.data.inventory;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to update inventory item');
     }
   }
 );
@@ -89,17 +58,10 @@ export const deleteInventory = createAsyncThunk(
   'inventory/deleteInventory',
   async (id, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/inventory/${id}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders()
-      });
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to delete inventory item');
-      }
+      await api.delete(`/inventory/${id}`);
       return id; 
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to delete inventory item');
     }
   }
 );
@@ -119,6 +81,7 @@ const inventorySlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
+      // Fetch All
       .addCase(fetchInventory.pending, (state) => { state.status = 'loading'; })
       .addCase(fetchInventory.fulfilled, (state, action) => {
         state.status = 'succeeded';
@@ -128,14 +91,17 @@ const inventorySlice = createSlice({
         state.status = 'failed';
         state.error = action.payload;
       })
+      // Fetch Single
       .addCase(fetchInventoryById.pending, (state) => { state.status = 'loading'; })
       .addCase(fetchInventoryById.fulfilled, (state, action) => {
         state.status = 'succeeded';
         state.currentItem = action.payload;
       })
+      // Create
       .addCase(createInventory.fulfilled, (state, action) => {
         state.items.unshift(action.payload);
       })
+      // Update
       .addCase(updateInventory.fulfilled, (state, action) => {
         const index = state.items.findIndex(item => item._id === action.payload._id);
         if (index !== -1) state.items[index] = action.payload;
@@ -143,6 +109,7 @@ const inventorySlice = createSlice({
           state.currentItem = action.payload;
         }
       })
+      // Delete
       .addCase(deleteInventory.fulfilled, (state, action) => {
         state.items = state.items.filter(item => item._id !== action.payload);
       });

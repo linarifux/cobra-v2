@@ -69,20 +69,19 @@ export default function InventoryDetail() {
   }
 
   // -------------------------------------------------------------
-  // DATA MAPPING: Safely deriving values from the backend schema
+  // DATA MAPPING: Safely deriving values from the updated backend schema
   // -------------------------------------------------------------
-  // Use fallbacks for price/qty field names in case the API shape varies
-  const unitPrice = Number(item.unitCost || item.price || item.retailPrice || 0);
-  const onHand = Number(item.unitsOnHand || item.quantity || 0);
+  const unitPrice = Number(item.price || 0);
+  const onHand = Number(item.available || 0);
   const totalAssetValue = unitPrice * onHand;
   
-  const safetyBuffer = Number(item.safetyBuffer || 20);
-  const isLowStock = onHand <= safetyBuffer;
+  const safetyBuffer = Number(item.min || 0);
+  const isLowStock = safetyBuffer > 0 && onHand <= safetyBuffer;
   
-  // Safely extract populated relational data
+  // Safely extract populated relational data based on the new schema structure
   const customerName = item.customer?.customerName || 'Unassigned Pool';
-  const divisionName = item.divisions?.[0]?.divisionName || 'Unassigned';
-  const categoryName = item.categories?.[0]?.categoryName || 'Unassigned';
+  const divisionName = item.division?.divisionName || 'Unassigned';
+  const categoryName = item.category1?.categoryName || 'Unassigned';
 
   // Format currency nicely
   const formatCurrency = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
@@ -119,6 +118,7 @@ export default function InventoryDetail() {
       {/* 2. Core Identity Hero Block */}
       <div className="bg-slate-950 text-white rounded-3xl p-8 shadow-xl relative overflow-hidden border border-slate-900">
         <div className="absolute right-0 top-0 translate-x-10 -translate-y-10 opacity-5 pointer-events-none">
+          {/* If the item has a productImage, we could overlay it here, but falling back to the Box icon matches the screenshot */}
           <Package size={300} />
         </div>
         
@@ -126,13 +126,13 @@ export default function InventoryDetail() {
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] font-mono font-black text-slate-950 uppercase tracking-widest bg-brand-gold px-2.5 py-0.5 rounded-md shadow-sm">
-                SKU: {item.sku}
+                SKU: {item.productCode || item.sku || 'N/A'}
               </span>
               <span className={`px-2.5 py-0.5 text-[10px] font-black rounded-md tracking-widest uppercase border ${isLowStock ? 'bg-red-500/20 text-red-400 border-red-500/30 animate-pulse' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
-                {item.status || (isLowStock ? 'Low Stock Warning' : 'Stable Inventory Pool')}
+                {item.status !== 'Active' ? item.status : (isLowStock ? 'Low Stock Warning' : 'Stable Inventory Pool')}
               </span>
             </div>
-            <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white">{item.itemName || item.name || 'Unnamed Asset'}</h1>
+            <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white">{item.description || item.itemName || 'Unnamed Asset'}</h1>
             <p className="text-xs text-slate-400 font-medium pt-1">
               Last audited on <span className="text-slate-200 font-bold">{new Date(item.lastAuditedAt || item.updatedAt).toLocaleString()}</span> by <span className="text-brand-gold font-bold">{item.lastAuditedBy || 'System Protocol'}</span>
             </p>
@@ -158,7 +158,7 @@ export default function InventoryDetail() {
           <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden mt-3 shadow-inner">
             <div 
               className={`h-full ${isLowStock ? 'bg-red-500' : 'bg-brand-gold'}`} 
-              style={{ width: `${Math.min((onHand / (safetyBuffer * 2 || 1)) * 100, 100)}%` }}
+              style={{ width: `${Math.min((onHand / (safetyBuffer * 2 || 100)) * 100, 100)}%` }}
             />
           </div>
         </div>
@@ -167,10 +167,10 @@ export default function InventoryDetail() {
         <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl shadow-sm space-y-1.5 transition-all hover:bg-white/60">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Pipeline Supply (On-Order)</span>
           <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-mono font-black text-blue-600">+{item.pipelineSupply || 0}</span>
+            <span className="text-3xl font-mono font-black text-blue-600">+{item.openOrders || 0}</span>
             <span className="text-xs font-bold text-slate-400">Inbound</span>
           </div>
-          <span className="text-[10px] text-slate-500 font-bold block mt-3">Dynamic pool sizing to {onHand + (item.pipelineSupply || 0)}</span>
+          <span className="text-[10px] text-slate-500 font-bold block mt-3">Dynamic pool sizing to {onHand + (item.openOrders || 0)}</span>
         </div>
 
         {/* Unit Cost Valuation Card */}
@@ -217,8 +217,8 @@ export default function InventoryDetail() {
               </div>
               <div>
                 <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest mb-1">Assigned Category Depth</span>
-                <span className="inline-flex items-center gap-1.5 text-[10px] bg-slate-900 text-white font-black tracking-widest uppercase px-2.5 py-1 rounded-lg shadow-md">
-                  <Tag size={10} className="text-brand-gold" /> {categoryName}
+                <span className={`inline-flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase px-2.5 py-1 rounded-lg shadow-md ${item.category1 ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                  <Tag size={10} className={item.category1 ? "text-brand-gold" : "text-slate-400"} /> {categoryName}
                 </span>
               </div>
             </div>
@@ -255,9 +255,9 @@ export default function InventoryDetail() {
             
             <div className="space-y-2 text-xs font-bold">
               <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest mb-1">Active Vault Coordinates</span>
-              <div className="flex items-center gap-2 text-slate-800 font-extrabold bg-white/60 px-3 py-2 rounded-xl border border-slate-200/60 shadow-sm">
+              <div className="flex items-center gap-2 text-slate-800 font-extrabold bg-white/60 px-3 py-2 rounded-xl border border-slate-200/60 shadow-sm w-fit">
                 <MapPin size={14} className="text-brand-gold shrink-0" />
-                <span className="truncate">{item.locationCoordinates || 'Unassigned Facility'}</span>
+                <span className="truncate">{item.locationString || 'Unassigned Facility'}</span>
               </div>
               <p className="text-[10px] text-slate-500 font-medium pt-1.5 leading-relaxed">
                 Cross-dock adjustments require verified barcode validation matching on-site vault sequences.

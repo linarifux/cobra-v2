@@ -1,6 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+import api from '../../utils/api'; // Adjust the import path if necessary
 
 // --- Helper: Safely Load User from Storage ---
 // Prevents the app from crashing if localStorage data is corrupted or 'undefined'
@@ -24,19 +23,9 @@ export const loginUser = createAsyncThunk(
   'auth/loginUser',
   async ({ email, password, portal }, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password, portal }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Authentication failed. Please check your credentials.');
-      }
+      // Axios automatically parses JSON and throws errors for non-2xx status codes
+      const response = await api.post('/auth/login', { email, password, portal });
+      const data = response.data;
 
       // Save token & user to local storage securely
       localStorage.setItem('token', data.token);
@@ -44,7 +33,10 @@ export const loginUser = createAsyncThunk(
 
       return data;
     } catch (error) {
-      return rejectWithValue(error.message);
+      // Axios puts backend error messages in error.response.data
+      return rejectWithValue(
+        error.response?.data?.message || error.message || 'Authentication failed. Please check your credentials.'
+      );
     }
   }
 );
@@ -54,22 +46,14 @@ export const fetchCurrentUser = createAsyncThunk(
   'auth/fetchCurrentUser',
   async (_, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) throw new Error('No active session token found.');
-
-      const response = await fetch(`${API_URL}/auth/me`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Session expired or invalid.');
+      // Fail fast if no token exists in storage before making the network request
+      if (!localStorage.getItem('token')) {
+        throw new Error('No active session token found.');
       }
+
+      // The api.js interceptor automatically attaches the Bearer token to this request!
+      const response = await api.get('/auth/me');
+      const data = response.data;
 
       // Update stored user data in case roles/names were changed on the backend
       localStorage.setItem('user', JSON.stringify(data.data.user));
@@ -79,7 +63,10 @@ export const fetchCurrentUser = createAsyncThunk(
       // If token is invalid/expired/tampered with, purge the storage to force a clean re-login
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      return rejectWithValue(error.message);
+      
+      return rejectWithValue(
+        error.response?.data?.message || error.message || 'Session expired or invalid.'
+      );
     }
   }
 );

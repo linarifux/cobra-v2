@@ -1,100 +1,67 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import api from '../../utils/api'; // Adjust the import path if necessary based on your folder structure
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
-
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('token');
-  return {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`
-  };
-};
-
+// 1. Fetch All Locations
 export const fetchLocations = createAsyncThunk(
   'locations/fetchLocations',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/locations`, {
-        method: 'GET',
-        headers: getAuthHeaders()
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to fetch locations');
-      return data.data.locations; 
+      const response = await api.get('/locations');
+      return response.data.data.locations; 
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch locations');
     }
   }
 );
 
+// 2. Fetch Single Location By ID
 export const fetchLocationById = createAsyncThunk(
   'locations/fetchLocationById',
   async (id, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/locations/${id}`, {
-        method: 'GET',
-        headers: getAuthHeaders()
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to fetch location details');
-      return data.data.location;
+      const response = await api.get(`/locations/${id}`);
+      return response.data.data.location;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch location details');
     }
   }
 );
 
+// 3. Create Location
 export const createLocation = createAsyncThunk(
   'locations/createLocation',
   async (locationData, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/locations`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(locationData)
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to create location');
-      return data.data.location;
+      const response = await api.post('/locations', locationData);
+      return response.data.data.location;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to create location');
     }
   }
 );
 
+// 4. Update Location
 export const updateLocation = createAsyncThunk(
   'locations/updateLocation',
   async ({ id, locationData }, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/locations/${id}`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(locationData)
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to update location');
-      return data.data.location;
+      const response = await api.put(`/locations/${id}`, locationData);
+      return response.data.data.location;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to update location');
     }
   }
 );
 
+// 5. Delete Location
 export const deleteLocation = createAsyncThunk(
   'locations/deleteLocation',
   async (id, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/locations/${id}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders()
-      });
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to delete location');
-      }
+      await api.delete(`/locations/${id}`);
       return id; 
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to delete location');
     }
   }
 );
@@ -114,6 +81,7 @@ const locationSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
+      // Fetch All
       .addCase(fetchLocations.pending, (state) => { state.status = 'loading'; })
       .addCase(fetchLocations.fulfilled, (state, action) => {
         state.status = 'succeeded';
@@ -123,14 +91,20 @@ const locationSlice = createSlice({
         state.status = 'failed';
         state.error = action.payload;
       })
+      
+      // Fetch Single
       .addCase(fetchLocationById.pending, (state) => { state.status = 'loading'; })
       .addCase(fetchLocationById.fulfilled, (state, action) => {
         state.status = 'succeeded';
         state.currentItem = action.payload;
       })
+      
+      // Create
       .addCase(createLocation.fulfilled, (state, action) => {
         state.items.unshift(action.payload);
       })
+      
+      // Update
       .addCase(updateLocation.fulfilled, (state, action) => {
         const index = state.items.findIndex(item => item._id === action.payload._id);
         if (index !== -1) state.items[index] = action.payload;
@@ -138,6 +112,8 @@ const locationSlice = createSlice({
           state.currentItem = action.payload;
         }
       })
+      
+      // Delete
       .addCase(deleteLocation.fulfilled, (state, action) => {
         state.items = state.items.filter(item => item._id !== action.payload);
       });

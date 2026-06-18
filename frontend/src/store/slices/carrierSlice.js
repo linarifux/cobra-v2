@@ -1,65 +1,38 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
-
-const getAuthHeaders = () => ({
-  'Content-Type': 'application/json',
-  'Authorization': `Bearer ${localStorage.getItem('token')}`
-});
-
+import api from '../../utils/api'; 
 export const fetchCarriers = createAsyncThunk('carriers/fetchCarriers', async (_, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${API_URL}/carriers`, { headers: getAuthHeaders() });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message);
-    return data.data.carriers;
+    const res = await api.get('/carriers');
+    return res.data.data.carriers;
   } catch (err) {
-    return rejectWithValue(err.message);
+    return rejectWithValue(err.response?.data?.message || err.message);
   }
 });
 
 export const addCarrier = createAsyncThunk('carriers/addCarrier', async (carrierData, { rejectWithValue }) => {
-  console.log(carrierData);
-  
   try {
-    const res = await fetch(`${API_URL}/carriers`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(carrierData)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message);
-    return data.data.carrier;
+    const res = await api.post('/carriers', carrierData);
+    return res.data.data.carrier;
   } catch (err) {
-    return rejectWithValue(err.message);
+    return rejectWithValue(err.response?.data?.message || err.message);
   }
 });
 
 export const updateCarrierConfig = createAsyncThunk('carriers/updateCarrierConfig', async ({ id, updatedData }, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${API_URL}/carriers/${id}`, {
-      method: 'PUT',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(updatedData)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message);
-    return data.data.carrier;
+    const res = await api.put(`/carriers/${id}`, updatedData);
+    return res.data.data.carrier;
   } catch (err) {
-    return rejectWithValue(err.message);
+    return rejectWithValue(err.response?.data?.message || err.message);
   }
 });
 
 export const removeCarrierProfile = createAsyncThunk('carriers/removeCarrierProfile', async (id, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${API_URL}/carriers/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.message);
-    }
+    await api.delete(`/carriers/${id}`);
     return id;
   } catch (err) {
-    return rejectWithValue(err.message);
+    return rejectWithValue(err.response?.data?.message || err.message);
   }
 });
 

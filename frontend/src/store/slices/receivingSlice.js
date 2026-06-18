@@ -1,16 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
-
-// Helper function to generate auth headers securely
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('token');
-  return {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`
-  };
-};
+import api from '../../utils/api'; // Adjust the import path if necessary based on your file structure
 
 // -------------------------------------------------------------
 // ASYNC THUNKS
@@ -21,9 +10,7 @@ export const fetchReceivingLogs = createAsyncThunk(
   'receiving/fetchReceivingLogs',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await axios.get(`${API_URL}/receiving`, {
-        headers: getAuthHeaders()
-      });
+      const response = await api.get('/receiving');
       return response.data.data.receiving; 
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch receiving logs');
@@ -36,9 +23,7 @@ export const fetchReceivingById = createAsyncThunk(
   'receiving/fetchReceivingById',
   async (id, { rejectWithValue }) => {
     try {
-      const response = await axios.get(`${API_URL}/receiving/${id}`, {
-        headers: getAuthHeaders()
-      });
+      const response = await api.get(`/receiving/${id}`);
       return response.data.data.receiving;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch receiving details');
@@ -51,9 +36,7 @@ export const createReceivingLog = createAsyncThunk(
   'receiving/createReceivingLog',
   async (receivingData, { rejectWithValue }) => {
     try {
-      const response = await axios.post(`${API_URL}/receiving`, receivingData, {
-        headers: getAuthHeaders()
-      });
+      const response = await api.post('/receiving', receivingData);
       return response.data.data.receiving;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to create receiving log');
@@ -66,9 +49,7 @@ export const updateReceivingLog = createAsyncThunk(
   'receiving/updateReceivingLog',
   async ({ id, updateData }, { rejectWithValue }) => {
     try {
-      const response = await axios.put(`${API_URL}/receiving/${id}`, updateData, {
-        headers: getAuthHeaders()
-      });
+      const response = await api.put(`/receiving/${id}`, updateData);
       return response.data.data.receiving;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to update receiving log');
@@ -81,9 +62,7 @@ export const deleteReceivingLog = createAsyncThunk(
   'receiving/deleteReceivingLog',
   async (id, { rejectWithValue }) => {
     try {
-      await axios.delete(`${API_URL}/receiving/${id}`, {
-        headers: getAuthHeaders()
-      });
+      await api.delete(`/receiving/${id}`);
       // Return the ID so the reducer knows which item to remove from the UI state
       return id; 
     } catch (error) {

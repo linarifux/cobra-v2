@@ -1,35 +1,16 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
-
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('token');
-  return {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`
-  };
-};
+import api from '../../utils/api'; // Adjust the import path if necessary based on your folder structure
 
 // 1. Fetch All Orders (Supports global or customer-specific fetching)
 export const fetchOrders = createAsyncThunk(
   'orders/fetchOrders',
   async (customerId = null, { rejectWithValue }) => {
     try {
-      const endpoint = customerId 
-        ? `${API_URL}/customers/${customerId}/orders` 
-        : `${API_URL}/orders`;
-        
-      const response = await fetch(endpoint, {
-        method: 'GET',
-        headers: getAuthHeaders()
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to fetch orders');
-
-      return data.data.orders; 
+      const endpoint = customerId ? `/customers/${customerId}/orders` : `/orders`;
+      const response = await api.get(endpoint);
+      return response.data.data.orders; 
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch orders');
     }
   }
 );
@@ -39,17 +20,10 @@ export const fetchOrderById = createAsyncThunk(
   'orders/fetchOrderById',
   async (id, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/orders/${id}`, {
-        method: 'GET',
-        headers: getAuthHeaders()
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to fetch order details');
-
-      return data.data.order;
+      const response = await api.get(`/orders/${id}`);
+      return response.data.data.order;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch order details');
     }
   }
 );
@@ -59,18 +33,10 @@ export const createOrder = createAsyncThunk(
   'orders/createOrder',
   async (orderData, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/orders`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(orderData)
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to create order');
-
-      return data.data.order;
+      const response = await api.post('/orders', orderData);
+      return response.data.data.order;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to create order');
     }
   }
 );
@@ -80,18 +46,10 @@ export const updateOrder = createAsyncThunk(
   'orders/updateOrder',
   async ({ id, updateData }, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/orders/${id}`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(updateData)
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to update order');
-
-      return data.data.order;
+      const response = await api.put(`/orders/${id}`, updateData);
+      return response.data.data.order;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to update order');
     }
   }
 );
@@ -101,19 +59,10 @@ export const deleteOrder = createAsyncThunk(
   'orders/deleteOrder',
   async (id, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/orders/${id}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders()
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to delete order');
-      }
-
+      await api.delete(`/orders/${id}`);
       return id; 
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to delete order');
     }
   }
 );

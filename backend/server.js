@@ -22,6 +22,8 @@ import addressRoutes from './routes/addressRoutes.js';
 import carrierRoutes from './routes/carrierRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import receivingRoutes from './routes/receivingRoutes.js'
+import uploadRoutes from './routes/uploadRoutes.js'
+import typePieceRouter from './routes/typePieceRoutes.js';
 
 // 1. Initialize Database Connection
 connectDB();
@@ -72,6 +74,9 @@ app.use('/api/v1/addresses', addressRoutes);
 app.use('/api/v1/carriers', carrierRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/receiving', receivingRoutes);
+app.use('/api/v1/upload', uploadRoutes)
+app.use('/api/v1/type-pieces', typePieceRouter);
+
 
 // 5. Global Error Handler
 app.use(globalErrorHandler);
