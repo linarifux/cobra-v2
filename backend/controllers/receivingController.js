@@ -5,10 +5,22 @@ import AppError from '../utils/AppError.js';
 // @desc    Create a new receiving record
 // @route   POST /api/v1/receiving
 export const createReceiving = catchAsync(async (req, res, next) => {
-  const receiving = await Receiving.create(req.body);
+  let receiving = await Receiving.create(req.body);
 
-  // You could also add logic here to automatically update the Inventory collection's
-  // `unitsOnHand` based on the received `quantity`.
+  // FIX: Populate the document before sending it back so the React 
+  // frontend can immediately display the names without a hard refresh.
+  receiving = await receiving.populate([
+    { path: 'customer', select: 'customerName' },
+    { 
+      path: 'inventoryItem', 
+      select: 'itemName sku divisions categories',
+      populate: [
+        { path: 'divisions', select: 'divisionName' },
+        { path: 'categories', select: 'categoryName' }
+      ]
+    },
+    { path: 'location', select: 'designation' }
+  ]);
 
   res.status(201).json({
     status: 'success',
@@ -22,7 +34,6 @@ export const getAllReceiving = catchAsync(async (req, res, next) => {
   const receivingRecords = await Receiving.find()
     .sort({ dateReceived: -1 })
     .populate('customer', 'customerName contactEmail')
-    // Deep populate to get the division and category names for the frontend UI
     .populate({
       path: 'inventoryItem',
       select: 'itemName sku unitCost divisions categories',
@@ -45,7 +56,6 @@ export const getAllReceiving = catchAsync(async (req, res, next) => {
 export const getReceivingById = catchAsync(async (req, res, next) => {
   const receiving = await Receiving.findById(req.params.id)
     .populate('customer', 'customerName contactEmail')
-    // Deep populate to get the division and category names for the frontend UI
     .populate({
       path: 'inventoryItem',
       select: 'itemName sku unitCost divisions categories',
