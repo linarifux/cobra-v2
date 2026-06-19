@@ -7,16 +7,18 @@ import AppError from '../utils/AppError.js';
 export const createReceiving = catchAsync(async (req, res, next) => {
   let receiving = await Receiving.create(req.body);
 
-  // FIX: Populate the document before sending it back so the React 
+  // Populate the document before sending it back so the React 
   // frontend can immediately display the names without a hard refresh.
   receiving = await receiving.populate([
     { path: 'customer', select: 'customerName' },
     { 
       path: 'inventoryItem', 
-      select: 'itemName sku divisions categories',
+      select: 'itemName description sku productCode division category1 category2 category3 typePiece',
       populate: [
-        { path: 'divisions', select: 'divisionName' },
-        { path: 'categories', select: 'categoryName' }
+        { path: 'division', select: 'divisionName' },
+        { path: 'category1', select: 'categoryName' },
+        { path: 'category2', select: 'categoryName' },
+        { path: 'category3', select: 'categoryName' }
       ]
     },
     { path: 'location', select: 'designation' }
@@ -36,10 +38,12 @@ export const getAllReceiving = catchAsync(async (req, res, next) => {
     .populate('customer', 'customerName contactEmail')
     .populate({
       path: 'inventoryItem',
-      select: 'itemName sku unitCost divisions categories',
+      select: 'itemName description sku productCode unitCost price division category1 category2 category3 typePiece',
       populate: [
-        { path: 'divisions', select: 'divisionName' },
-        { path: 'categories', select: 'categoryName' }
+        { path: 'division', select: 'divisionName' },
+        { path: 'category1', select: 'categoryName' },
+        { path: 'category2', select: 'categoryName' },
+        { path: 'category3', select: 'categoryName' }
       ]
     })
     .populate('location', 'designation storageCategory');
@@ -58,10 +62,12 @@ export const getReceivingById = catchAsync(async (req, res, next) => {
     .populate('customer', 'customerName contactEmail')
     .populate({
       path: 'inventoryItem',
-      select: 'itemName sku unitCost divisions categories',
+      select: 'itemName description sku productCode unitCost price division category1 category2 category3 typePiece',
       populate: [
-        { path: 'divisions', select: 'divisionName' },
-        { path: 'categories', select: 'categoryName' }
+        { path: 'division', select: 'divisionName' },
+        { path: 'category1', select: 'categoryName' },
+        { path: 'category2', select: 'categoryName' },
+        { path: 'category3', select: 'categoryName' }
       ]
     })
     .populate('location', 'designation storageCategory');
@@ -93,10 +99,12 @@ export const updateReceiving = catchAsync(async (req, res, next) => {
     { path: 'customer', select: 'customerName' },
     { 
       path: 'inventoryItem', 
-      select: 'itemName sku divisions categories',
+      select: 'itemName description sku productCode division category1 category2 category3 typePiece',
       populate: [
-        { path: 'divisions', select: 'divisionName' },
-        { path: 'categories', select: 'categoryName' }
+        { path: 'division', select: 'divisionName' },
+        { path: 'category1', select: 'categoryName' },
+        { path: 'category2', select: 'categoryName' },
+        { path: 'category3', select: 'categoryName' }
       ]
     },
     { path: 'location', select: 'designation' }

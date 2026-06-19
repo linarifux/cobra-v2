@@ -11,7 +11,6 @@ import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 const router = express.Router({ mergeParams: true });
 
 // Require valid authentication for all receiving routes
-// (Uncomment when your auth layer is active)
 router.use(protect);
 
 router.route('/')

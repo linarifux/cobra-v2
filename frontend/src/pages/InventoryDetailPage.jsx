@@ -120,21 +120,6 @@ export default function InventoryDetail() {
           <ArrowLeft size={16} /> Back to Stock Registry
         </button>
 
-        <div className="flex items-center gap-2">
-          {/* Navigate to edit page */}
-          <button 
-            onClick={() => navigate(`/inventory/${inventoryId}/edit`)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-white/60 hover:bg-white border border-slate-200 text-slate-700 hover:text-brand-gold rounded-xl text-[11px] font-black uppercase tracking-wider transition-all shadow-sm active:scale-95"
-          >
-            <Edit2 size={13} /> Edit Asset Node
-          </button>
-          <button 
-            onClick={handleDelete}
-            className="flex items-center gap-1.5 px-4 py-2 bg-white/60 hover:bg-red-50 border border-slate-200 text-slate-500 hover:text-red-600 hover:border-red-200 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all shadow-sm active:scale-95"
-          >
-            <Trash2 size={13} /> Decommission
-          </button>
-        </div>
       </div>
 
       {/* 2. Core Identity Hero Block */}

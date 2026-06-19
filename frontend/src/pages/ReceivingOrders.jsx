@@ -4,7 +4,8 @@ import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Package, Plus, Download, Trash2, Edit2, 
-  Search, X, Eye, Loader2, ArrowRightLeft, DollarSign, Filter
+  Search, X, Eye, Loader2, ArrowRightLeft, DollarSign, Filter,
+  AlertTriangle, RefreshCw
 } from 'lucide-react';
 
 // Redux Thunks
@@ -32,17 +33,16 @@ const INITIAL_FORM_STATE = {
   vendorPhone: '',
   customer: '',
   division: '',
-  category: '',
   inventoryItem: '',
   description: '',
   description2: '',
   lot: '',
   location: '',
-  quantity: '',
+  // Quantitative fields
+  cartonBreakdown: [{ id: Date.now(), cartons: '', unitsPerCarton: '' }],
+  quantity: 0,
+  numberOfCartons: 0,
   skids: '',
-  cartonsPerSkid: '',
-  unitsPerCarton: '',
-  numberOfCartons: '',
   unitWeight: '',
   charge: ''
 };
@@ -52,28 +52,51 @@ export default function ReceivingOrders() {
   const confirm = useConfirm();
 
   // --- Redux State ---
-  const { items: receivingData = [], status } = useSelector(state => state.receiving || {});
+  const { items: receivingData = [], status, error: recError } = useSelector(state => state.receiving || {});
   const { items: customers = [], status: custStatus } = useSelector(state => state.customers || {});
   const { items: inventory = [], status: invStatus } = useSelector(state => state.inventory || {});
   const { items: locations = [], status: locStatus } = useSelector(state => state.locations || {});
   const { items: divisions = [], status: divStatus } = useSelector(state => state.divisions || {});
   const { items: categories = [], status: catStatus } = useSelector(state => state.categories || {});
 
-  // Load all required data on mount
+  // --- 1. ROBUST FETCHING LOGIC ---
+  const loadAllData = () => {
+    if (status === 'idle' || status === 'failed') dispatch(fetchReceivingLogs());
+    if (custStatus === 'idle' || custStatus === 'failed') dispatch(fetchCustomers());
+    if (invStatus === 'idle' || invStatus === 'failed') dispatch(fetchInventory());
+    if (locStatus === 'idle' || locStatus === 'failed') dispatch(fetchLocations());
+    if (divStatus === 'idle' || divStatus === 'failed') dispatch(fetchDivisions());
+    if (catStatus === 'idle' || catStatus === 'failed') dispatch(fetchCategories());
+  };
+
   useEffect(() => {
-    if (status === 'idle') dispatch(fetchReceivingLogs());
-    if (custStatus === 'idle') dispatch(fetchCustomers());
-    if (invStatus === 'idle') dispatch(fetchInventory());
-    if (locStatus === 'idle') dispatch(fetchLocations());
-    if (divStatus === 'idle') dispatch(fetchDivisions());
-    if (catStatus === 'idle') dispatch(fetchCategories());
-  }, [status, custStatus, invStatus, locStatus, divStatus, catStatus, dispatch]);
+    loadAllData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch]);
+
+  // --- 2. GLOBAL LOADING & ERROR GATES ---
+  const isGlobalLoading = 
+    status === 'idle' || status === 'loading' ||
+    custStatus === 'idle' || custStatus === 'loading' ||
+    invStatus === 'idle' || invStatus === 'loading' ||
+    locStatus === 'idle' || locStatus === 'loading' ||
+    divStatus === 'idle' || divStatus === 'loading' ||
+    catStatus === 'idle' || catStatus === 'loading';
+
+  const hasGlobalError = 
+    status === 'failed' || custStatus === 'failed' || 
+    invStatus === 'failed' || locStatus === 'failed' || 
+    divStatus === 'failed' || catStatus === 'failed';
 
   // --- UI State ---
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeRecordId, setActiveRecordId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
+  
+  // Search and Autocomplete States
+  const [invSearchTerm, setInvSearchTerm] = useState('');
+  const [isInvDropdownOpen, setIsInvDropdownOpen] = useState(false);
 
   // --- Filter State ---
   const [searchTerm, setSearchTerm] = useState('');
@@ -82,6 +105,7 @@ export default function ReceivingOrders() {
 
   // --- Data Processing (Table) ---
   const filteredData = useMemo(() => {
+    if (!Array.isArray(receivingData)) return [];
     return receivingData.filter(row => {
       const searchTarget = searchTerm.toLowerCase();
       
@@ -89,12 +113,14 @@ export default function ReceivingOrders() {
       const carrier = row.carrier?.toLowerCase() || '';
       const customerName = row.customer?.customerName?.toLowerCase() || '';
       const itemName = row.inventoryItem?.itemName?.toLowerCase() || '';
+      const sku = row.inventoryItem?.sku?.toLowerCase() || row.inventoryItem?.productCode?.toLowerCase() || '';
       const receivingId = row.receivingId?.toLowerCase() || '';
 
       const matchesSearch = vendor.includes(searchTarget) || 
                             carrier.includes(searchTarget) ||
                             customerName.includes(searchTarget) || 
                             itemName.includes(searchTarget) ||
+                            sku.includes(searchTarget) ||
                             receivingId.includes(searchTarget);
 
       const rowDate = new Date(row.dateReceived).toISOString().split('T')[0];
@@ -105,47 +131,121 @@ export default function ReceivingOrders() {
     });
   }, [receivingData, searchTerm, fromDate, toDate]);
 
-  // --- CASCADING DROPDOWN LOGIC ---
+  // --- DYNAMIC FORM LOGIC ---
   const availableDivisions = useMemo(() => {
     if (!formData.customer) return [];
     const validDivIds = new Set(
       inventory
-        .filter(inv => (inv.customer?._id || inv.customer) === formData.customer)
-        .flatMap(inv => inv.divisions?.map(d => d._id || d) || [])
+        .filter(inv => (inv.customer?._id || inv.customer) === formData.customer && inv.division)
+        .map(inv => inv.division?._id || inv.division)
     );
     return divisions.filter(d => validDivIds.has(d._id));
   }, [inventory, divisions, formData.customer]);
 
-  const availableCategories = useMemo(() => {
-    if (!formData.customer || !formData.division) return [];
-    const validCatIds = new Set(
-      inventory
-        .filter(inv => 
-          (inv.customer?._id || inv.customer) === formData.customer &&
-          inv.divisions?.some(d => (d._id || d) === formData.division)
-        )
-        .flatMap(inv => inv.categories?.map(c => c._id || c) || [])
-    );
-    return categories.filter(c => validCatIds.has(c._id));
-  }, [inventory, categories, formData.customer, formData.division]);
-
   const availableInventory = useMemo(() => {
-    if (!formData.customer || !formData.division || !formData.category) return [];
-    return inventory.filter(inv => 
-      (inv.customer?._id || inv.customer) === formData.customer &&
-      inv.divisions?.some(d => (d._id || d) === formData.division) &&
-      inv.categories?.some(c => (c._id || c) === formData.category)
-    );
-  }, [inventory, formData.customer, formData.division, formData.category]);
+    if (!formData.customer || !formData.division) return [];
+    
+    return inventory.filter(inv => {
+      const matchCust = (inv.customer?._id || inv.customer) === formData.customer;
+      const matchDiv = (inv.division?._id || inv.division) === formData.division;
+      
+      const search = invSearchTerm.toLowerCase().trim();
+      const matchSearch = search === '' || 
+        (inv.sku || inv.productCode || '').toLowerCase().includes(search) ||
+        (inv.itemName || inv.description || '').toLowerCase().includes(search);
+      
+      return matchCust && matchDiv && matchSearch;
+    });
+  }, [inventory, formData.customer, formData.division, invSearchTerm]);
 
-  const handleCustomerChange = (e) => setFormData({ ...formData, customer: e.target.value, division: '', category: '', inventoryItem: '' });
-  const handleDivisionChange = (e) => setFormData({ ...formData, division: e.target.value, category: '', inventoryItem: '' });
-  const handleCategoryChange = (e) => setFormData({ ...formData, category: e.target.value, inventoryItem: '' });
+  // Grab the currently selected inventory details for the auto-fill display
+  const selectedInvDetails = useMemo(() => {
+    if (!formData.inventoryItem) return null;
+    return inventory.find(inv => inv._id === formData.inventoryItem) || null;
+  }, [inventory, formData.inventoryItem]);
+
+  // --- Input Handlers ---
+  const handleCustomerChange = (e) => {
+    setFormData({ ...formData, customer: e.target.value, division: '', inventoryItem: '' });
+    setInvSearchTerm('');
+  };
+  
+  const handleDivisionChange = (e) => {
+    setFormData({ ...formData, division: e.target.value, inventoryItem: '' });
+    setInvSearchTerm('');
+  };
+
+  const handleInvSearchChange = (e) => {
+    setInvSearchTerm(e.target.value);
+    setIsInvDropdownOpen(true);
+    // If the user starts typing again, deselect the currently locked item
+    if (formData.inventoryItem) {
+      setFormData({ ...formData, inventoryItem: '' });
+    }
+  };
+
+  const selectInventoryItem = (inv) => {
+    setFormData({ 
+      ...formData, 
+      inventoryItem: inv._id,
+      description: inv.description || inv.itemName || '', 
+      description2: inv.description2 || '',
+      // Pull unit weight from the DB and populate it automatically
+      unitWeight: inv.weight || inv.unitWeight || '' 
+    });
+    setInvSearchTerm(`${inv.productCode || inv.sku} — ${inv.description || inv.itemName}`);
+    setIsInvDropdownOpen(false);
+  };
+
+  const clearInventorySelection = () => {
+    setFormData({ ...formData, inventoryItem: '', unitWeight: '' });
+    setInvSearchTerm('');
+    setIsInvDropdownOpen(true);
+  };
+
+  // --- Dynamic Carton Handlers ---
+  const handleBreakdownChange = (id, field, value) => {
+    const updatedBreakdown = formData.cartonBreakdown.map(row => 
+      row.id === id ? { ...row, [field]: value } : row
+    );
+    
+    // Auto-calculate Totals
+    const totalCartons = updatedBreakdown.reduce((sum, row) => sum + (Number(row.cartons) || 0), 0);
+    const totalQty = updatedBreakdown.reduce((sum, row) => sum + ((Number(row.cartons) || 0) * (Number(row.unitsPerCarton) || 0)), 0);
+
+    setFormData({
+      ...formData,
+      cartonBreakdown: updatedBreakdown,
+      numberOfCartons: totalCartons,
+      quantity: totalQty
+    });
+  };
+
+  const addBreakdownRow = () => {
+    setFormData({
+      ...formData,
+      cartonBreakdown: [...formData.cartonBreakdown, { id: Date.now(), cartons: '', unitsPerCarton: '' }]
+    });
+  };
+
+  const removeBreakdownRow = (id) => {
+    if (formData.cartonBreakdown.length === 1) return; // Must have at least 1 row
+    const updatedBreakdown = formData.cartonBreakdown.filter(row => row.id !== id);
+    
+    // Auto-calculate Totals
+    const totalCartons = updatedBreakdown.reduce((sum, row) => sum + (Number(row.cartons) || 0), 0);
+    const totalQty = updatedBreakdown.reduce((sum, row) => sum + ((Number(row.cartons) || 0) * (Number(row.unitsPerCarton) || 0)), 0);
+
+    setFormData({ ...formData, cartonBreakdown: updatedBreakdown, numberOfCartons: totalCartons, quantity: totalQty });
+  };
+
 
   // --- Modal Controls ---
   const openNewModal = () => {
     setActiveRecordId(null);
     setFormData(INITIAL_FORM_STATE);
+    setInvSearchTerm('');
+    setIsInvDropdownOpen(false);
     setIsModalOpen(true);
   };
 
@@ -153,8 +253,20 @@ export default function ReceivingOrders() {
     setActiveRecordId(row._id);
     const invId = row.inventoryItem?._id || row.inventoryItem;
     const matchedInv = inventory.find(i => i._id === invId);
-    const mappedDivision = matchedInv?.divisions?.[0]?._id || matchedInv?.divisions?.[0] || '';
-    const mappedCategory = matchedInv?.categories?.[0]?._id || matchedInv?.categories?.[0] || '';
+    const mappedDivision = matchedInv?.division?._id || matchedInv?.division || '';
+
+    // Pre-fill the search bar with the selected item's text
+    const searchString = matchedInv ? `${matchedInv.productCode || matchedInv.sku} — ${matchedInv.description || matchedInv.itemName}` : '';
+
+    // Reconstruct cartonBreakdown for legacy data compatibility
+    let breakdown = row.cartonBreakdown;
+    if (!breakdown || breakdown.length === 0) {
+      breakdown = [{ 
+        id: Date.now(), 
+        cartons: row.numberOfCartons || 1, 
+        unitsPerCarton: row.unitsPerCarton || row.quantity || 0 
+      }];
+    }
 
     setFormData({
       dateReceived: new Date(row.dateReceived).toISOString().split('T')[0],
@@ -165,20 +277,22 @@ export default function ReceivingOrders() {
       vendorPhone: row.vendorPhone || '',
       customer: row.customer?._id || row.customer || '',
       division: mappedDivision,
-      category: mappedCategory,
       inventoryItem: invId || '',
       description: row.description || '',
       description2: row.description2 || '',
       lot: row.lot || '',
       location: row.location?._id || row.location || '',
-      quantity: row.quantity || '',
+      
+      // Breakdown & Metrics
+      cartonBreakdown: breakdown,
+      quantity: row.quantity || 0,
+      numberOfCartons: row.numberOfCartons || breakdown.reduce((sum, r) => sum + (Number(r.cartons)||0), 0),
       skids: row.skids || '',
-      cartonsPerSkid: row.cartonsPerSkid || '',
-      unitsPerCarton: row.unitsPerCarton || '',
-      numberOfCartons: row.numberOfCartons || '',
       unitWeight: row.unitWeight || '',
       charge: row.charge || ''
     });
+    setInvSearchTerm(searchString); 
+    setIsInvDropdownOpen(false);
     setIsModalOpen(true);
   };
 
@@ -192,6 +306,11 @@ export default function ReceivingOrders() {
   // --- CRUD Handlers ---
   const handleSaveShipment = async (e) => {
     e.preventDefault();
+    if (!formData.inventoryItem) {
+      alert("Please select a specific Inventory Asset from the search dropdown.");
+      return;
+    }
+
     setIsSubmitting(true);
 
     const payload = {
@@ -207,13 +326,23 @@ export default function ReceivingOrders() {
       description2: formData.description2,
       lot: formData.lot,
       location: formData.location || null, 
+      
+      // Quantitative Metrics
       quantity: Number(formData.quantity) || 0,
-      skids: Number(formData.skids) || 0,
-      cartonsPerSkid: Number(formData.cartonsPerSkid) || 0,
-      unitsPerCarton: Number(formData.unitsPerCarton) || 0,
       numberOfCartons: Number(formData.numberOfCartons) || 0,
+      skids: Number(formData.skids) || 0,
       unitWeight: Number(formData.unitWeight) || 0,
       charge: Number(formData.charge) || 0,
+      
+      // Send the complex breakdown array
+      cartonBreakdown: formData.cartonBreakdown.map(r => ({
+        cartons: Number(r.cartons) || 0,
+        unitsPerCarton: Number(r.unitsPerCarton) || 0
+      })),
+      
+      // Send legacy fallback fields (using first row's data to prevent breaking legacy Mongoose schema)
+      cartonsPerSkid: Number(formData.cartonBreakdown[0]?.cartons) || 0,
+      unitsPerCarton: Number(formData.cartonBreakdown[0]?.unitsPerCarton) || 0,
     };
 
     try {
@@ -266,7 +395,7 @@ export default function ReceivingOrders() {
         `"${row.customer?.customerName || ''}"`,
         `"${row.inventoryItem?.itemName || ''}"`,
         `"${row.lot || ''}"`,
-        `"${row.location?.designation || 'Unassigned'}"`,
+        `"${row.location?.designation || row.location || 'Unassigned'}"`,
         row.quantity,
         row.skids
       ].join(','))
@@ -281,10 +410,38 @@ export default function ReceivingOrders() {
     window.URL.revokeObjectURL(url);
   };
 
-  if (status === 'loading' && receivingData.length === 0) {
+  // ------------------------------------------------------------------
+  // RENDER BLOCKS
+  // ------------------------------------------------------------------
+
+  if (hasGlobalError && !isGlobalLoading) {
     return (
-      <div className="h-full flex justify-center items-center py-20 text-slate-400">
-        <Loader2 className="animate-spin text-brand-gold" size={32} />
+      <div className="h-full flex items-center justify-center min-h-[60vh]">
+        <div className="bg-red-50/80 backdrop-blur-md border border-red-200 p-8 rounded-3xl flex flex-col items-center max-w-md text-center shadow-lg">
+          <AlertTriangle className="text-red-500 mb-4" size={40} />
+          <h2 className="text-red-800 text-lg font-black tracking-tight mb-2">Synchronization Failed</h2>
+          <p className="text-red-600/80 text-xs font-medium mb-6 leading-relaxed">
+            The database failed to respond properly. {recError ? `Server reported: ${recError}` : 'Please check your connection and try again.'}
+          </p>
+          <button 
+            onClick={loadAllData} 
+            className="flex items-center gap-2 px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-md active:scale-95"
+          >
+            <RefreshCw size={14} /> Retry Connection
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (isGlobalLoading) {
+    return (
+      <div className="h-full flex flex-col justify-center items-center min-h-[60vh] gap-4">
+        <Loader2 className="animate-spin text-brand-gold" size={36} />
+        <div className="text-center space-y-1">
+          <p className="text-sm font-black text-slate-700 uppercase tracking-widest">Compiling Database</p>
+          <p className="text-[10px] font-bold text-slate-400 tracking-wider">Synchronizing Receiving Logs & Core Directories...</p>
+        </div>
       </div>
     );
   }
@@ -369,7 +526,7 @@ export default function ReceivingOrders() {
                     <td className="p-5 text-sm font-bold text-slate-900">
                       <div className="flex flex-col">
                         <span>{row.inventoryItem?.itemName || '—'}</span>
-                        {row.lot !== 'N/A' && <span className="text-[10px] text-slate-400 font-mono mt-0.5">Lot: {row.lot}</span>}
+                        {row.lot && row.lot !== 'N/A' && <span className="text-[10px] text-slate-400 font-mono mt-0.5">Lot: {row.lot}</span>}
                       </div>
                     </td>
                     <td className="p-5 text-xs font-bold text-slate-600">
@@ -471,37 +628,124 @@ export default function ReceivingOrders() {
                   </div>
                 </div>
 
-                {/* Section 2: Cascading Catalog Filter */}
+                {/* Section 2: Interactive Asset Finder */}
                 <div className="space-y-4 pt-4 border-t border-slate-100">
                   <div className="flex items-center gap-2 mb-2">
                     <Filter className="text-brand-gold" size={14} />
-                    <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Inventory Filtering Pipeline</h3>
+                    <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Asset Selection & Info</h3>
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="col-span-1">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Division Segment</label>
                       <select value={formData.division} onChange={handleDivisionChange} disabled={!formData.customer || isSubmitting || availableDivisions.length === 0} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer disabled:opacity-50">
-                        <option value="">2. Select Division...</option>
+                        <option value="">Select Division...</option>
                         {availableDivisions.map(d => <option key={d._id} value={d._id}>{d.divisionName}</option>)}
                       </select>
                     </div>
-                    <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Product Category</label>
-                      <select value={formData.category} onChange={handleCategoryChange} disabled={!formData.division || isSubmitting || availableCategories.length === 0} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer disabled:opacity-50">
-                        <option value="">3. Select Category...</option>
-                        {availableCategories.map(c => <option key={c._id} value={c._id}>{c.categoryName}</option>)}
-                      </select>
+                    
+                    {/* Autocomplete Combobox */}
+                    <div className="col-span-2 relative">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Find & Select Inventory Asset <span className="text-red-400">*</span></label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                        <input 
+                          type="text" 
+                          placeholder="Search SKU or Name..." 
+                          value={invSearchTerm} 
+                          onChange={handleInvSearchChange} 
+                          onFocus={() => { if(formData.division) setIsInvDropdownOpen(true); }}
+                          onBlur={() => setTimeout(() => setIsInvDropdownOpen(false), 200)}
+                          disabled={!formData.division || isSubmitting} 
+                          className={`w-full pl-9 pr-10 py-2.5 border rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all disabled:opacity-50 ${formData.inventoryItem ? 'bg-brand-gold/5 border-brand-gold/30 text-slate-900' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
+                        />
+                        {formData.inventoryItem && (
+                          <button 
+                            type="button" 
+                            onClick={clearInventorySelection} 
+                            className="absolute right-3 top-3 text-slate-400 hover:text-red-500 transition-colors"
+                          >
+                            <X size={16} />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Dropdown Results list */}
+                      <AnimatePresence>
+                        {isInvDropdownOpen && invSearchTerm.trim() !== '' && !formData.inventoryItem && (
+                          <motion.ul 
+                            initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}
+                            className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto custom-scrollbar"
+                          >
+                            {availableInventory.length > 0 ? (
+                              availableInventory.map(inv => (
+                                <li 
+                                  key={inv._id} 
+                                  onClick={() => selectInventoryItem(inv)}
+                                  className="px-4 py-3 hover:bg-brand-gold/10 hover:text-brand-gold cursor-pointer border-b last:border-b-0 border-slate-100 transition-colors"
+                                >
+                                  <div className="text-xs font-black">{inv.productCode || inv.sku}</div>
+                                  <div className="text-[11px] text-slate-500 font-medium truncate">{inv.description || inv.itemName}</div>
+                                </li>
+                              ))
+                            ) : (
+                              <li className="px-4 py-3 text-xs font-bold text-slate-400 text-center italic">
+                                No matching assets found...
+                              </li>
+                            )}
+                          </motion.ul>
+                        )}
+                      </AnimatePresence>
                     </div>
                   </div>
 
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Inventory Asset <span className="text-red-400">*</span></label>
-                    <select required value={formData.inventoryItem} onChange={(e) => setFormData({...formData, inventoryItem: e.target.value})} disabled={!formData.category || isSubmitting || availableInventory.length === 0} className={`w-full px-4 py-2.5 border rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer disabled:opacity-50 ${formData.category && availableInventory.length > 0 ? 'bg-brand-gold/5 border-brand-gold/30 text-slate-900' : 'bg-slate-50 border-slate-200 text-slate-900'}`}>
-                      <option value="">4. Select Final Asset...</option>
-                      {availableInventory.map(inv => <option key={inv._id} value={inv._id}>{inv.sku} — {inv.itemName}</option>)}
-                    </select>
-                  </div>
+                  {/* Auto-filled Asset Information Panel */}
+                  <AnimatePresence>
+                    {selectedInvDetails && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0, marginTop: 0 }} 
+                        animate={{ opacity: 1, height: 'auto', marginTop: 12 }} 
+                        exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                        className="bg-slate-950 text-white rounded-xl p-4 shadow-inner overflow-hidden border border-slate-900"
+                      >
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest block mb-1">Current Stock Level</span>
+                            <span className="text-xl font-black text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 inline-block">
+                              {selectedInvDetails.available || selectedInvDetails.unitsOnHand || 0}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest block mb-1.5">Asset Categories</span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {selectedInvDetails.category1 && <span className="bg-white/10 border border-white/20 px-2 py-0.5 rounded text-[10px] font-bold text-slate-200">{selectedInvDetails.category1.categoryName || selectedInvDetails.category1}</span>}
+                              {selectedInvDetails.category2 && <span className="bg-white/10 border border-white/20 px-2 py-0.5 rounded text-[10px] font-bold text-slate-200">{selectedInvDetails.category2.categoryName || selectedInvDetails.category2}</span>}
+                              {selectedInvDetails.category3 && <span className="bg-white/10 border border-white/20 px-2 py-0.5 rounded text-[10px] font-bold text-slate-200">{selectedInvDetails.category3.categoryName || selectedInvDetails.category3}</span>}
+                              {!selectedInvDetails.category1 && !selectedInvDetails.category2 && !selectedInvDetails.category3 && <span className="text-[10px] text-slate-500 italic bg-white/5 px-2 py-0.5 rounded">Uncategorized</span>}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Descriptions */}
+                        <div className="mt-4 pt-3 border-t border-slate-800/60 space-y-3">
+                          <div>
+                            <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest block mb-1">Primary Description</span>
+                            <p className="text-xs font-medium text-slate-200 leading-relaxed">
+                              {selectedInvDetails.description || selectedInvDetails.itemName || '—'}
+                            </p>
+                          </div>
+                          {(selectedInvDetails.description2) && (
+                            <div>
+                              <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest block mb-1">Secondary Description</span>
+                              <p className="text-xs font-medium text-slate-400 leading-relaxed">
+                                {selectedInvDetails.description2}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
                   <div className="grid grid-cols-2 gap-4 pt-2">
                     <div>
@@ -516,48 +760,96 @@ export default function ReceivingOrders() {
                       </select>
                     </div>
                   </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Description 1</label>
-                      <input type="text" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} disabled={isSubmitting} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Description 2</label>
-                      <input type="text" value={formData.description2} onChange={(e) => setFormData({...formData, description2: e.target.value})} disabled={isSubmitting} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
-                    </div>
-                  </div>
                 </div>
 
-                {/* Section 3: Quantitative Metrics */}
-                <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200 space-y-4 mt-2">
+                {/* Section 3: Quantitative Metrics - NEW DYNAMIC SYSTEM */}
+                <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200 space-y-5 mt-2">
                   <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-2">Quantitative Metrics</h3>
                   
-                  <div>
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 block pl-1">Total Quantity Received <span className="text-red-400">*</span></label>
-                    <input required type="number" min="0" placeholder="0" value={formData.quantity} onChange={(e) => setFormData({...formData, quantity: e.target.value})} disabled={isSubmitting} className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-base font-black text-brand-gold text-center outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all shadow-sm" />
+                  {/* Dynamic Carton Configurations */}
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider pl-1">Carton Configurations</label>
+                      <button 
+                        type="button" 
+                        onClick={addBreakdownRow}
+                        className="text-[10px] font-black uppercase tracking-wider text-brand-gold hover:text-brand-gold/80 flex items-center gap-1 transition-colors bg-brand-gold/10 px-2 py-1 rounded-md"
+                      >
+                        <Plus size={12} /> Add Config
+                      </button>
+                    </div>
+
+                    {formData.cartonBreakdown.map((row, index) => (
+                      <div key={row.id} className="flex items-center gap-2 sm:gap-3 bg-white p-2 sm:p-3 border border-slate-200 rounded-xl shadow-sm">
+                        <div className="flex-1">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block text-center">Cartons</label>
+                          <input 
+                            type="number" min="0" placeholder="0" 
+                            value={row.cartons} 
+                            onChange={(e) => handleBreakdownChange(row.id, 'cartons', e.target.value)} 
+                            disabled={isSubmitting} 
+                            className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-black text-slate-900 text-center outline-none focus:border-brand-gold" 
+                          />
+                        </div>
+                        <span className="text-slate-300 font-black text-xs pt-4">X</span>
+                        <div className="flex-1">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block text-center">Units / Carton</label>
+                          <input 
+                            type="number" min="0" placeholder="0" 
+                            value={row.unitsPerCarton} 
+                            onChange={(e) => handleBreakdownChange(row.id, 'unitsPerCarton', e.target.value)} 
+                            disabled={isSubmitting} 
+                            className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-black text-slate-900 text-center outline-none focus:border-brand-gold" 
+                          />
+                        </div>
+                        <span className="text-slate-300 font-black text-xs pt-4">=</span>
+                        <div className="w-16 flex flex-col items-center justify-center pt-2">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Total</span>
+                          <span className="text-sm font-black text-brand-gold">
+                            {((Number(row.cartons) || 0) * (Number(row.unitsPerCarton) || 0)).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="pt-4 px-1">
+                          <button 
+                            type="button" 
+                            onClick={() => removeBreakdownRow(row.id)}
+                            disabled={formData.cartonBreakdown.length === 1}
+                            className="text-slate-300 hover:text-red-500 transition-colors disabled:opacity-30 disabled:hover:text-slate-300"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  {/* Auto-Calculated Totals */}
+                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-200/60">
                     <div>
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Skids</label>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 block pl-1">Total Quantity Received</label>
+                      <input 
+                        type="text" 
+                        readOnly 
+                        value={formData.quantity.toLocaleString()} 
+                        className="w-full px-4 py-3 bg-brand-gold/5 border border-brand-gold/30 rounded-xl text-lg font-black text-brand-gold cursor-not-allowed shadow-inner outline-none" 
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 block pl-1">Total Cartons Sum</label>
+                      <input 
+                        type="text" 
+                        readOnly 
+                        value={formData.numberOfCartons.toLocaleString()} 
+                        className="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-lg font-black text-slate-500 cursor-not-allowed shadow-inner outline-none" 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3 pt-2">
+                    <div>
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Total Skids</label>
                       <input type="number" min="0" value={formData.skids} onChange={(e) => setFormData({...formData, skids: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
                     </div>
-                    <div>
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Cartons Per Skid</label>
-                      <input type="number" min="0" value={formData.cartonsPerSkid} onChange={(e) => setFormData({...formData, cartonsPerSkid: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Units Per Carton</label>
-                      <input type="number" min="0" value={formData.unitsPerCarton} onChange={(e) => setFormData({...formData, unitsPerCarton: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Total Cartons</label>
-                      <input type="number" min="0" value={formData.numberOfCartons} onChange={(e) => setFormData({...formData, numberOfCartons: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-200/60">
                     <div>
                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Unit Wt (lbs)</label>
                       <input type="number" step="0.01" min="0" value={formData.unitWeight} onChange={(e) => setFormData({...formData, unitWeight: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />

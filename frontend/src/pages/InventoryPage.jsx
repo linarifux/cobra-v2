@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
 
 // Redux Actions
 import { fetchInventory, createInventory, updateInventory, deleteInventory } from '../store/slices/inventorySlice';
@@ -8,7 +8,7 @@ import { fetchCustomers } from '../store/slices/customerSlice';
 import { fetchDivisions } from '../store/slices/divisionSlice';
 import { fetchCategories } from '../store/slices/categorySlice';
 import { fetchLocations } from '../store/slices/locationSlice';
-import { fetchTypePieces } from '../store/slices/typePieceSlice'; // NEW: Import Type Pieces
+import { fetchTypePieces } from '../store/slices/typePieceSlice';
 
 // Child Components
 import InventoryHeader from '../components/inventory/InventoryHeader';
@@ -19,22 +19,43 @@ import InventoryFormPanel from '../components/inventory/InventoryFormPanel';
 export default function InventoryPage() {
   const dispatch = useDispatch();
 
-  const { items: apiInventory = [], status: invStatus } = useSelector(state => state.inventory || {});
+  // Safely extract items and statuses, defaulting to empty arrays to prevent mapping crashes
+  const { items: apiInventory = [], status: invStatus, error: invError } = useSelector(state => state.inventory || {});
   const { items: apiCustomers = [], status: custStatus } = useSelector(state => state.customers || {});
   const { items: apiDivisions = [], status: divStatus } = useSelector(state => state.divisions || {});
   const { items: apiCategories = [], status: catStatus } = useSelector(state => state.categories || {});
   const { items: apiLocations = [], status: locStatus } = useSelector(state => state.locations || {});
-  const { items: apiTypePieces = [], status: tpStatus } = useSelector(state => state.typePieces || {}); // NEW: Get Type Pieces
+  const { items: apiTypePieces = [], status: tpStatus } = useSelector(state => state.typePieces || {});
 
-  // Mount logic
+  // --- 1. ROBUST FETCHING LOGIC ---
+  const loadAllData = () => {
+    if (invStatus === 'idle' || invStatus === 'failed') dispatch(fetchInventory());
+    if (custStatus === 'idle' || custStatus === 'failed') dispatch(fetchCustomers());
+    if (divStatus === 'idle' || divStatus === 'failed') dispatch(fetchDivisions());
+    if (catStatus === 'idle' || catStatus === 'failed') dispatch(fetchCategories());
+    if (locStatus === 'idle' || locStatus === 'failed') dispatch(fetchLocations());
+    if (tpStatus === 'idle' || tpStatus === 'failed') dispatch(fetchTypePieces());
+  };
+
   useEffect(() => {
-    if (invStatus === 'idle') dispatch(fetchInventory());
-    if (custStatus === 'idle') dispatch(fetchCustomers());
-    if (divStatus === 'idle') dispatch(fetchDivisions());
-    if (catStatus === 'idle') dispatch(fetchCategories());
-    if (locStatus === 'idle') dispatch(fetchLocations());
-    if (tpStatus === 'idle') dispatch(fetchTypePieces()); // NEW: Fetch Type Pieces
-  }, [invStatus, custStatus, divStatus, catStatus, locStatus, tpStatus, dispatch]);
+    loadAllData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch]); // Only depend on dispatch to prevent infinite loops
+
+  // --- 2. GLOBAL LOADING & ERROR GATES ---
+  // We MUST wait for all resources to stop being 'idle' or 'loading'
+  const isGlobalLoading = 
+    invStatus === 'idle' || invStatus === 'loading' ||
+    custStatus === 'idle' || custStatus === 'loading' ||
+    divStatus === 'idle' || divStatus === 'loading' ||
+    catStatus === 'idle' || catStatus === 'loading' ||
+    locStatus === 'idle' || locStatus === 'loading' ||
+    tpStatus === 'idle' || tpStatus === 'loading';
+
+  const hasGlobalError = 
+    invStatus === 'failed' || custStatus === 'failed' || 
+    divStatus === 'failed' || catStatus === 'failed' || 
+    locStatus === 'failed' || tpStatus === 'failed';
 
   // Form Management State
   const [showFormPanel, setShowFormPanel] = useState(false);
@@ -55,7 +76,7 @@ export default function InventoryPage() {
   };
 
   const handleOpenEdit = (id) => {
-    const item = apiInventory.find(i => i._id === id);
+    const item = apiInventory?.find(i => i._id === id);
     if (item) {
       setItemToEdit(item);
       setShowFormPanel(true);
@@ -96,8 +117,9 @@ export default function InventoryPage() {
     setOnlyAvailable(false);
   };
 
-  // --- Map and Filter Logic ---
+  // --- Map and Filter Logic (Safely Chained) ---
   const mappedInventory = useMemo(() => {
+    if (!Array.isArray(apiInventory)) return [];
     return apiInventory.map(item => ({
       id: item._id,
       code: item.productCode || item.sku || 'N/A',
@@ -132,14 +154,44 @@ export default function InventoryPage() {
     });
   }, [search, customerFilter, divisionFilter, categoryFilter, onlyAvailable, mappedInventory]);
 
-  if (invStatus === 'loading' && apiInventory.length === 0) {
+
+  // ------------------------------------------------------------------
+  // RENDER BLOCKS: Strict gating prevents child components from crashing
+  // ------------------------------------------------------------------
+
+  if (hasGlobalError && !isGlobalLoading) {
     return (
-      <div className="h-full flex justify-center items-center py-20 text-slate-400">
-        <Loader2 className="animate-spin text-brand-gold" size={32} />
+      <div className="h-full flex items-center justify-center min-h-[60vh]">
+        <div className="bg-red-50/80 backdrop-blur-md border border-red-200 p-8 rounded-3xl flex flex-col items-center max-w-md text-center shadow-lg">
+          <AlertTriangle className="text-red-500 mb-4" size={40} />
+          <h2 className="text-red-800 text-lg font-black tracking-tight mb-2">Synchronization Failed</h2>
+          <p className="text-red-600/80 text-xs font-medium mb-6 leading-relaxed">
+            The database failed to respond properly. {invError ? `Server reported: ${invError}` : 'Please check your connection and try again.'}
+          </p>
+          <button 
+            onClick={loadAllData} 
+            className="flex items-center gap-2 px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-md active:scale-95"
+          >
+            <RefreshCw size={14} /> Retry Connection
+          </button>
+        </div>
       </div>
     );
   }
 
+  if (isGlobalLoading) {
+    return (
+      <div className="h-full flex flex-col justify-center items-center min-h-[60vh] gap-4">
+        <Loader2 className="animate-spin text-brand-gold" size={36} />
+        <div className="text-center space-y-1">
+          <p className="text-sm font-black text-slate-700 uppercase tracking-widest">Compiling Database</p>
+          <p className="text-[10px] font-bold text-slate-400 tracking-wider">Synchronizing Inventory & Core Directories...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ONLY render the page once we mathematically guarantee all arrays exist and are loaded.
   return (
     <div className="h-full max-w-[1400px] mx-auto p-6 space-y-6 animate-fade-in">
       
@@ -152,7 +204,7 @@ export default function InventoryPage() {
           apiDivisions={apiDivisions}
           apiCategories={apiCategories}
           apiLocations={apiLocations}
-          apiTypePieces={apiTypePieces} // NEW: Pass down
+          apiTypePieces={apiTypePieces} 
           onSubmit={handleFormSubmit}
           onClose={() => setShowFormPanel(false)}
         />

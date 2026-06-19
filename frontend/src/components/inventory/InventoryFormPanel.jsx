@@ -334,7 +334,7 @@ export default function InventoryFormPanel({
             <img 
               src={formData.productImage} 
               alt="Product" 
-              className={`w-full h-auto object-cover transition-opacity duration-300 ${isImageLoading ? 'opacity-0' : 'opacity-100'}`}
+              className={`w-75 h-auto object-cover transition-opacity duration-300 ${isImageLoading ? 'opacity-0' : 'opacity-100'}`}
               onLoad={() => setIsImageLoading(false)} 
               onError={() => {
                 setIsImageLoading(false);

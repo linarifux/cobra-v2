@@ -1,5 +1,20 @@
 import mongoose from 'mongoose';
 
+const cartonBreakdownSchema = new mongoose.Schema({
+  cartons: {
+    type: Number,
+    required: true,
+    min: 0,
+    default: 0
+  },
+  unitsPerCarton: {
+    type: Number,
+    required: true,
+    min: 0,
+    default: 0
+  }
+}, { _id: false }); // Disable separate _ids for these subdocuments to keep it clean
+
 const receivingSchema = new mongoose.Schema(
   {
     receivingId: {
@@ -14,7 +29,7 @@ const receivingSchema = new mongoose.Schema(
       required: [true, 'Date received is required']
     },
     
-    // --- UPDATED: Separated Vendor and Carrier ---
+    // Vendor and Carrier
     vendor: {
       type: String,
       trim: true,
@@ -26,7 +41,7 @@ const receivingSchema = new mongoose.Schema(
       default: 'Unknown Carrier'
     },
     
-    // --- NEW: Vendor Contact Fields ---
+    // Vendor Contact Fields
     vendorAddress: {
       type: String,
       trim: true,
@@ -85,17 +100,22 @@ const receivingSchema = new mongoose.Schema(
       default: 0,
       min: 0
     },
+    numberOfCartons: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+
+    // NEW: Array for multiple carton configurations
+    cartonBreakdown: [cartonBreakdownSchema],
+
+    // Legacy Fallbacks (Kept for backwards compatibility if old data exists)
     cartonsPerSkid: {
       type: Number,
       default: 0,
       min: 0
     },
     unitsPerCarton: {
-      type: Number,
-      default: 0,
-      min: 0
-    },
-    numberOfCartons: {
       type: Number,
       default: 0,
       min: 0
@@ -120,8 +140,6 @@ const receivingSchema = new mongoose.Schema(
   }
 );
 
-// FIX: Removed 'next' parameter. Modern Mongoose handles this synchronously
-// if no 'next' argument is defined, avoiding the "next is not a function" crash.
 receivingSchema.pre('save', function () {
   if (!this.receivingId) {
     this.receivingId = `RCV-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
