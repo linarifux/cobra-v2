@@ -7,6 +7,8 @@ import { fetchInventory, createInventory, updateInventory, deleteInventory } fro
 import { fetchCustomers } from '../store/slices/customerSlice';
 import { fetchDivisions } from '../store/slices/divisionSlice';
 import { fetchCategories } from '../store/slices/categorySlice';
+import { fetchLocations } from '../store/slices/locationSlice';
+import { fetchTypePieces } from '../store/slices/typePieceSlice'; // NEW: Import Type Pieces
 
 // Child Components
 import InventoryHeader from '../components/inventory/InventoryHeader';
@@ -21,6 +23,8 @@ export default function InventoryPage() {
   const { items: apiCustomers = [], status: custStatus } = useSelector(state => state.customers || {});
   const { items: apiDivisions = [], status: divStatus } = useSelector(state => state.divisions || {});
   const { items: apiCategories = [], status: catStatus } = useSelector(state => state.categories || {});
+  const { items: apiLocations = [], status: locStatus } = useSelector(state => state.locations || {});
+  const { items: apiTypePieces = [], status: tpStatus } = useSelector(state => state.typePieces || {}); // NEW: Get Type Pieces
 
   // Mount logic
   useEffect(() => {
@@ -28,7 +32,9 @@ export default function InventoryPage() {
     if (custStatus === 'idle') dispatch(fetchCustomers());
     if (divStatus === 'idle') dispatch(fetchDivisions());
     if (catStatus === 'idle') dispatch(fetchCategories());
-  }, [invStatus, custStatus, divStatus, catStatus, dispatch]);
+    if (locStatus === 'idle') dispatch(fetchLocations());
+    if (tpStatus === 'idle') dispatch(fetchTypePieces()); // NEW: Fetch Type Pieces
+  }, [invStatus, custStatus, divStatus, catStatus, locStatus, tpStatus, dispatch]);
 
   // Form Management State
   const [showFormPanel, setShowFormPanel] = useState(false);
@@ -36,7 +42,7 @@ export default function InventoryPage() {
 
   // Filter State
   const [search, setSearch] = useState('');
-  const [customerFilter, setCustomerFilter] = useState('All'); // NEW: Customer Filter
+  const [customerFilter, setCustomerFilter] = useState('All');
   const [divisionFilter, setDivisionFilter] = useState('All');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [onlyAvailable, setOnlyAvailable] = useState(false);
@@ -84,7 +90,7 @@ export default function InventoryPage() {
 
   const handleClearFilters = () => {
     setSearch('');
-    setCustomerFilter('All'); // Reset customer filter
+    setCustomerFilter('All');
     setDivisionFilter('All');
     setCategoryFilter('All');
     setOnlyAvailable(false);
@@ -117,12 +123,11 @@ export default function InventoryPage() {
         item.code?.toLowerCase().includes(query) ||
         item.customer?.toLowerCase().includes(query);
         
-      const matchesCustomer = customerFilter === 'All' || item.customerId === customerFilter; // NEW
+      const matchesCustomer = customerFilter === 'All' || item.customerId === customerFilter;
       const matchesDivision = divisionFilter === 'All' || item.divisionId === divisionFilter;
       const matchesCategory = categoryFilter === 'All' || item.categoryId === categoryFilter;
       const matchesStock = onlyAvailable ? item.available > 0 : true;
 
-      // Include matchesCustomer in the final return
       return matchesSearch && matchesCustomer && matchesDivision && matchesCategory && matchesStock;
     });
   }, [search, customerFilter, divisionFilter, categoryFilter, onlyAvailable, mappedInventory]);
@@ -146,6 +151,8 @@ export default function InventoryPage() {
           apiCustomers={apiCustomers}
           apiDivisions={apiDivisions}
           apiCategories={apiCategories}
+          apiLocations={apiLocations}
+          apiTypePieces={apiTypePieces} // NEW: Pass down
           onSubmit={handleFormSubmit}
           onClose={() => setShowFormPanel(false)}
         />
@@ -153,11 +160,11 @@ export default function InventoryPage() {
 
       <InventoryFilterBar 
         search={search} setSearch={setSearch}
-        customerFilter={customerFilter} setCustomerFilter={setCustomerFilter} // NEW
+        customerFilter={customerFilter} setCustomerFilter={setCustomerFilter}
         divisionFilter={divisionFilter} setDivisionFilter={setDivisionFilter}
         categoryFilter={categoryFilter} setCategoryFilter={setCategoryFilter}
         onlyAvailable={onlyAvailable} setOnlyAvailable={setOnlyAvailable}
-        apiCustomers={apiCustomers} // NEW
+        apiCustomers={apiCustomers}
         apiDivisions={apiDivisions} 
         apiCategories={apiCategories}
         onClearFilters={handleClearFilters}

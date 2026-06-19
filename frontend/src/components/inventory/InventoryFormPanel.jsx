@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useDispatch } from 'react-redux';
 import { X, Loader2, UploadCloud } from 'lucide-react';
-import api from '../../utils/api'; // Needed to fetch the presigned URL securely
+import { uploadImageToS3 } from '../../store/slices/uploadSlice'; 
 
 const INITIAL_FORM_STATE = {
   productCode: '', description: '', description2: '', hssCode: '', division: '',
@@ -10,14 +11,33 @@ const INITIAL_FORM_STATE = {
   qtyLastReceived: 0, dateLastReceived: '', productImage: '', customer: ''
 };
 
+// --- FIX 1: Universal Path-Style Sanitizer ---
+// Converts virtual-hosted URLs into universal path-style URLs to bypass SSL dot errors.
+const sanitizeS3Url = (url) => {
+  if (!url) return '';
+  try {
+    const urlObj = new URL(url);
+    const hostParts = urlObj.hostname.split('.s3.');
+    if (hostParts.length === 2 && hostParts[0].includes('.')) {
+      const bucketName = hostParts[0];
+      return `https://s3.amazonaws.com/${bucketName}${urlObj.pathname}`;
+    }
+  } catch (err) {
+    return url;
+  }
+  return url;
+};
+
 export default function InventoryFormPanel({ 
   itemToEdit, 
-  apiCustomers, apiDivisions, apiCategories, 
+  apiCustomers, apiDivisions, apiCategories, apiLocations, apiTypePieces,
   onSubmit, onClose 
 }) {
+  const dispatch = useDispatch();
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isImageLoading, setIsImageLoading] = useState(false);
 
   const isEditMode = Boolean(itemToEdit);
 
@@ -48,7 +68,7 @@ export default function InventoryFormPanel({
         available: itemToEdit.available || 0,
         qtyLastReceived: itemToEdit.qtyLastReceived || 0,
         dateLastReceived: itemToEdit.dateLastReceived ? new Date(itemToEdit.dateLastReceived).toISOString().split('T')[0] : '',
-        productImage: itemToEdit.productImage || '',
+        productImage: sanitizeS3Url(itemToEdit.productImage) || '',
         customer: itemToEdit.customer?._id || itemToEdit.customer || ''
       });
     } else {
@@ -57,9 +77,15 @@ export default function InventoryFormPanel({
         customer: apiCustomers[0]?._id || '', 
         division: apiDivisions[0]?._id || '',
         category1: apiCategories[0]?._id || '', 
+        locationString: apiLocations[0]?.designation || '', 
       });
     }
-  }, [itemToEdit, apiCustomers, apiDivisions, apiCategories, isEditMode]);
+  }, [itemToEdit, apiCustomers, apiDivisions, apiCategories, apiLocations, isEditMode]);
+
+  const availableTypePieces = useMemo(() => {
+    if (!formData.customer) return [];
+    return apiTypePieces.filter(tp => (tp.customer?._id || tp.customer) === formData.customer);
+  }, [apiTypePieces, formData.customer]);
 
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
@@ -73,27 +99,26 @@ export default function InventoryFormPanel({
     setIsUploadingImage(true);
 
     try {
-      const urlResponse = await api.get(`/upload/presigned-url?fileName=${encodeURIComponent(file.name)}&fileType=${encodeURIComponent(file.type)}`);
-      const { presignedUrl, finalImageUrl } = urlResponse.data;
-
-      const uploadResponse = await fetch(presignedUrl, {
-        method: 'PUT',
-        body: file,
-        headers: { 'Content-Type': file.type },
-      });
-
-      if (!uploadResponse.ok) throw new Error('Failed to upload to S3');
+      let finalImageUrl = await dispatch(uploadImageToS3(file)).unwrap();
+      
+      // Sanitizing the URL ensures SSL works instantly
+      finalImageUrl = sanitizeS3Url(finalImageUrl);
       
       setFormData(prev => ({ ...prev, productImage: finalImageUrl }));
+      setIsImageLoading(true); 
+
     } catch (err) {
-      console.error("S3 Upload error:", err);
-      alert("Failed to upload image. Please try again.");
+      console.error("Redux S3 Upload error:", err);
+      alert(err || "Failed to upload image. Please try again.");
     } finally {
       setIsUploadingImage(false);
     }
   };
 
-  const removeImage = () => setFormData(prev => ({ ...prev, productImage: '' }));
+  const removeImage = () => {
+    setFormData(prev => ({ ...prev, productImage: '' }));
+    setIsImageLoading(false);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -106,7 +131,7 @@ export default function InventoryFormPanel({
 
     const payload = {
       ...formData,
-      itemName: formData.description, // Mongoose requirement fallback
+      itemName: formData.description,
       price: Number(formData.price) || 0,
       price2: Number(formData.price2) || 0,
       min: Number(formData.min) || 0,
@@ -138,7 +163,7 @@ export default function InventoryFormPanel({
           <h3 className="text-lg font-bold text-slate-800">
             {isEditMode ? `Edit Item: ${formData.productCode}` : 'New Inventory Item'}
           </h3>
-          <select required value={formData.customer} onChange={e => setFormData({...formData, customer: e.target.value})} className="border border-slate-300 rounded px-3 py-1 text-sm bg-slate-50 font-semibold text-brand-gold outline-none">
+          <select required value={formData.customer} onChange={e => setFormData({...formData, customer: e.target.value, typePiece: ''})} className="border border-slate-300 rounded px-3 py-1 text-sm bg-slate-50 font-semibold text-brand-gold outline-none">
             <option value="" disabled>Select Customer...</option>
             {apiCustomers.map(cust => <option key={cust._id} value={cust._id}>{cust.customerName}</option>)}
           </select>
@@ -189,18 +214,35 @@ export default function InventoryFormPanel({
               {apiCategories.map(cat => <option key={cat._id} value={cat._id}>{cat.categoryName}</option>)}
             </select>
           </div>
+
           <div className="flex items-center">
             <label className="w-1/3 text-sm font-semibold text-slate-600">Type Piece</label>
-            <select value={formData.typePiece} onChange={e => setFormData({...formData, typePiece: e.target.value})} className={`w-2/3 ${inputClass}`} disabled={isSubmitting}>
-              <option value="">Select...</option>
-              <option value="Piece">Piece</option>
-              <option value="Box">Box</option>
-              <option value="Pallet">Pallet</option>
+            <select 
+              value={formData.typePiece} 
+              onChange={e => setFormData({...formData, typePiece: e.target.value})} 
+              className={`w-2/3 ${inputClass}`} 
+              disabled={isSubmitting || !formData.customer}
+            >
+              <option value="">{formData.customer ? 'Select type piece...' : 'Select customer first...'}</option>
+              {availableTypePieces.map(tp => (
+                <option key={tp._id} value={tp.typePieceName}>{tp.typePieceName}</option>
+              ))}
             </select>
           </div>
+
           <div className="flex items-center">
             <label className="w-1/3 text-sm font-semibold text-slate-600">Locations (+/-)</label>
-            <input type="text" placeholder="e.g. B-10-02" value={formData.locationString} onChange={e => setFormData({...formData, locationString: e.target.value})} className={`w-2/3 ${inputClass}`} disabled={isSubmitting} />
+            <select 
+              value={formData.locationString} 
+              onChange={e => setFormData({...formData, locationString: e.target.value})} 
+              className={`w-2/3 ${inputClass}`} 
+              disabled={isSubmitting}
+            >
+              <option value="">Select location...</option>
+              {apiLocations.map(loc => (
+                <option key={loc._id} value={loc.designation}>{loc.designation}</option>
+              ))}
+            </select>
           </div>
           <div className="flex items-center pt-2">
             <label className="w-1/3 text-sm font-semibold text-slate-600">Admin</label>
@@ -279,8 +321,26 @@ export default function InventoryFormPanel({
         </div>
         
         {formData.productImage ? (
-          <div className="w-full border border-slate-200 rounded overflow-hidden shadow-sm">
-            <img src={formData.productImage} alt="Product" className="w-full h-auto object-cover" />
+          <div className="w-full border border-slate-200 rounded overflow-hidden shadow-sm relative min-h-[150px] bg-slate-50 flex items-center justify-center">
+            
+            {/* Loading Overlay */}
+            {isImageLoading && (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-50/80 backdrop-blur-sm">
+                <Loader2 className="animate-spin text-brand-gold mb-2" size={24} />
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Resolving Asset...</span>
+              </div>
+            )}
+
+            <img 
+              src={formData.productImage} 
+              alt="Product" 
+              className={`w-full h-auto object-cover transition-opacity duration-300 ${isImageLoading ? 'opacity-0' : 'opacity-100'}`}
+              onLoad={() => setIsImageLoading(false)} 
+              onError={() => {
+                setIsImageLoading(false);
+                console.error("Failed to load image. S3 Bucket Policy is likely blocking public access.");
+              }}
+            />
           </div>
         ) : (
           <label className={`flex flex-col items-center justify-center w-full h-48 border-2 border-slate-300 border-dashed rounded cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors ${isUploadingImage ? 'opacity-50 cursor-not-allowed' : ''}`}>

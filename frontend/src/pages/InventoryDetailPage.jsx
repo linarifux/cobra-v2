@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { 
@@ -9,10 +9,28 @@ import {
 // Redux Actions
 import { fetchInventoryById, deleteInventory, clearCurrentInventoryItem } from '../store/slices/inventorySlice';
 
+// Utility to sanitize S3 URLs and bypass SSL wildcard dot errors
+const sanitizeS3Url = (url) => {
+  if (!url) return '';
+  try {
+    const urlObj = new URL(url);
+    const hostParts = urlObj.hostname.split('.s3.');
+    if (hostParts.length === 2 && hostParts[0].includes('.')) {
+      const bucketName = hostParts[0];
+      return `https://s3.amazonaws.com/${bucketName}${urlObj.pathname}`;
+    }
+  } catch (err) {
+    return url;
+  }
+  return url;
+};
+
 export default function InventoryDetail() {
   const { inventoryId } = useParams();
   const navigate = useNavigate();
   const dispatch = useDispatch();
+
+  const [imageError, setImageError] = useState(false);
 
   // Safely access Redux state
   const { currentItem: item, status, error } = useSelector(state => state.inventory || {});
@@ -21,6 +39,7 @@ export default function InventoryDetail() {
   useEffect(() => {
     if (inventoryId) {
       dispatch(fetchInventoryById(inventoryId));
+      setImageError(false); // Reset error state when fetching a new item
     }
     // Cleanup function to clear stale data when unmounting
     return () => dispatch(clearCurrentInventoryItem());
@@ -82,6 +101,9 @@ export default function InventoryDetail() {
   const customerName = item.customer?.customerName || 'Unassigned Pool';
   const divisionName = item.division?.divisionName || 'Unassigned';
   const categoryName = item.category1?.categoryName || 'Unassigned';
+  
+  // Check for the image field (added fallback fields just in case backend mapping changed)
+  const safeImageUrl = sanitizeS3Url(item.productImage || item.image || item.imageUrl);
 
   // Format currency nicely
   const formatCurrency = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
@@ -116,32 +138,59 @@ export default function InventoryDetail() {
       </div>
 
       {/* 2. Core Identity Hero Block */}
-      <div className="bg-slate-950 text-white rounded-3xl p-8 shadow-xl relative overflow-hidden border border-slate-900">
-        <div className="absolute right-0 top-0 translate-x-10 -translate-y-10 opacity-5 pointer-events-none">
-          {/* If the item has a productImage, we could overlay it here, but falling back to the Box icon matches the screenshot */}
-          <Package size={300} />
+      <div className="bg-slate-950 text-white rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden border border-slate-900">
+        
+        {/* Dynamic Background Watermark */}
+        <div className="absolute right-0 top-0 h-full w-1/2 opacity-[0.04] pointer-events-none flex justify-end items-center overflow-hidden">
+          {safeImageUrl && !imageError ? (
+            <img src={safeImageUrl} alt="" className="w-full h-full object-cover scale-150 blur-sm mix-blend-screen" />
+          ) : (
+            <Package size={350} className="-translate-y-10 translate-x-10" />
+          )}
         </div>
         
-        <div className="flex flex-wrap items-start justify-between gap-6 relative z-10">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] font-mono font-black text-slate-950 uppercase tracking-widest bg-brand-gold px-2.5 py-0.5 rounded-md shadow-sm">
-                SKU: {item.productCode || item.sku || 'N/A'}
-              </span>
-              <span className={`px-2.5 py-0.5 text-[10px] font-black rounded-md tracking-widest uppercase border ${isLowStock ? 'bg-red-500/20 text-red-400 border-red-500/30 animate-pulse' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
-                {item.status !== 'Active' ? item.status : (isLowStock ? 'Low Stock Warning' : 'Stable Inventory Pool')}
-              </span>
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+          
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 sm:gap-6 w-full md:w-auto">
+            
+            {/* Visual Thumbnail (Always rendered to preserve layout) */}
+            <div className="w-24 h-24 sm:w-28 sm:h-28 bg-slate-900/80 p-1.5 rounded-2xl shadow-xl border border-slate-800 shrink-0 flex items-center justify-center overflow-hidden backdrop-blur-md">
+              {safeImageUrl && !imageError ? (
+                <img 
+                  src={safeImageUrl} 
+                  alt={item.description || 'Product'} 
+                  className="w-full h-full object-cover rounded-xl bg-white" 
+                  onError={() => setImageError(true)}
+                />
+              ) : (
+                <div className="w-full h-full bg-slate-800/50 rounded-xl flex flex-col items-center justify-center text-slate-500 gap-2">
+                  <Package size={28} />
+                  <span className="text-[8px] font-black uppercase tracking-widest">No Image</span>
+                </div>
+              )}
             </div>
-            <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white">{item.description || item.itemName || 'Unnamed Asset'}</h1>
-            <p className="text-xs text-slate-400 font-medium pt-1">
-              Last audited on <span className="text-slate-200 font-bold">{new Date(item.lastAuditedAt || item.updatedAt).toLocaleString()}</span> by <span className="text-brand-gold font-bold">{item.lastAuditedBy || 'System Protocol'}</span>
-            </p>
+
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-mono font-black text-slate-950 uppercase tracking-widest bg-brand-gold px-2.5 py-0.5 rounded-md shadow-sm">
+                  SKU: {item.productCode || item.sku || 'N/A'}
+                </span>
+                <span className={`px-2.5 py-0.5 text-[10px] font-black rounded-md tracking-widest uppercase border ${isLowStock ? 'bg-red-500/20 text-red-400 border-red-500/30 animate-pulse' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
+                  {item.status !== 'Active' ? item.status : (isLowStock ? 'Low Stock Warning' : 'Stable Inventory Pool')}
+                </span>
+              </div>
+              <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white">{item.description || item.itemName || 'Unnamed Asset'}</h1>
+              <p className="text-xs text-slate-400 font-medium pt-1">
+                Last audited on <span className="text-slate-200 font-bold">{new Date(item.lastAuditedAt || item.updatedAt).toLocaleString()}</span> by <span className="text-brand-gold font-bold">{item.lastAuditedBy || 'System Protocol'}</span>
+              </p>
+            </div>
           </div>
           
-          <div className="bg-white/10 backdrop-blur-md border border-white/10 px-5 py-4 rounded-2xl text-right shrink-0 shadow-inner">
+          <div className="bg-white/10 backdrop-blur-md border border-white/10 px-5 py-4 rounded-2xl text-right shrink-0 shadow-inner w-full md:w-auto">
             <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Total Asset Pool Valuation</span>
             <span className="text-3xl font-mono font-black text-emerald-400">{formatCurrency(totalAssetValue)}</span>
           </div>
+
         </div>
       </div>
 
@@ -208,18 +257,30 @@ export default function InventoryDetail() {
               <Layers size={14} className="text-brand-gold" /> Classification Hierarchy
             </h3>
             
-            <div className="space-y-3 text-xs font-bold">
+            <div className="space-y-4 text-xs font-bold">
               <div>
-                <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest mb-1">Operational Division</span>
+                <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest mb-1.5">Operational Division</span>
                 <p className="text-slate-900 text-sm font-black bg-white/60 px-3 py-1.5 rounded-xl border border-slate-200/60 inline-flex shadow-sm">
                   {divisionName}
                 </p>
               </div>
               <div>
-                <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest mb-1">Assigned Category Depth</span>
-                <span className={`inline-flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase px-2.5 py-1 rounded-lg shadow-md ${item.category1 ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-600'}`}>
-                  <Tag size={10} className={item.category1 ? "text-brand-gold" : "text-slate-400"} /> {categoryName}
-                </span>
+                <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest mb-1.5">Assigned Classifications</span>
+                <div className="flex flex-wrap gap-2">
+                  <span className={`inline-flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase px-2.5 py-1 rounded-lg shadow-sm border border-slate-200/60 ${item.category1 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                    <Tag size={10} className={item.category1 ? "text-brand-gold" : "text-slate-400"} /> {categoryName}
+                  </span>
+                  {item.category2?.categoryName && (
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase px-2.5 py-1 rounded-lg shadow-sm bg-white text-slate-700 border border-slate-200/60">
+                      <Tag size={10} className="text-slate-400" /> {item.category2.categoryName}
+                    </span>
+                  )}
+                  {item.typePiece && (
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase px-2.5 py-1 rounded-lg shadow-sm bg-brand-gold/10 text-brand-gold border border-brand-gold/20">
+                      <Package size={10} /> {item.typePiece}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>

@@ -18,6 +18,7 @@ import LogisticsTab from '../components/vendors/tabs/LogisticsTab';
 import RatesTab from '../components/vendors/tabs/RatesTab';
 import StaffTab from '../components/vendors/tabs/StaffTab';
 import CarrierTab from '../components/vendors/tabs/CarrierTab'; 
+import TypePiece from '../components/vendors/tabs/TypePiece'; // NEW: Imported
 
 export default function CustomerDetailsPage() {
   const { id } = useParams();
@@ -41,17 +42,19 @@ export default function CustomerDetailsPage() {
     { id: 3, name: 'APAC Electronics Procurement', code: 'DIV-APAC', manager: 'Lin Nguyen', region: 'Singapore Sea Port', status: 'Inactive' }
   ]);
 
-  const tabs = ['Overview', 'Division', 'Inventory', 'Processing', 'Carrier', 'Logistics', 'Rates', 'Staff'];
+  // NEW: Added 'Type Pieces' to the array
+  const tabs = ['Overview', 'Division', 'Inventory', 'Processing', 'Carrier', 'Logistics', 'Rates', 'Staff', 'Type Pieces'];
   
   const TabComponents = { 
-    Overview: OverviewTab, 
-    Division: DivisionTab, 
-    Inventory: InventoryTab, 
-    Processing: ProcessingTab, 
-    Carrier: CarrierTab, 
-    Logistics: LogisticsTab, 
-    Rates: RatesTab, 
-    Staff: StaffTab 
+    'Overview': OverviewTab, 
+    'Division': DivisionTab, 
+    'Inventory': InventoryTab, 
+    'Processing': ProcessingTab, 
+    'Carrier': CarrierTab, 
+    'Logistics': LogisticsTab, 
+    'Rates': RatesTab, 
+    'Staff': StaffTab,
+    'Type Pieces': TypePiece // NEW: Mapped
   };
   
   const ActiveComponent = TabComponents[activeTab];
@@ -218,6 +221,7 @@ export default function CustomerDetailsPage() {
           <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 md:p-8 rounded-3xl min-h-[400px] shadow-sm transition-all duration-300">
              <ActiveComponent 
                customerData={customer}
+               customer={customer} 
                rates={rates} 
                setRates={setRates} 
                divisions={divisions} 

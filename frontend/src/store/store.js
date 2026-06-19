@@ -14,6 +14,7 @@ import carrierReducer from './slices/carrierSlice';
 import orderReducer from './slices/orderSlice';
 import receivingReducer from './slices/receivingSlice';
 import typePieceReducer from './slices/typePieceSlice'
+import uploadReducer from './slices/uploadSlice'
 
 export const store = configureStore({
   reducer: {
@@ -30,6 +31,7 @@ export const store = configureStore({
     carriers: carrierReducer,
     orders: orderReducer,
     receiving: receivingReducer,
-    typePieces: typePieceReducer
+    typePieces: typePieceReducer,
+    upload: uploadReducer
   },
 });
