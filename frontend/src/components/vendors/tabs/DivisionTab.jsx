@@ -158,7 +158,7 @@ export default function DivisionTab({ divisions = [], customerData }) {
       <div className="flex justify-between items-center border-b border-slate-200/60 pb-4">
         <div>
           <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-            <Layers size={16} className="text-brand-gold" /> Vendor Divisions & Operational Units
+            <Layers size={16} className="text-brand-gold" /> Customer Divisions & Operational Units
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">Control organizational boundaries, organizational metadata, and assigned structural heads.</p>
         </div>

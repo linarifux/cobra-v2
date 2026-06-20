@@ -161,12 +161,20 @@ export default function InventoryFormPanel({
       <div className="flex justify-between items-center pb-4 border-b border-slate-100">
         <div className="flex items-center gap-4">
           <h3 className="text-lg font-bold text-slate-800">
-            {isEditMode ? `Edit Item: ${formData.productCode}` : 'New Inventory Item'}
+            {isEditMode ? `Edit Item: ${formData.productCode}` : 'Company'}
           </h3>
           <select required value={formData.customer} onChange={e => setFormData({...formData, customer: e.target.value, typePiece: ''})} className="border border-slate-300 rounded px-3 py-1 text-sm bg-slate-50 font-semibold text-brand-gold outline-none">
             <option value="" disabled>Select Customer...</option>
             {apiCustomers.map(cust => <option key={cust._id} value={cust._id}>{cust.customerName}</option>)}
           </select>
+
+          <div className="flex items-center">
+            <label className="w-1/3 text-md mr-2 font-semibold text-slate-600">Division</label>
+            <select value={formData.division} onChange={e => setFormData({...formData, division: e.target.value})} className={`w-2/3 ${inputClass}`} disabled={isSubmitting}>
+              <option value="" >Select...</option>
+              {apiDivisions.map(div => <option key={div._id} value={div._id}>{div.divisionName}</option>)}
+            </select>
+          </div>
         </div>
         <button type="button" disabled={isSubmitting} onClick={onClose} className="text-slate-400 hover:text-slate-600 disabled:opacity-50"><X size={20} /></button>
       </div>
@@ -186,13 +194,13 @@ export default function InventoryFormPanel({
             <label className="w-1/3 text-sm font-semibold text-slate-600">HSS Code</label>
             <input type="text" value={formData.hssCode} onChange={e => setFormData({...formData, hssCode: e.target.value})} className={`w-2/3 ${inputClass}`} disabled={isSubmitting} />
           </div>
-          <div className="flex items-center">
+          {/* <div className="flex items-center">
             <label className="w-1/3 text-sm font-semibold text-slate-600">Division</label>
             <select value={formData.division} onChange={e => setFormData({...formData, division: e.target.value})} className={`w-2/3 ${inputClass}`} disabled={isSubmitting}>
               <option value="">Select...</option>
               {apiDivisions.map(div => <option key={div._id} value={div._id}>{div.divisionName}</option>)}
             </select>
-          </div>
+          </div> */}
           <div className="flex items-center">
             <label className="w-1/3 text-sm font-semibold text-slate-600">Category 1</label>
             <select value={formData.category1} onChange={e => setFormData({...formData, category1: e.target.value})} className={`w-2/3 ${inputClass}`} disabled={isSubmitting}>
