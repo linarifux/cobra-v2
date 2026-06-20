@@ -75,18 +75,34 @@ export default function InventoryFormPanel({
       setFormData({
         ...INITIAL_FORM_STATE,
         customer: apiCustomers[0]?._id || '', 
-        division: apiDivisions[0]?._id || '',
-        category1: apiCategories[0]?._id || '', 
         locationString: apiLocations[0]?.designation || '', 
       });
     }
-  }, [itemToEdit, apiCustomers, apiDivisions, apiCategories, apiLocations, isEditMode]);
+  }, [itemToEdit, apiCustomers, apiLocations, isEditMode]);
 
+
+  // --- CASCADING DROPDOWN LOGIC ---
+  
+  // 1. Filter Type Pieces by Customer
   const availableTypePieces = useMemo(() => {
     if (!formData.customer) return [];
     return apiTypePieces.filter(tp => (tp.customer?._id || tp.customer) === formData.customer);
   }, [apiTypePieces, formData.customer]);
 
+  // 2. Filter Divisions by Customer
+  const availableDivisions = useMemo(() => {
+    if (!formData.customer) return [];
+    return apiDivisions.filter(div => (div.customer?._id || div.customer) === formData.customer);
+  }, [apiDivisions, formData.customer]);
+
+  // 3. Filter Categories by Division
+  const availableCategories = useMemo(() => {
+    if (!formData.division) return [];
+    return apiCategories.filter(cat => (cat.division?._id || cat.division) === formData.division);
+  }, [apiCategories, formData.division]);
+
+
+  // --- HANDLERS ---
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -163,16 +179,43 @@ export default function InventoryFormPanel({
           <h3 className="text-lg font-bold text-slate-800">
             {isEditMode ? `Edit Item: ${formData.productCode}` : 'Company'}
           </h3>
-          <select required value={formData.customer} onChange={e => setFormData({...formData, customer: e.target.value, typePiece: ''})} className="border border-slate-300 rounded px-3 py-1 text-sm bg-slate-50 font-semibold text-brand-gold outline-none">
+          
+          {/* CUSTOMER SELECT - Changing this resets children */}
+          <select 
+            required 
+            value={formData.customer} 
+            onChange={e => setFormData({
+              ...formData, 
+              customer: e.target.value, 
+              division: '', 
+              category1: '', 
+              category2: '', 
+              category3: '', 
+              typePiece: ''
+            })} 
+            className="border border-slate-300 rounded px-3 py-1 text-sm bg-slate-50 font-semibold text-brand-gold outline-none"
+          >
             <option value="" disabled>Select Customer...</option>
             {apiCustomers.map(cust => <option key={cust._id} value={cust._id}>{cust.customerName}</option>)}
           </select>
 
+          {/* DIVISION SELECT - Changing this resets categories */}
           <div className="flex items-center">
-            <label className="w-1/3 text-md mr-2 font-semibold text-slate-600">Division</label>
-            <select value={formData.division} onChange={e => setFormData({...formData, division: e.target.value})} className={`w-2/3 ${inputClass}`} disabled={isSubmitting}>
-              <option value="" >Select...</option>
-              {apiDivisions.map(div => <option key={div._id} value={div._id}>{div.divisionName}</option>)}
+            <label className="text-sm mr-2 font-semibold text-slate-600">Division</label>
+            <select 
+              value={formData.division} 
+              onChange={e => setFormData({
+                ...formData, 
+                division: e.target.value, 
+                category1: '', 
+                category2: '', 
+                category3: ''
+              })} 
+              className={`min-w-[150px] ${inputClass}`} 
+              disabled={isSubmitting || !formData.customer || availableDivisions.length === 0}
+            >
+              <option value="">{formData.customer ? (availableDivisions.length > 0 ? 'Select...' : 'No divisions') : 'Select Customer first...'}</option>
+              {availableDivisions.map(div => <option key={div._id} value={div._id}>{div.divisionName}</option>)}
             </select>
           </div>
         </div>
@@ -194,32 +237,41 @@ export default function InventoryFormPanel({
             <label className="w-1/3 text-sm font-semibold text-slate-600">HSS Code</label>
             <input type="text" value={formData.hssCode} onChange={e => setFormData({...formData, hssCode: e.target.value})} className={`w-2/3 ${inputClass}`} disabled={isSubmitting} />
           </div>
-          {/* <div className="flex items-center">
-            <label className="w-1/3 text-sm font-semibold text-slate-600">Division</label>
-            <select value={formData.division} onChange={e => setFormData({...formData, division: e.target.value})} className={`w-2/3 ${inputClass}`} disabled={isSubmitting}>
-              <option value="">Select...</option>
-              {apiDivisions.map(div => <option key={div._id} value={div._id}>{div.divisionName}</option>)}
-            </select>
-          </div> */}
+
           <div className="flex items-center">
             <label className="w-1/3 text-sm font-semibold text-slate-600">Category 1</label>
-            <select value={formData.category1} onChange={e => setFormData({...formData, category1: e.target.value})} className={`w-2/3 ${inputClass}`} disabled={isSubmitting}>
-              <option value="">Select...</option>
-              {apiCategories.map(cat => <option key={cat._id} value={cat._id}>{cat.categoryName}</option>)}
+            <select 
+              value={formData.category1} 
+              onChange={e => setFormData({...formData, category1: e.target.value})} 
+              className={`w-2/3 ${inputClass}`} 
+              disabled={isSubmitting || !formData.division || availableCategories.length === 0}
+            >
+              <option value="">{formData.division ? 'Select...' : 'Select division first...'}</option>
+              {availableCategories.map(cat => <option key={cat._id} value={cat._id}>{cat.categoryName}</option>)}
             </select>
           </div>
           <div className="flex items-center">
             <label className="w-1/3 text-sm font-semibold text-slate-600">Category 2</label>
-            <select value={formData.category2} onChange={e => setFormData({...formData, category2: e.target.value})} className={`w-2/3 ${inputClass}`} disabled={isSubmitting}>
-              <option value="">Select...</option>
-              {apiCategories.map(cat => <option key={cat._id} value={cat._id}>{cat.categoryName}</option>)}
+            <select 
+              value={formData.category2} 
+              onChange={e => setFormData({...formData, category2: e.target.value})} 
+              className={`w-2/3 ${inputClass}`} 
+              disabled={isSubmitting || !formData.division || availableCategories.length === 0}
+            >
+              <option value="">{formData.division ? 'Select...' : 'Select division first...'}</option>
+              {availableCategories.map(cat => <option key={cat._id} value={cat._id}>{cat.categoryName}</option>)}
             </select>
           </div>
           <div className="flex items-center">
             <label className="w-1/3 text-sm font-semibold text-slate-600">Category 3</label>
-            <select value={formData.category3} onChange={e => setFormData({...formData, category3: e.target.value})} className={`w-2/3 ${inputClass}`} disabled={isSubmitting}>
-              <option value="">Select...</option>
-              {apiCategories.map(cat => <option key={cat._id} value={cat._id}>{cat.categoryName}</option>)}
+            <select 
+              value={formData.category3} 
+              onChange={e => setFormData({...formData, category3: e.target.value})} 
+              className={`w-2/3 ${inputClass}`} 
+              disabled={isSubmitting || !formData.division || availableCategories.length === 0}
+            >
+              <option value="">{formData.division ? 'Select...' : 'Select division first...'}</option>
+              {availableCategories.map(cat => <option key={cat._id} value={cat._id}>{cat.categoryName}</option>)}
             </select>
           </div>
 
