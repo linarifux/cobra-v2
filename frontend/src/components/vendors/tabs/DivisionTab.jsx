@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
-import { useDispatch } from 'react-redux';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import { Layers, Plus, User, ToggleLeft, ToggleRight, Trash2, Tag, Edit2, Check, X, Loader2 } from 'lucide-react';
 
-// Import your actual Redux Thunks (Adjust the path if needed)
+// Redux Thunks
 import { createDivision, updateDivision, deleteDivision } from '../../../store/slices/divisionSlice';
+import { fetchUsers, updateUser } from '../../../store/slices/userSlice';
+import { fetchCategories } from '../../../store/slices/categorySlice'; // NEW: Import categories
 
-export default function DivisionTab({ divisions = [], customerData, staff = [] }) {
+export default function DivisionTab({ divisions = [], customerData }) {
   const dispatch = useDispatch();
   
   const [showAddForm, setShowAddForm] = useState(false);
@@ -18,13 +20,19 @@ export default function DivisionTab({ divisions = [], customerData, staff = [] }
   const [editingId, setEditingId] = useState(null);
   const [editFormData, setEditFormData] = useState({ divisionName: '', divisionCode: '', manager: '' });
 
-  // Fallback mock staff list
-  const staffList = staff.length > 0 ? staff : [
-    { id: 1, name: 'Sarah Jenkins' },
-    { id: 2, name: 'Marcus Vance' },
-    { id: 3, name: 'Lin Nguyen' },
-    { id: 4, name: 'Amir Hossain' }
-  ];
+  // --- Redux State & Fetching ---
+  const { items: apiUsers = [], status: userStatus } = useSelector(state => state.users || {});
+  const { items: apiCategories = [], status: catStatus } = useSelector(state => state.categories || {}); // NEW: Categories State
+
+  useEffect(() => {
+    if (userStatus === 'idle') dispatch(fetchUsers());
+    if (catStatus === 'idle') dispatch(fetchCategories()); // NEW: Fetch Categories
+  }, [userStatus, catStatus, dispatch]);
+
+  // 1. FILTER STAFF: Only allow Order Portal users to be assigned as division heads
+  const orderPortalStaff = useMemo(() => {
+    return apiUsers.filter(user => user.portal === 'order');
+  }, [apiUsers]);
 
   // --- CRUD Handlers ---
 
@@ -45,12 +53,24 @@ export default function DivisionTab({ divisions = [], customerData, staff = [] }
     
     setIsSubmitting(true);
     try {
-      await dispatch(createDivision({
-        ...newDivision,
+      // 1. Create the Division
+      const createdDiv = await dispatch(createDivision({
+        divisionName: newDivision.divisionName,
         divisionCode: newDivision.divisionCode.toUpperCase(),
-        manager: newDivision.manager || staffList[0]?.name || 'Unassigned',
-        customer: customerData._id // Link division to the current customer
+        customer: customerData._id, 
+        status: newDivision.status || 'Active'
       })).unwrap();
+
+      // 2. Synchronize User Array: Attach this new division to the selected manager's profile
+      if (newDivision.manager && createdDiv._id) {
+        const selectedUser = orderPortalStaff.find(u => u._id === newDivision.manager);
+        if (selectedUser) {
+          const currentDivIds = (selectedUser.divisions || []).map(d => d._id || d);
+          const updatedDivs = [...new Set([...currentDivIds, createdDiv._id])];
+          await dispatch(updateUser({ id: selectedUser._id, userData: { divisions: updatedDivs } })).unwrap();
+          dispatch(fetchUsers()); // Re-fetch to keep UI in sync
+        }
+      }
       
       setNewDivision({ divisionName: '', divisionCode: '', manager: '', status: 'Active' });
       setShowAddForm(false);
@@ -63,10 +83,16 @@ export default function DivisionTab({ divisions = [], customerData, staff = [] }
 
   const startEditing = (div) => {
     setEditingId(div._id);
+    
+    // Reverse lookup: Find which order portal user has this division ID in their array
+    const assignedUser = orderPortalStaff.find(u => 
+      u.divisions?.some(d => (d._id || d) === div._id)
+    );
+
     setEditFormData({
       divisionName: div.divisionName || '',
-      divisionCode: div.divisionCode || div.code || '', // fallback to code if schema varies
-      manager: div.manager || ''
+      divisionCode: div.divisionCode || div.code || '', 
+      manager: assignedUser ? assignedUser._id : '' // Set exact MongoDB ObjectId
     });
   };
 
@@ -75,14 +101,39 @@ export default function DivisionTab({ divisions = [], customerData, staff = [] }
     
     setIsSubmitting(true);
     try {
+      // 1. Update the Division details
       await dispatch(updateDivision({ 
         id, 
         divisionData: { 
-          ...editFormData, 
+          divisionName: editFormData.divisionName, 
           divisionCode: editFormData.divisionCode.toUpperCase() 
         } 
       })).unwrap();
       
+      // 2. Synchronize User Arrays if the Manager changed
+      const oldManager = orderPortalStaff.find(u => u.divisions?.some(d => (d._id || d) === id));
+      const oldManagerId = oldManager ? oldManager._id : null;
+      const newManagerId = editFormData.manager;
+
+      if (oldManagerId !== newManagerId) {
+        // Remove division from the OLD manager's array
+        if (oldManagerId) {
+          const updatedDivs = (oldManager.divisions || []).map(d => d._id || d).filter(divId => divId !== id);
+          await dispatch(updateUser({ id: oldManagerId, userData: { divisions: updatedDivs } }));
+        }
+        
+        // Add division to the NEW manager's array
+        if (newManagerId) {
+          const newUser = orderPortalStaff.find(u => u._id === newManagerId);
+          if (newUser) {
+            const currentDivs = (newUser.divisions || []).map(d => d._id || d);
+            const updatedDivs = [...new Set([...currentDivs, id])];
+            await dispatch(updateUser({ id: newManagerId, userData: { divisions: updatedDivs } }));
+          }
+        }
+        dispatch(fetchUsers()); // Re-fetch to sync UI
+      }
+
       setEditingId(null);
     } catch (err) {
       alert(`Failed to save changes: ${err}`);
@@ -95,6 +146,7 @@ export default function DivisionTab({ divisions = [], customerData, staff = [] }
     if (window.confirm("Are you sure you want to permanently delete this division? Any associated items must be reassigned.")) {
       try {
         await dispatch(deleteDivision(id)).unwrap();
+        dispatch(fetchUsers()); // Refresh users just in case it clears references
       } catch (err) {
         alert(`Failed to delete division: ${err}`);
       }
@@ -155,9 +207,9 @@ export default function DivisionTab({ divisions = [], customerData, staff = [] }
                 disabled={isSubmitting}
                 className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold transition-all h-[34px] cursor-pointer"
               >
-                <option value="">Select System Staff...</option>
-                {staffList.map(member => (
-                  <option key={member.id} value={member.name}>{member.name}</option>
+                <option value="">Unassigned</option>
+                {orderPortalStaff.map(member => (
+                  <option key={member._id} value={member._id}>{member.name}</option>
                 ))}
               </select>
             </div>
@@ -177,6 +229,16 @@ export default function DivisionTab({ divisions = [], customerData, staff = [] }
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {divisions.map((div) => {
             const isEditing = editingId === div._id;
+            
+            // Resolve Manager Name dynamically via User schema's divisions array
+            const assignedUser = orderPortalStaff.find(u => 
+              u.divisions?.some(d => (d._id || d) === div._id)
+            );
+
+            // Dynamically count categories associated with this division
+            const totalCategories = apiCategories.filter(cat => 
+              (cat.division?._id || cat.division) === div._id
+            ).length;
 
             return (
               <div 
@@ -184,7 +246,7 @@ export default function DivisionTab({ divisions = [], customerData, staff = [] }
                 className={`border rounded-2xl p-5 bg-white/50 backdrop-blur-sm transition-all shadow-sm flex flex-col justify-between ${div.status === 'Active' ? 'border-slate-200/80 hover:border-slate-300' : 'border-slate-200/40 opacity-60 hover:opacity-100'}`}
               >
                 <div>
-                  {/* Header Row: Displays form inputs if editing, else displays static layout metadata */}
+                  {/* Header Row */}
                   {isEditing ? (
                     <div className="space-y-3 mb-3">
                       <div>
@@ -235,12 +297,15 @@ export default function DivisionTab({ divisions = [], customerData, staff = [] }
                             disabled={isSubmitting}
                             className="px-2 py-1 border border-slate-300 rounded-md text-xs outline-none bg-white font-semibold flex-1 focus:border-brand-gold"
                           >
-                            {staffList.map(member => (
-                              <option key={member.id} value={member.name}>{member.name}</option>
+                            <option value="">Unassigned</option>
+                            {orderPortalStaff.map(member => (
+                              <option key={member._id} value={member._id}>{member.name}</option>
                             ))}
                           </select>
                         ) : (
-                          <strong className="text-slate-800 font-bold truncate">{div.manager || 'Unassigned'}</strong>
+                          <strong className="text-slate-800 font-bold truncate">
+                            {assignedUser?.name || 'Unassigned'}
+                          </strong>
                         )}
                       </span>
                     </div>
@@ -249,7 +314,7 @@ export default function DivisionTab({ divisions = [], customerData, staff = [] }
                       <Tag size={13} className="text-slate-400" />
                       <span className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">Total Categories:</span>
                       <strong className="text-slate-900 font-black bg-slate-100 px-1.5 py-0.5 rounded-md text-[11px] border border-slate-200">
-                        {div.categories?.length || 0}
+                        {totalCategories}
                       </strong>
                     </div>
                   </div>
