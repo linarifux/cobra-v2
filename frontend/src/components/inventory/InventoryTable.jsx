@@ -12,10 +12,10 @@ export default function InventoryTable({ filteredInventory, apiInventory, onEdit
           <thead className="bg-white/20 border-b border-white/40">
             <tr>
               <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Identity Code</th>
-              <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Description / Classification</th>
-              <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Customer Allocation</th>
-              <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Value Price</th>
-              <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Stock Availability</th>
+              <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Description</th>
+              <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Customer</th>
+              <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Price</th>
+              <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Stock</th>
               <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500 text-right">Actions</th>
             </tr>
           </thead>

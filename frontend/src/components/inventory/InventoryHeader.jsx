@@ -28,7 +28,7 @@ export default function InventoryHeader({ onAddClick }) {
           onClick={onAddClick}
           className="bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-slate-800 transition-all shadow-sm uppercase tracking-wider"
         >
-          <PlusCircle size={15} /> Add New Asset Item
+          <PlusCircle size={15} /> Add New Item
         </button>
       </div>
     </div>
