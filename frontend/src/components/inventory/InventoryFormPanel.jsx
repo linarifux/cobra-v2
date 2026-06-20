@@ -11,6 +11,7 @@ const INITIAL_FORM_STATE = {
   qtyLastReceived: 0, dateLastReceived: '', productImage: '', customer: ''
 };
 
+
 // --- FIX 1: Universal Path-Style Sanitizer ---
 // Converts virtual-hosted URLs into universal path-style URLs to bypass SSL dot errors.
 const sanitizeS3Url = (url) => {
@@ -78,7 +79,7 @@ export default function InventoryFormPanel({
         locationString: apiLocations[0]?.designation || '', 
       });
     }
-  }, [itemToEdit, apiCustomers, apiLocations, isEditMode]);
+  }, [itemToEdit, apiCustomers, apiDivisions, apiCategories, apiLocations, isEditMode]);
 
 
   // --- CASCADING DROPDOWN LOGIC ---
@@ -95,11 +96,34 @@ export default function InventoryFormPanel({
     return apiDivisions.filter(div => (div.customer?._id || div.customer) === formData.customer);
   }, [apiDivisions, formData.customer]);
 
-  // 3. Filter Categories by Division
+  // 3. Filter Categories by Division (Base List)
   const availableCategories = useMemo(() => {
     if (!formData.division) return [];
     return apiCategories.filter(cat => (cat.division?._id || cat.division) === formData.division);
   }, [apiCategories, formData.division]);
+
+  // 4. Filter Category 1 (Only Top-Level Categories without a parent)
+  const availableCat1 = useMemo(() => {
+    return availableCategories.filter(cat => !cat.parentCategory);
+  }, [availableCategories]);
+
+  // 5. Filter Category 2 (Only Children of Category 1)
+  const availableCat2 = useMemo(() => {
+    if (!formData.category1) return [];
+    return availableCategories.filter(cat => {
+      const parentId = cat.parentCategory?._id || cat.parentCategory;
+      return parentId === formData.category1;
+    });
+  }, [availableCategories, formData.category1]);
+
+  // 6. Filter Category 3 (Only Children of Category 2)
+  const availableCat3 = useMemo(() => {
+    if (!formData.category2) return [];
+    return availableCategories.filter(cat => {
+      const parentId = cat.parentCategory?._id || cat.parentCategory;
+      return parentId === formData.category2;
+    });
+  }, [availableCategories, formData.category2]);
 
 
   // --- HANDLERS ---
@@ -147,6 +171,7 @@ export default function InventoryFormPanel({
 
     const payload = {
       ...formData,
+      sku: formData.productCode, // <-- FIX: Map productCode to sku for the backend
       itemName: formData.description,
       price: Number(formData.price) || 0,
       price2: Number(formData.price2) || 0,
@@ -177,7 +202,7 @@ export default function InventoryFormPanel({
       <div className="flex justify-between items-center pb-4 border-b border-slate-100">
         <div className="flex items-center gap-4">
           <h3 className="text-lg font-bold text-slate-800">
-            {isEditMode ? `Edit Item: ${formData.productCode}` : 'Company'}
+            {isEditMode ? `Edit Item: ${formData.productCode}` : 'New Inventory Item'}
           </h3>
           
           {/* CUSTOMER SELECT - Changing this resets children */}
@@ -242,24 +267,33 @@ export default function InventoryFormPanel({
             <label className="w-1/3 text-sm font-semibold text-slate-600">Category 1</label>
             <select 
               value={formData.category1} 
-              onChange={e => setFormData({...formData, category1: e.target.value})} 
+              onChange={e => setFormData({
+                ...formData, 
+                category1: e.target.value,
+                category2: '', // Reset child category
+                category3: ''  // Reset grandchild category
+              })} 
               className={`w-2/3 ${inputClass}`} 
-              disabled={isSubmitting || !formData.division || availableCategories.length === 0}
+              disabled={isSubmitting || !formData.division || availableCat1.length === 0}
             >
-              <option value="">{formData.division ? 'Select...' : 'Select division first...'}</option>
-              {availableCategories.map(cat => <option key={cat._id} value={cat._id}>{cat.categoryName}</option>)}
+              <option value="">{formData.division ? 'Select Category 1...' : 'Select division first...'}</option>
+              {availableCat1.map(cat => <option key={cat._id} value={cat._id}>{cat.categoryName}</option>)}
             </select>
           </div>
           <div className="flex items-center">
             <label className="w-1/3 text-sm font-semibold text-slate-600">Category 2</label>
             <select 
               value={formData.category2} 
-              onChange={e => setFormData({...formData, category2: e.target.value})} 
+              onChange={e => setFormData({
+                ...formData, 
+                category2: e.target.value,
+                category3: '' // Reset grandchild category
+              })} 
               className={`w-2/3 ${inputClass}`} 
-              disabled={isSubmitting || !formData.division || availableCategories.length === 0}
+              disabled={isSubmitting || !formData.category1 || availableCat2.length === 0}
             >
-              <option value="">{formData.division ? 'Select...' : 'Select division first...'}</option>
-              {availableCategories.map(cat => <option key={cat._id} value={cat._id}>{cat.categoryName}</option>)}
+              <option value="">{formData.category1 ? 'Select Category 2...' : 'Select Category 1 first...'}</option>
+              {availableCat2.map(cat => <option key={cat._id} value={cat._id}>{cat.categoryName}</option>)}
             </select>
           </div>
           <div className="flex items-center">
@@ -268,10 +302,10 @@ export default function InventoryFormPanel({
               value={formData.category3} 
               onChange={e => setFormData({...formData, category3: e.target.value})} 
               className={`w-2/3 ${inputClass}`} 
-              disabled={isSubmitting || !formData.division || availableCategories.length === 0}
+              disabled={isSubmitting || !formData.category2 || availableCat3.length === 0}
             >
-              <option value="">{formData.division ? 'Select...' : 'Select division first...'}</option>
-              {availableCategories.map(cat => <option key={cat._id} value={cat._id}>{cat.categoryName}</option>)}
+              <option value="">{formData.category2 ? 'Select Category 3...' : 'Select Category 2 first...'}</option>
+              {availableCat3.map(cat => <option key={cat._id} value={cat._id}>{cat.categoryName}</option>)}
             </select>
           </div>
 

@@ -12,20 +12,20 @@ import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 const router = express.Router({ mergeParams: true });
 
 // Require authentication for all inventory routes
-// router.use(protect);
+router.use(protect);
 
 router.route('/')
   .get(getAllInventory)
-  // .post(restrictTo('admin', 'staff', 'warehouse'), createInventory);
-  .post(createInventory);
+  .post(restrictTo('super_admin','admin', 'staff', 'warehouse'), createInventory);
+  
 
 router.route('/:id')
   .get(getInventoryById)
   // Warehouse staff can adjust stock; admins/staff can edit full details
-  // .put(restrictTo('admin', 'staff', 'warehouse'), updateInventory)
-  .put(updateInventory)
+  .put(restrictTo('super_admin','admin', 'staff', 'warehouse'), updateInventory)
+  // .put(updateInventory)
   // Only admins and staff can permanently delete inventory records
-  // .delete(restrictTo('admin', 'staff'), deleteInventory);
-  .delete(deleteInventory);
+  .delete(restrictTo('super_admin','admin', 'staff'), deleteInventory);
+  // .delete(deleteInventory);
 
 export default router;

@@ -35,6 +35,8 @@ export const createInventory = createAsyncThunk(
       const response = await api.post('/inventory', inventoryData);
       return response.data.data.inventory;
     } catch (error) {
+      console.log(error);
+      
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to create inventory item');
     }
   }

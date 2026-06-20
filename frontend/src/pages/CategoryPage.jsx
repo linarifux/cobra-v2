@@ -17,6 +17,7 @@ import {
   deleteCategory as deleteCatAction,
 } from "../store/slices/categorySlice";
 import { fetchDivisions } from "../store/slices/divisionSlice";
+import { fetchCustomers } from "../store/slices/customerSlice"; // NEW: Import Customers
 
 export default function CategoryPage() {
   const dispatch = useDispatch();
@@ -24,13 +25,10 @@ export default function CategoryPage() {
   // INITIALIZE THE HOOK
   const confirm = useConfirm();
 
-  // SAFELY Access Redux State with Fallbacks to prevent destructuring errors
-  const { items: apiCategories = [], status: catStatus = "idle" } = useSelector(
-    (state) => state.categories || {},
-  );
-  const { items: apiDivisions = [], status: divStatus = "idle" } = useSelector(
-    (state) => state.divisions || {},
-  );
+  // SAFELY Access Redux State with Fallbacks
+  const { items: apiCategories = [], status: catStatus = "idle" } = useSelector((state) => state.categories || {});
+  const { items: apiDivisions = [], status: divStatus = "idle" } = useSelector((state) => state.divisions || {});
+  const { items: apiCustomers = [], status: custStatus = "idle" } = useSelector((state) => state.customers || {});
 
   // UI Control States
   const [showAddForm, setShowAddForm] = useState(false);
@@ -42,78 +40,117 @@ export default function CategoryPage() {
     name: "",
     parent: "None",
     division: "",
+    customer: "", // NEW: Added customer to form state
   });
 
   // Filter States
+  const [customerFilter, setCustomerFilter] = useState("All"); // NEW: Customer Filter
   const [divisionFilter, setDivisionFilter] = useState("All");
   const [levelFilter, setLevelFilter] = useState("All");
 
-  // Load Data on Mount
+  // --- Load Data on Mount ---
   useEffect(() => {
     if (catStatus === "idle") dispatch(fetchCategories());
     if (divStatus === "idle") dispatch(fetchDivisions());
-  }, [catStatus, divStatus, dispatch]);
+    if (custStatus === "idle") dispatch(fetchCustomers());
+  }, [catStatus, divStatus, custStatus, dispatch]);
 
-  // Ensure form has a default division selected once data loads
+  // --- Cascading Form Defaults ---
   useEffect(() => {
-    if (apiDivisions.length > 0 && !formData.division) {
-      setFormData((prev) => ({ ...prev, division: apiDivisions[0]._id }));
+    if (apiCustomers.length > 0 && !formData.customer) {
+      setFormData((prev) => ({ ...prev, customer: apiCustomers[0]._id }));
     }
-  }, [apiDivisions, formData.division]);
+  }, [apiCustomers, formData.customer]);
 
-  // Translate API data into the flat UI structure expected by CategoryTable
+  const formAvailableDivisions = useMemo(() => {
+    if (!formData.customer) return [];
+    return apiDivisions.filter(d => (d.customer?._id || d.customer) === formData.customer);
+  }, [apiDivisions, formData.customer]);
+
+  useEffect(() => {
+    if (formAvailableDivisions.length > 0 && !formAvailableDivisions.some(d => d._id === formData.division)) {
+      setFormData((prev) => ({ ...prev, division: formAvailableDivisions[0]._id, parent: "None" }));
+    } else if (formAvailableDivisions.length === 0) {
+      setFormData((prev) => ({ ...prev, division: "", parent: "None" }));
+    }
+  }, [formAvailableDivisions, formData.division]);
+
+  // Restrict Parent Category selection to the currently selected Division
+  const formAvailableCategories = useMemo(() => {
+    if (!formData.division) return [];
+    return apiCategories.filter(c => (c.division?._id || c.division) === formData.division);
+  }, [apiCategories, formData.division]);
+
+  // --- Cascading Filter Resets ---
+  useEffect(() => {
+    setDivisionFilter("All");
+  }, [customerFilter]);
+
+  useEffect(() => {
+    setLevelFilter("All");
+  }, [divisionFilter]);
+
+
+  // --- Data Mapping ---
   const mappedCategories = useMemo(() => {
-    return apiCategories.map((c) => ({
-      id: c._id,
-      name: c.categoryName,
-      level: c.hierarchyDepth || 1,
-      parent: c.parentCategory ? c.parentCategory.categoryName : "None",
-      parentId: c.parentCategory ? c.parentCategory._id : "None",
-      division: c.division ? c.division.divisionName : "Unassigned",
-      divisionId: c.division ? c.division._id : null,
-    }));
-  }, [apiCategories]);
+    return apiCategories.map((c) => {
+      // Safely resolve the division object to find its parent customer
+      const divId = c.division?._id || c.division;
+      const divObj = apiDivisions.find(d => d._id === divId);
+      const custId = divObj ? (divObj.customer?._id || divObj.customer) : null;
 
-  // Filter Logic
+      return {
+        id: c._id,
+        name: c.categoryName,
+        level: c.hierarchyDepth || 1,
+        parent: c.parentCategory ? c.parentCategory.categoryName : "None",
+        parentId: c.parentCategory ? c.parentCategory._id : "None",
+        division: divObj ? divObj.divisionName : "Unassigned",
+        divisionId: divId,
+        customerId: custId // Used for filtering
+      };
+    });
+  }, [apiCategories, apiDivisions]);
+
+  // --- Filter Logic ---
   const filteredCategories = useMemo(() => {
     return mappedCategories.filter((cat) => {
-      const matchesDivision =
-        divisionFilter === "All" || cat.division === divisionFilter;
-      const matchesLevel =
-        levelFilter === "All" || cat.level === parseInt(levelFilter);
-      return matchesDivision && matchesLevel;
+      const matchesCustomer = customerFilter === "All" || cat.customerId === customerFilter;
+      const matchesDivision = divisionFilter === "All" || cat.division === divisionFilter;
+      const matchesLevel = levelFilter === "All" || cat.level === parseInt(levelFilter);
+      return matchesCustomer && matchesDivision && matchesLevel;
     });
-  }, [mappedCategories, divisionFilter, levelFilter]);
+  }, [mappedCategories, customerFilter, divisionFilter, levelFilter]);
 
-  // Extract pure string arrays for the child UI components
-  const divisionNames = apiDivisions.map((d) => d.divisionName);
+  // Extract pure string arrays for the FilterBoard, restricted to the selected Customer
+  const filterAvailableDivisions = useMemo(() => {
+    if (customerFilter === "All") return apiDivisions;
+    return apiDivisions.filter(d => (d.customer?._id || d.customer) === customerFilter);
+  }, [apiDivisions, customerFilter]);
+  
+  const divisionNames = filterAvailableDivisions.map((d) => d.divisionName);
 
+  // --- Handlers ---
   const handleAddOrUpdate = async () => {
     if (!formData.name || !formData.division) return;
     setIsSubmitting(true);
 
     try {
-      const selectedDivObj = apiDivisions.find(
-        (d) =>
-          d._id === formData.division || d.divisionName === formData.division,
+      const selectedDivObj = formAvailableDivisions.find(
+        (d) => d._id === formData.division || d.divisionName === formData.division
       );
-      const selectedParentObj = apiCategories.find(
-        (c) => c._id === formData.parent || c.categoryName === formData.parent,
+      const selectedParentObj = formAvailableCategories.find(
+        (c) => c._id === formData.parent || c.categoryName === formData.parent
       );
 
       const payload = {
         categoryName: formData.name,
-        parentCategory:
-          formData.parent === "None" || !selectedParentObj
-            ? null
-            : selectedParentObj._id,
-        division: selectedDivObj ? selectedDivObj._id : apiDivisions[0]._id,
+        parentCategory: formData.parent === "None" || !selectedParentObj ? null : selectedParentObj._id,
+        division: selectedDivObj ? selectedDivObj._id : formAvailableDivisions[0]?._id,
       };
 
       if (editingId) {
-        await dispatch(
-          updateCategory({ id: editingId, categoryData: payload }),
-        ).unwrap();
+        await dispatch(updateCategory({ id: editingId, categoryData: payload })).unwrap();
         setEditingId(null);
       } else {
         payload.categoryCode = `CAT-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
@@ -124,7 +161,8 @@ export default function CategoryPage() {
       setFormData({
         name: "",
         parent: "None",
-        division: apiDivisions[0]?._id || "",
+        customer: apiCustomers[0]?._id || "",
+        division: formAvailableDivisions[0]?._id || "",
       });
       setShowAddForm(false);
     } catch (err) {
@@ -141,6 +179,7 @@ export default function CategoryPage() {
       name: cat.name,
       parent: cat.parentId,
       division: cat.divisionId,
+      customer: cat.customerId || apiCustomers[0]?._id || "",
     });
     setShowAddForm(true);
   };
@@ -150,14 +189,13 @@ export default function CategoryPage() {
     setFormData({
       name: "",
       parent: "None",
-      division: apiDivisions[0]?._id || "",
+      customer: apiCustomers[0]?._id || "",
+      division: formAvailableDivisions[0]?._id || "",
     });
     setShowAddForm(false);
   };
 
-  // UPDATED DELETE LOGIC USING CUSTOM CONFIRM MODAL
   const deleteCategoryHandler = async (id) => {
-    // Summon the Promise-based custom modal
     const isConfirmed = await confirm({
       title: 'Delete Category?',
       message: 'Are you sure you want to permanently delete this category? This action cannot be undone.',
@@ -166,7 +204,6 @@ export default function CategoryPage() {
       variant: 'danger'
     });
 
-    // Only proceed with dispatch if the user clicked Confirm
     if (isConfirmed) {
       try {
         await dispatch(deleteCatAction(id)).unwrap();
@@ -197,8 +234,9 @@ export default function CategoryPage() {
         <CategoryForm
           formData={formData}
           setFormData={setFormData}
-          divisions={apiDivisions}
-          categories={apiCategories}
+          apiCustomers={apiCustomers} // Pass customers down to form
+          divisions={formAvailableDivisions} // ONLY divisions for the selected customer
+          categories={formAvailableCategories} // ONLY categories for the selected division
           editingId={editingId}
           onSave={handleAddOrUpdate}
           onCancel={cancelForm}
@@ -207,7 +245,10 @@ export default function CategoryPage() {
       )}
 
       <FilterBoard
-        divisions={divisionNames}
+        apiCustomers={apiCustomers} // Pass customers down to filter board
+        customerFilter={customerFilter}
+        setCustomerFilter={setCustomerFilter}
+        divisions={divisionNames} // Filtered down to the selected customer
         divisionFilter={divisionFilter}
         setDivisionFilter={setDivisionFilter}
         levelFilter={levelFilter}

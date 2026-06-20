@@ -32,6 +32,7 @@ export const createInventory = catchAsync(async (req, res, next) => {
     { path: 'category2', select: 'categoryName hierarchyDepth' },
     { path: 'category3', select: 'categoryName hierarchyDepth' }
   ]);
+  
 
   res.status(201).json({
     status: 'success',
