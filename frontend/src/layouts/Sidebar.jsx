@@ -12,7 +12,6 @@ import {
   ShieldCheck,
   LayoutGrid,
   Box,
-  Layers,
   UserCircle 
 } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -30,7 +29,6 @@ const navigation = [
   { name: 'Receiving', href: '/receiving', icon: Truck },
   { name: 'Customers', href: '/customers', icon: UserCheck },
   // { name: 'Divisions', href: '/divisions', icon: LayoutGrid },
-  { name: 'Categories', href: '/categories', icon: Layers },
   { name: 'Locations', href: '/locations', icon: ShelvingUnit },
   { name: 'Carriers', href: '/carriers', icon:  Box},
   { name: 'ShipStation', href: '/shipping', icon: Package },
