@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { 
@@ -8,42 +8,46 @@ import {
 
 // Redux Actions
 import { fetchCustomerById, clearCurrentCustomer } from '../store/slices/customerSlice';
+import { fetchDivisions } from '../store/slices/divisionSlice';
+import { fetchRates } from '../store/slices/rateSlice'; // Make sure you've created this slice!
 
 // Tab Components imports
 import OverviewTab from '../components/vendors/tabs/OverviewTab';
 import DivisionTab from '../components/vendors/tabs/DivisionTab';
 import InventoryTab from '../components/vendors/tabs/InventoryTab';
 import ProcessingTab from '../components/vendors/tabs/ProcessingTab';
-import LogisticsTab from '../components/vendors/tabs/LogisticsTab';
 import RatesTab from '../components/vendors/tabs/RatesTab';
 import StaffTab from '../components/vendors/tabs/StaffTab';
 import CarrierTab from '../components/vendors/tabs/CarrierTab'; 
-import TypePiece from '../components/vendors/tabs/TypePiece'; // NEW: Imported
+import TypePiece from '../components/vendors/tabs/TypePiece';
 
 export default function CustomerDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const dispatch = useDispatch();
   
-  // Safely Access Redux State with fallbacks
+  // Safely Access Redux State
   const { currentCustomer: customer, status, error } = useSelector((state) => state.customers || {});
+  const { items: allDivisions = [], status: divStatus } = useSelector((state) => state.divisions || {});
+  const { items: allRates = [], status: rateStatus } = useSelector((state) => state.rates || {});
   
   const [activeTab, setActiveTab] = useState('Overview');
-  
-  // Tab States (These would eventually be moved to Redux/Backend too)
-  const [rates, setRates] = useState([
-    { id: 1, name: 'Pick & Pack Fee', value: '0.75' },
-    { id: 2, name: 'Storage Fee', value: '25.00' }
-  ]);
-  
-  const [divisions, setDivisions] = useState([
-    { id: 1, name: 'North American Supply', code: 'DIV-NAS', manager: 'Sarah Jenkins', region: 'Midwest Hub', status: 'Active' },
-    { id: 2, name: 'EMEA Distribution', code: 'DIV-EMEA', manager: 'Marcus Vance', region: 'Frankfurt Central', status: 'Active' },
-    { id: 3, name: 'APAC Electronics Procurement', code: 'DIV-APAC', manager: 'Lin Nguyen', region: 'Singapore Sea Port', status: 'Inactive' }
-  ]);
 
-  // NEW: Added 'Type Pieces' to the array
-  const tabs = ['Overview', 'Division', 'Inventory', 'Processing', 'Carrier', 'Logistics', 'Rates', 'Staff', 'Type Pieces'];
+  // --- Redux Data Filtering ---
+  // We filter the global Redux state to only show divisions/rates belonging to this specific customer
+  const divisions = useMemo(() => {
+    return allDivisions.filter(d => (d.customer?._id || d.customer) === id);
+  }, [allDivisions, id]);
+
+  const rates = useMemo(() => {
+    return allRates.filter(r => (r.customer?._id || r.customer) === id);
+  }, [allRates, id]);
+
+  // Dummy setters to prevent child tab forms from crashing until you switch them to use `dispatch()`
+  const setRates = () => console.warn("setRates is deprecated. Dispatch Redux actions in RatesTab instead.");
+  const setDivisions = () => console.warn("setDivisions is deprecated. Dispatch Redux actions in DivisionTab instead.");
+
+  const tabs = ['Overview', 'Division', 'Inventory', 'Processing', 'Carrier', 'Rates', 'Staff', 'Type Pieces'];
   
   const TabComponents = { 
     'Overview': OverviewTab, 
@@ -51,25 +55,24 @@ export default function CustomerDetailsPage() {
     'Inventory': InventoryTab, 
     'Processing': ProcessingTab, 
     'Carrier': CarrierTab, 
-    'Logistics': LogisticsTab, 
     'Rates': RatesTab, 
     'Staff': StaffTab,
-    'Type Pieces': TypePiece // NEW: Mapped
+    'Type Pieces': TypePiece 
   };
   
   const ActiveComponent = TabComponents[activeTab];
 
-  // Fetch real customer data on mount
+  // Fetch real customer data and related datasets on mount
   useEffect(() => {
-    if (id) {
-      dispatch(fetchCustomerById(id));
-    }
+    if (id) dispatch(fetchCustomerById(id));
+    if (divStatus === 'idle') dispatch(fetchDivisions());
+    if (rateStatus === 'idle') dispatch(fetchRates());
 
     // Cleanup when leaving the page to prevent showing stale data on next visit
     return () => {
       dispatch(clearCurrentCustomer());
     };
-  }, [id, dispatch]);
+  }, [id, divStatus, rateStatus, dispatch]);
 
   // Utility to format address cleanly
   const formatAddress = (address) => {
@@ -144,7 +147,7 @@ export default function CustomerDetailsPage() {
                 </div>
              </div>
              
-             <p className="text-[10px] text-slate-500 font-mono mb-4 px-1">ID: {customer._id}</p>
+             <p className="text-[10px] text-slate-300 font-mono mb-4 px-1">ID: {customer._id}</p>
              
              {/* Micro-Cards for Contact Info */}
              <div className="space-y-2.5 text-xs font-medium">

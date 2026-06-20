@@ -9,13 +9,20 @@ import DivisionCard from '../components/division/DivisionCard';
 // Redux Actions
 import { fetchDivisions, createDivision, updateDivision, deleteDivision } from '../store/slices/divisionSlice';
 import { fetchCustomers } from '../store/slices/customerSlice';
+import { fetchInventory } from '../store/slices/inventorySlice';   
+import { fetchCategories } from '../store/slices/categorySlice'; 
+// Import updateUser so we can assign divisions to the user's array
+import { fetchUsers, updateUser } from '../store/slices/userSlice'; 
 
-export default function DivisionsPage({ staff = [] }) {
+export default function DivisionsPage() {
   const dispatch = useDispatch();
   
   // Redux Central State (Safely accessed)
   const { items: apiDivisions = [], status: divStatus = 'idle', error: divError } = useSelector(state => state.divisions || {});
   const { items: apiCustomers = [], status: custStatus = 'idle' } = useSelector(state => state.customers || {});
+  const { items: apiInventory = [], status: invStatus = 'idle' } = useSelector(state => state.inventory || {});
+  const { items: apiCategories = [], status: catStatus = 'idle' } = useSelector(state => state.categories || {});
+  const { items: apiUsers = [], status: userStatus = 'idle' } = useSelector(state => state.users || {});
 
   // UI States
   const [showAddForm, setShowAddForm] = useState(false);
@@ -36,7 +43,10 @@ export default function DivisionsPage({ staff = [] }) {
   useEffect(() => {
     if (divStatus === 'idle') dispatch(fetchDivisions());
     if (custStatus === 'idle') dispatch(fetchCustomers());
-  }, [divStatus, custStatus, dispatch]);
+    if (invStatus === 'idle') dispatch(fetchInventory());
+    if (catStatus === 'idle') dispatch(fetchCategories());
+    if (userStatus === 'idle') dispatch(fetchUsers());
+  }, [divStatus, custStatus, invStatus, catStatus, userStatus, dispatch]);
 
   // Ensure form has a default customer selected once data loads
   useEffect(() => {
@@ -45,15 +55,18 @@ export default function DivisionsPage({ staff = [] }) {
     }
   }, [apiCustomers, newDivision.customer]);
 
-  // Fallback Reference Matrix Array for System Staff
-  const staffList = staff.length > 0 ? staff : [
-    { id: 1, name: 'Sarah Jenkins' },
-    { id: 2, name: 'Marcus Vance' },
-    { id: 3, name: 'Lin Nguyen' },
-    { id: 4, name: 'Amir Hossain' }
-  ];
+  // 1. FILTER STAFF: Only allow Order Portal users to be division managers
+  const orderPortalStaff = useMemo(() => {
+    return apiUsers
+      .filter(user => user.portal === 'order')
+      .map(user => ({
+        id: user._id,
+        name: user.name,
+        divisions: user.divisions || []
+      }));
+  }, [apiUsers]);
 
-  // Logic Handlers mapped to API
+  // --- Logic Handlers mapped to API ---
   const handleToggleStatus = async (id) => {
     const targetDiv = apiDivisions.find(div => div._id === id);
     if (!targetDiv) return;
@@ -76,12 +89,26 @@ export default function DivisionsPage({ staff = [] }) {
 
     setIsSubmitting(true);
     try {
-      await dispatch(createDivision({
+      // 1. Create the Division
+      const createdDiv = await dispatch(createDivision({
         divisionName: newDivision.name,
         divisionCode: newDivision.code.toUpperCase(),
         customer: newDivision.customer, 
         status: newDivision.status || 'Active'
       })).unwrap();
+
+      // 2. Synchronize User Array: If a manager was selected, add this new division to their user profile
+      if (newDivision.manager && createdDiv._id) {
+        const selectedUser = apiUsers.find(u => u._id === newDivision.manager);
+        if (selectedUser) {
+          // Extract existing division IDs safely and append the new one
+          const currentDivIds = (selectedUser.divisions || []).map(d => d._id || d);
+          const updatedDivs = [...new Set([...currentDivIds, createdDiv._id])];
+          
+          await dispatch(updateUser({ id: selectedUser._id, userData: { divisions: updatedDivs } })).unwrap();
+          dispatch(fetchUsers()); // Re-fetch to update UI state
+        }
+      }
 
       setNewDivision({ name: '', code: '', manager: '', status: 'Active', customer: apiCustomers[0]?._id || '' });
       setShowAddForm(false);
@@ -98,7 +125,7 @@ export default function DivisionsPage({ staff = [] }) {
     setEditFormData({ 
       name: div.name, 
       code: div.code, 
-      manager: div.manager,
+      manager: div.managerId || '', // Pre-select current manager ID in the dropdown
       customer: div.customerId || '' 
     });
   };
@@ -107,14 +134,42 @@ export default function DivisionsPage({ staff = [] }) {
     if (!editFormData.name || !editFormData.code || !editFormData.customer) return;
     
     try {
+      // 1. Update the Division details
       await dispatch(updateDivision({
         id,
         divisionData: {
           divisionName: editFormData.name,
           divisionCode: editFormData.code.toUpperCase(),
-          customer: editFormData.customer
+          customer: editFormData.customer,
         }
       })).unwrap();
+
+      // 2. Synchronize User Arrays if the Manager changed
+      const currentDiv = filteredDivisions.find(d => d.id === id);
+      const oldManagerId = currentDiv?.managerId;
+      const newManagerId = editFormData.manager;
+
+      if (oldManagerId !== newManagerId) {
+        // Remove division from the OLD manager's array
+        if (oldManagerId) {
+          const oldUser = apiUsers.find(u => u._id === oldManagerId);
+          if (oldUser) {
+            const updatedDivs = (oldUser.divisions || []).map(d => d._id || d).filter(divId => divId !== id);
+            await dispatch(updateUser({ id: oldManagerId, userData: { divisions: updatedDivs } }));
+          }
+        }
+        
+        // Add division to the NEW manager's array
+        if (newManagerId) {
+          const newUser = apiUsers.find(u => u._id === newManagerId);
+          if (newUser) {
+            const currentDivs = (newUser.divisions || []).map(d => d._id || d);
+            const updatedDivs = [...new Set([...currentDivs, id])];
+            await dispatch(updateUser({ id: newManagerId, userData: { divisions: updatedDivs } }));
+          }
+        }
+        dispatch(fetchUsers()); // Re-fetch to sync UI
+      }
       
       setEditingId(null);
     } catch (err) {
@@ -127,6 +182,8 @@ export default function DivisionsPage({ staff = [] }) {
     if (window.confirm("Are you sure you want to decouple this division? This action cannot be undone.")) {
       try {
         await dispatch(deleteDivision(id)).unwrap();
+        // Optionally: Loop through users and remove this ID from their arrays
+        dispatch(fetchUsers()); 
       } catch (err) {
         console.error("Failed to delete division", err);
         alert(`Error deleting division: ${err}`);
@@ -144,11 +201,26 @@ export default function DivisionsPage({ staff = [] }) {
   // Pipeline Filter Processing & Safe Data Mapping
   const filteredDivisions = useMemo(() => {
     const mappedData = apiDivisions.map(div => {
-      // 1. Safely extract the Customer ID whether the backend populated it or just sent a string
+      // 1. Safely extract Customer
       const custId = div.customer?._id || div.customer;
-      
-      // 2. Cross-reference our Redux customers list to guarantee we have the name
       const matchedCustomer = apiCustomers.find(c => c._id === custId);
+
+      // 2. REVERSE MAPPING: Find who the manager is by looking at the Users' `divisions` arrays
+      const assignedUser = orderPortalStaff.find(u => 
+        u.divisions.some(d => (d._id || d) === div._id)
+      );
+
+      // 3. Count Inventory
+      const inventoryCount = apiInventory.filter(inv => {
+        const invDivId = inv.division?._id || inv.division;
+        return invDivId === div._id;
+      }).length;
+
+      // 4. Count Categories
+      const categoryCount = apiCategories.filter(cat => {
+        const catDivId = cat.division?._id || cat.division;
+        return catDivId === div._id;
+      }).length;
 
       return {
         id: div._id,
@@ -156,11 +228,14 @@ export default function DivisionsPage({ staff = [] }) {
         code: div.divisionCode,
         status: div.status || 'Active',
         customerId: custId,
-        // 3. Fallback gracefully: Local Redux -> Backend Populated -> 'Unassigned'
         customerName: matchedCustomer?.customerName || div.customer?.customerName || 'Unassigned',
-        manager: div.manager || 'Unassigned', 
-        inventory: div.inventory || 0,
-        categoryCount: div.categoryCount || 0
+        
+        // Pass the dynamically discovered user data down to the card
+        managerId: assignedUser ? assignedUser.id : null,
+        manager: assignedUser ? assignedUser.name : 'Unassigned', 
+        
+        inventory: inventoryCount,
+        categoryCount: categoryCount,
       };
     });
 
@@ -175,7 +250,7 @@ export default function DivisionsPage({ staff = [] }) {
       
       return matchesSearch && matchesStatus && matchesManager && matchesCustomer;
     });
-  }, [apiDivisions, apiCustomers, searchQuery, statusFilter, managerFilter, customerFilter]);
+  }, [apiDivisions, apiCustomers, orderPortalStaff, apiInventory, apiCategories, searchQuery, statusFilter, managerFilter, customerFilter]);
 
   return (
     <div className="h-full max-w-[1400px] mx-auto p-6 space-y-6 animate-fade-in">
@@ -186,7 +261,7 @@ export default function DivisionsPage({ staff = [] }) {
           newDivision={newDivision} 
           setNewDivision={setNewDivision} 
           onSubmit={handleAddDivision} 
-          staffList={staffList}
+          staffList={orderPortalStaff} // Only pass order portal users
           customersList={apiCustomers}
           isSubmitting={isSubmitting}
         />
@@ -202,7 +277,7 @@ export default function DivisionsPage({ staff = [] }) {
         customerFilter={customerFilter}
         setCustomerFilter={setCustomerFilter}
         clearFilters={clearFilters}
-        staffList={staffList}
+        staffList={orderPortalStaff} // Only pass order portal users
         customersList={apiCustomers}
       />
 
@@ -225,7 +300,7 @@ export default function DivisionsPage({ staff = [] }) {
                 isEditing={editingId === div.id}
                 editFormData={editFormData}
                 setEditFormData={setEditFormData}
-                staffList={staffList}
+                staffList={orderPortalStaff} // Dropdowns will only show order portal users
                 customersList={apiCustomers}
                 onStartEdit={startEditing}
                 onCancelEdit={() => setEditingId(null)}
