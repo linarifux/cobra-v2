@@ -11,7 +11,7 @@ export default function InventoryTable({ filteredInventory, apiInventory, onEdit
         <table className="w-full text-left border-collapse">
           <thead className="bg-white/20 border-b border-white/40">
             <tr>
-              <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Identity Code</th>
+              <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Item Code</th>
               <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Description</th>
               <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Customer</th>
               <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Price</th>
