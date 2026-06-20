@@ -15,7 +15,7 @@ import OrderDetailsPage from './pages/OrderDetailsPage';
 import CustomersPage from './pages/CustomersPage';
 import CustomerDetailsPage from './pages/CustomerDetailsPage';
 import EditCustomerDetailsPage from './pages/EditCustomerDetailsPage';
-import DivisionsPage from './pages/DivisionsPage';
+// import DivisionsPage from './pages/DivisionsPage';
 import InventoryPage from './pages/InventoryPage';
 import InventoryDetailPage from './pages/InventoryDetailPage';
 import CategoryPage from './pages/CategoryPage';
@@ -75,7 +75,8 @@ export default function App() {
             <Route path="/customers" element={<CustomersPage />} />
             <Route path="/customers/:id" element={<CustomerDetailsPage />} />
             <Route path="/customers/:id/edit" element={<EditCustomerDetailsPage />} />
-            <Route path="/divisions" element={<DivisionsPage />} />
+            {/* Hide the divisions from the sidebar. kept it for future reference */}
+            {/* <Route path="/divisions" element={<DivisionsPage />} /> */}
             <Route path="/inventory" element={<InventoryPage />} />
             <Route path="/inventory/:inventoryId" element={<InventoryDetailPage />} />
             <Route path="/categories" element={<CategoryPage />} />
