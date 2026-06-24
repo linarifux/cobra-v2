@@ -356,15 +356,35 @@ export default function AdminUsersPage() {
                       </div>
                     </td>
 
-                    {/* Order Portal Only Data */}
+                    {/* Order Portal Only Data - UPDATED WITH DIVISION LIST */}
                     {activeTab === 'order' && (
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 align-top">
                         {user.customer ? (
                           <div>
-                            <p className="font-bold text-slate-800">{typeof user.customer === 'object' ? user.customer.customerName : 'Client ID: ' + user.customer}</p>
-                            <p className="text-[10px] uppercase font-bold text-slate-400 mt-1 tracking-wider">
-                              {user.divisions?.length || 0} Division(s) Assigned
+                            <p className="font-bold text-slate-800 mb-1.5">
+                              {typeof user.customer === 'object' ? user.customer.customerName : 'Client ID: ' + user.customer}
                             </p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {user.divisions && user.divisions.length > 0 ? (
+                                user.divisions.map((d, idx) => {
+                                  // Extract ID safely
+                                  const divId = typeof d === 'object' ? d._id : d;
+                                  // Find real division data from global Redux store
+                                  const foundDiv = divisions.find(globalDiv => globalDiv._id === divId);
+                                  const divName = foundDiv ? (foundDiv.divisionName || foundDiv.name || foundDiv.divisionCode) : 'Unknown Division';
+                                  
+                                  return (
+                                    <span key={idx} className="text-[9px] uppercase font-bold text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded tracking-wider">
+                                      {divName}
+                                    </span>
+                                  );
+                                })
+                              ) : (
+                                <span className="text-[9px] uppercase font-bold text-slate-400 bg-slate-50 border border-dashed border-slate-200 px-1.5 py-0.5 rounded tracking-wider italic">
+                                  No Divisions Assigned
+                                </span>
+                              )}
+                            </div>
                           </div>
                         ) : (
                           <span className="text-xs font-bold text-red-500 bg-red-50 px-2.5 py-1 rounded-md">Orphaned User</span>
