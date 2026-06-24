@@ -53,9 +53,9 @@ export const getAllUsers = catchAsync(async (req, res, next) => {
 // @route   PUT /api/v1/users/:id
 export const updateUser = catchAsync(async (req, res, next) => {
   // Prevent password updates through this route
-  if (req.body.password) {
-    return next(new AppError('This route is not for password updates.', 400));
-  }
+  // if (req.body.password) {
+  //   return next(new AppError('This route is not for password updates.', 400));
+  // }
 
   const userToUpdate = await User.findById(req.params.id);
   if (!userToUpdate) return next(new AppError('No user found', 404));
