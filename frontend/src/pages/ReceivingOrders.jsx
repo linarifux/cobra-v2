@@ -93,10 +93,6 @@ export default function ReceivingOrders() {
   const [activeRecordId, setActiveRecordId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
-  
-  // Search and Autocomplete States
-  const [invSearchTerm, setInvSearchTerm] = useState('');
-  const [isInvDropdownOpen, setIsInvDropdownOpen] = useState(false);
 
   // --- Filter State ---
   const [searchTerm, setSearchTerm] = useState('');
@@ -148,15 +144,9 @@ export default function ReceivingOrders() {
     return inventory.filter(inv => {
       const matchCust = (inv.customer?._id || inv.customer) === formData.customer;
       const matchDiv = (inv.division?._id || inv.division) === formData.division;
-      
-      const search = invSearchTerm.toLowerCase().trim();
-      const matchSearch = search === '' || 
-        (inv.sku || inv.productCode || '').toLowerCase().includes(search) ||
-        (inv.itemName || inv.description || '').toLowerCase().includes(search);
-      
-      return matchCust && matchDiv && matchSearch;
+      return matchCust && matchDiv;
     });
-  }, [inventory, formData.customer, formData.division, invSearchTerm]);
+  }, [inventory, formData.customer, formData.division]);
 
   // Grab the currently selected inventory details for the auto-fill display
   const selectedInvDetails = useMemo(() => {
@@ -166,41 +156,39 @@ export default function ReceivingOrders() {
 
   // --- Input Handlers ---
   const handleCustomerChange = (e) => {
-    setFormData({ ...formData, customer: e.target.value, division: '', inventoryItem: '' });
-    setInvSearchTerm('');
+    setFormData({ ...formData, customer: e.target.value, division: '', inventoryItem: '', description: '', description2: '', unitWeight: '' });
   };
   
   const handleDivisionChange = (e) => {
-    setFormData({ ...formData, division: e.target.value, inventoryItem: '' });
-    setInvSearchTerm('');
+    setFormData({ ...formData, division: e.target.value, inventoryItem: '', description: '', description2: '', unitWeight: '' });
   };
 
-  const handleInvSearchChange = (e) => {
-    setInvSearchTerm(e.target.value);
-    setIsInvDropdownOpen(true);
-    // If the user starts typing again, deselect the currently locked item
-    if (formData.inventoryItem) {
-      setFormData({ ...formData, inventoryItem: '' });
+  const handleInventoryChange = (e) => {
+    const invId = e.target.value;
+    
+    if (!invId) {
+      setFormData({ 
+        ...formData, 
+        inventoryItem: '', 
+        description: '', 
+        description2: '',
+        unitWeight: '' 
+      });
+      return;
     }
-  };
 
-  const selectInventoryItem = (inv) => {
-    setFormData({ 
-      ...formData, 
-      inventoryItem: inv._id,
-      description: inv.description || inv.itemName || '', 
-      description2: inv.description2 || '',
-      // Pull unit weight from the DB and populate it automatically
-      unitWeight: inv.weight || inv.unitWeight || '' 
-    });
-    setInvSearchTerm(`${inv.productCode || inv.sku} — ${inv.description || inv.itemName}`);
-    setIsInvDropdownOpen(false);
-  };
-
-  const clearInventorySelection = () => {
-    setFormData({ ...formData, inventoryItem: '', unitWeight: '' });
-    setInvSearchTerm('');
-    setIsInvDropdownOpen(true);
+    const inv = availableInventory.find(i => i._id === invId);
+    
+    if (inv) {
+      setFormData({ 
+        ...formData, 
+        inventoryItem: inv._id,
+        description: inv.description || inv.itemName || '', 
+        description2: inv.description2 || '',
+        // Pull unit weight from the DB and populate it automatically
+        unitWeight: inv.weight || inv.unitWeight || '' 
+      });
+    }
   };
 
   // --- Dynamic Carton Handlers ---
@@ -244,8 +232,6 @@ export default function ReceivingOrders() {
   const openNewModal = () => {
     setActiveRecordId(null);
     setFormData(INITIAL_FORM_STATE);
-    setInvSearchTerm('');
-    setIsInvDropdownOpen(false);
     setIsModalOpen(true);
   };
 
@@ -254,9 +240,6 @@ export default function ReceivingOrders() {
     const invId = row.inventoryItem?._id || row.inventoryItem;
     const matchedInv = inventory.find(i => i._id === invId);
     const mappedDivision = matchedInv?.division?._id || matchedInv?.division || '';
-
-    // Pre-fill the search bar with the selected item's text
-    const searchString = matchedInv ? `${matchedInv.productCode || matchedInv.sku} — ${matchedInv.description || matchedInv.itemName}` : '';
 
     // Reconstruct cartonBreakdown for legacy data compatibility
     let breakdown = row.cartonBreakdown;
@@ -291,8 +274,6 @@ export default function ReceivingOrders() {
       unitWeight: row.unitWeight || '',
       charge: row.charge || ''
     });
-    setInvSearchTerm(searchString); 
-    setIsInvDropdownOpen(false);
     setIsModalOpen(true);
   };
 
@@ -307,7 +288,7 @@ export default function ReceivingOrders() {
   const handleSaveShipment = async (e) => {
     e.preventDefault();
     if (!formData.inventoryItem) {
-      alert("Please select a specific Inventory Asset from the search dropdown.");
+      alert("Please select a specific Inventory Asset from the dropdown.");
       return;
     }
 
@@ -340,7 +321,7 @@ export default function ReceivingOrders() {
         unitsPerCarton: Number(r.unitsPerCarton) || 0
       })),
       
-      // Send legacy fallback fields (using first row's data to prevent breaking legacy Mongoose schema)
+      // Send legacy fallback fields
       cartonsPerSkid: Number(formData.cartonBreakdown[0]?.cartons) || 0,
       unitsPerCarton: Number(formData.cartonBreakdown[0]?.unitsPerCarton) || 0,
     };
@@ -644,58 +625,23 @@ export default function ReceivingOrders() {
                       </select>
                     </div>
                     
-                    {/* Autocomplete Combobox */}
+                    {/* Inventory Asset Dropdown */}
                     <div className="col-span-2 relative">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Find & Select Inventory Asset <span className="text-red-400">*</span></label>
-                      <div className="relative">
-                        <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
-                        <input 
-                          type="text" 
-                          placeholder="Search SKU or Name..." 
-                          value={invSearchTerm} 
-                          onChange={handleInvSearchChange} 
-                          onFocus={() => { if(formData.division) setIsInvDropdownOpen(true); }}
-                          onBlur={() => setTimeout(() => setIsInvDropdownOpen(false), 200)}
-                          disabled={!formData.division || isSubmitting} 
-                          className={`w-full pl-9 pr-10 py-2.5 border rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all disabled:opacity-50 ${formData.inventoryItem ? 'bg-brand-gold/5 border-brand-gold/30 text-slate-900' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
-                        />
-                        {formData.inventoryItem && (
-                          <button 
-                            type="button" 
-                            onClick={clearInventorySelection} 
-                            className="absolute right-3 top-3 text-slate-400 hover:text-red-500 transition-colors"
-                          >
-                            <X size={16} />
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Dropdown Results list */}
-                      <AnimatePresence>
-                        {isInvDropdownOpen && invSearchTerm.trim() !== '' && !formData.inventoryItem && (
-                          <motion.ul 
-                            initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}
-                            className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto custom-scrollbar"
-                          >
-                            {availableInventory.length > 0 ? (
-                              availableInventory.map(inv => (
-                                <li 
-                                  key={inv._id} 
-                                  onClick={() => selectInventoryItem(inv)}
-                                  className="px-4 py-3 hover:bg-brand-gold/10 hover:text-brand-gold cursor-pointer border-b last:border-b-0 border-slate-100 transition-colors"
-                                >
-                                  <div className="text-xs font-black">{inv.productCode || inv.sku}</div>
-                                  <div className="text-[11px] text-slate-500 font-medium truncate">{inv.description || inv.itemName}</div>
-                                </li>
-                              ))
-                            ) : (
-                              <li className="px-4 py-3 text-xs font-bold text-slate-400 text-center italic">
-                                No matching assets found...
-                              </li>
-                            )}
-                          </motion.ul>
-                        )}
-                      </AnimatePresence>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Select Inventory Asset <span className="text-red-400">*</span></label>
+                      <select 
+                        required 
+                        value={formData.inventoryItem} 
+                        onChange={handleInventoryChange} 
+                        disabled={!formData.division || isSubmitting || availableInventory.length === 0} 
+                        className={`w-full px-4 py-2.5 border rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer disabled:opacity-50 ${formData.inventoryItem ? 'bg-brand-gold/5 border-brand-gold/30 text-slate-900' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
+                      >
+                        <option value="">{availableInventory.length > 0 ? "Select Asset..." : "No assets found for this division"}</option>
+                        {availableInventory.map(inv => (
+                          <option key={inv._id} value={inv._id}>
+                            {inv.productCode || inv.sku} — {inv.description || inv.itemName}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
 
