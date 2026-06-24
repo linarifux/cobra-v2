@@ -29,26 +29,36 @@ export default function ReceivingOrderDetail() {
   const enrichedItems = useMemo(() => {
     if (!currentLog) return [];
     const qty = Number(currentLog.quantity) || 0;
-    const unitWeight = Number(currentLog.unitWeight) || 0;
     
     // Check if we have the new breakdown array, otherwise fallback to legacy fields
     const breakdown = currentLog.cartonBreakdown?.length > 0 
       ? currentLog.cartonBreakdown 
-      : [{ cartons: currentLog.numberOfCartons || 0, unitsPerCarton: currentLog.unitsPerCarton || 0 }];
+      : [{ cartons: currentLog.numberOfCartons || 0, unitsPerCarton: currentLog.unitsPerCarton || 0, weightPerCarton: 0 }];
     
+    // Use the backend's totalWeight if available, otherwise calculate it as a fallback
+    const totalWgt = Number(currentLog.totalWeight) || breakdown.reduce((sum, b) => sum + ((Number(b.cartons)||0) * (Number(b.weightPerCarton)||0)), 0) || (qty * Number(currentLog.unitWeight || 0));
+
     return [{
       id: currentLog._id,
       name: currentLog.inventoryItem?.itemName || currentLog.inventoryItem?.description || 'Unknown Item',
       sku: currentLog.inventoryItem?.sku || currentLog.inventoryItem?.productCode || 'N/A',
       division: currentLog.inventoryItem?.division?.divisionName || 'Unassigned Division',
-      category: currentLog.inventoryItem?.category1?.categoryName || 'Unassigned Category',
       
+      // Core Categories
+      category1: currentLog.inventoryItem?.category1?.categoryName || '',
+      category2: currentLog.inventoryItem?.category2?.categoryName || '',
+      category3: currentLog.inventoryItem?.category3?.categoryName || '',
+      category: currentLog.inventoryItem?.category1?.categoryName || 'Unassigned Category', // UI Fallback
+      
+      // Descriptions from Inventory Table
+      description1: currentLog.inventoryItem?.description || currentLog.inventoryItem?.itemName || '—',
+      description2: currentLog.inventoryItem?.description2 || '—',
+
       cartonBreakdown: breakdown,
       totalCartons: currentLog.numberOfCartons || 0,
       qty: qty,
       received: qty,
-      unitWeight: unitWeight,
-      totalLineWeight: qty * unitWeight,
+      totalLineWeight: totalWgt,
       condition: "Perfect"
     }];
   }, [currentLog]);
@@ -214,8 +224,10 @@ export default function ReceivingOrderDetail() {
                         <td className="p-5 text-center text-xs font-bold text-slate-600 align-top">
                           <div className="flex flex-col gap-1 items-center">
                             {item.cartonBreakdown.map((b, idx) => (
-                              <div key={idx} className="bg-slate-50 border border-slate-200 px-2 py-1 rounded w-max whitespace-nowrap text-[10px]">
-                                {b.cartons} <span className="text-slate-400 mx-0.5 font-normal">×</span> {b.unitsPerCarton}
+                              <div key={idx} className="bg-slate-50 border border-slate-200 px-2 py-1.5 rounded-lg w-max whitespace-nowrap text-[10px] shadow-sm">
+                                {b.cartons} <span className="text-slate-400 mx-0.5 font-normal">ctn ×</span> {b.unitsPerCarton} <span className="text-slate-400 mx-0.5 font-normal">u</span>
+                                <span className="text-slate-300 mx-1.5">|</span>
+                                <span className="text-emerald-700">{b.weightPerCarton || 0} lbs</span>
                               </div>
                             ))}
                             {item.cartonBreakdown.length > 1 && (
@@ -229,7 +241,7 @@ export default function ReceivingOrderDetail() {
                           <div className="text-lg font-black text-emerald-700">{item.received.toLocaleString()}</div>
                         </td>
                         <td className="p-5 text-sm font-black text-slate-900 text-right align-top">
-                          {item.totalLineWeight.toFixed(2)}
+                          {item.totalLineWeight.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
                       </tr>
                     ))}
@@ -289,10 +301,10 @@ export default function ReceivingOrderDetail() {
           ref={printRef} 
           className="bg-white text-black font-sans w-[8.5in] p-[0.5in] leading-tight"
         >
-          {/* Header Block */}
+          {/* Header Block: Division Only */}
           <div className="relative mb-6 pb-4 border-b-2 border-black">
-            <h1 className="text-center font-bold text-[18pt] tracking-tight uppercase text-black m-0">
-              {currentLog.customer?.customerName || 'Customer'} Item Received Notification
+            <h1 className="text-center font-black text-[22pt] tracking-tight uppercase text-black m-0">
+              {primaryItem.division}
             </h1>
             
             {/* Vendor strictly on Admin print */}
@@ -301,10 +313,6 @@ export default function ReceivingOrderDetail() {
                 {currentLog.vendor}
               </div>
             )}
-            
-            <p className="text-center italic text-[11pt] text-gray-700 mt-4 m-0">
-              <span className="font-bold text-black">Please Note:</span> This notice has been sent to you to advise you of item(s) which have been received at {currentLog.customer?.customerName || 'our facilities'}.
-            </p>
           </div>
 
           {/* 2-Column Professional Layout */}
@@ -313,17 +321,19 @@ export default function ReceivingOrderDetail() {
             {/* LEFT COLUMN */}
             <div className="w-1/2 flex flex-col gap-y-4">
               <div className="flex items-start">
-                <span className="w-36 font-bold text-black shrink-0">Item Code /<br/>Item Description:</span>
+                <span className="w-36 font-bold text-black shrink-0">Item Code:</span>
                 <div className="flex-1">
                   <span className="font-bold block text-[13pt] text-black leading-none mb-1">{primaryItem.sku}</span>
-                  <span className="font-bold block text-black mb-1">{primaryItem.name}</span>
                   {currentLog.lot !== 'N/A' && <span className="font-bold block text-black mt-1">Lot: {currentLog.lot}</span>}
                 </div>
               </div>
 
+              {/* Added Categories 1, 2, 3 */}
               <div className="flex items-start mt-2">
-                <span className="w-36 font-bold text-black shrink-0">Product Code:</span>
-                <span className="flex-1 text-black">{primaryItem.category}</span>
+                <span className="w-36 font-bold text-black shrink-0">Categories:</span>
+                <span className="flex-1 text-black">
+                  {[primaryItem.category1, primaryItem.category2, primaryItem.category3].filter(Boolean).join(', ') || 'None'}
+                </span>
               </div>
 
               <div className="flex items-start mt-2">
@@ -345,13 +355,15 @@ export default function ReceivingOrderDetail() {
               {primaryItem.cartonBreakdown.map((row, idx) => (
                 <div key={idx} className="flex items-start py-0.5">
                   <span className="w-36 text-[10pt] text-gray-700 italic shrink-0">Breakdown {idx + 1}:</span>
-                  <span className="flex-1 text-[10pt] text-black">{row.cartons} Cartons @ {row.unitsPerCarton} units</span>
+                  <span className="flex-1 text-[10pt] text-black">
+                    {row.cartons} Cartons @ {row.unitsPerCarton} units <span className="text-gray-500 italic ml-1">({row.weightPerCarton || 0} lbs/ctn)</span>
+                  </span>
                 </div>
               ))}
 
               <div className="flex items-start mt-4 border-t border-gray-300 pt-3">
                 <span className="w-36 font-bold text-black shrink-0">Total Weight:</span>
-                <span className="flex-1 text-black">{calculatedTotalWeight} lbs</span>
+                <span className="flex-1 font-bold text-[12pt] text-black">{calculatedTotalWeight} lbs</span>
               </div>
 
               <div className="flex items-start mt-2">
@@ -387,14 +399,15 @@ export default function ReceivingOrderDetail() {
                 </span>
               </div>
 
+              {/* Replaced Receiver Description with Inventory Description 1 & 2 */}
               <div className="flex items-start mt-2">
-                <span className="w-40 font-bold text-black shrink-0">Intermediate Code:</span>
-                <span className="flex-1 text-black">{primaryItem.division}</span>
+                <span className="w-40 font-bold text-black shrink-0">Description 1:</span>
+                <span className="flex-1 text-black">{primaryItem.description1}</span>
               </div>
 
               <div className="flex items-start mt-2">
-                <span className="w-40 font-bold text-black shrink-0">Receiver<br/>Description:</span>
-                <span className="flex-1 text-black">{currentLog.description2 || ''}</span>
+                <span className="w-40 font-bold text-black shrink-0">Description 2:</span>
+                <span className="flex-1 text-black">{primaryItem.description2}</span>
               </div>
 
               <div className="flex items-start mt-[28px]">

@@ -12,6 +12,12 @@ const cartonBreakdownSchema = new mongoose.Schema({
     required: true,
     min: 0,
     default: 0
+  },
+  // NEW: Track weight for this specific carton configuration
+  weightPerCarton: {
+    type: Number,
+    min: 0,
+    default: 0
   }
 }, { _id: false }); // Disable separate _ids for these subdocuments to keep it clean
 
@@ -106,7 +112,7 @@ const receivingSchema = new mongoose.Schema(
       min: 0
     },
 
-    // NEW: Array for multiple carton configurations
+    // Array for multiple carton configurations
     cartonBreakdown: [cartonBreakdownSchema],
 
     // Legacy Fallbacks (Kept for backwards compatibility if old data exists)
@@ -127,6 +133,12 @@ const receivingSchema = new mongoose.Schema(
       default: 0,
       min: 0
     },
+    // NEW: The grand total weight of all cartons combined
+    totalWeight: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
     charge: {
       type: Number,
       default: 0,
@@ -140,10 +152,26 @@ const receivingSchema = new mongoose.Schema(
   }
 );
 
+// Pre-save hook: Auto-generate ID and guarantee mathematical accuracy
 receivingSchema.pre('save', function () {
+  // 1. Generate unique Receiving ID if one doesn't exist
   if (!this.receivingId) {
     this.receivingId = `RCV-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
   }
+
+  // 2. Auto-calculate totals based on the breakdown array (Guarantees DB integrity)
+  if (this.cartonBreakdown && this.cartonBreakdown.length > 0) {
+    this.numberOfCartons = this.cartonBreakdown.reduce((sum, item) => sum + (item.cartons || 0), 0);
+    
+    this.quantity = this.cartonBreakdown.reduce((sum, item) => 
+      sum + ((item.cartons || 0) * (item.unitsPerCarton || 0)), 0
+    );
+    
+    this.totalWeight = this.cartonBreakdown.reduce((sum, item) => 
+      sum + ((item.cartons || 0) * (item.weightPerCarton || 0)), 0
+    );
+  }
+
 });
 
 // Indexes

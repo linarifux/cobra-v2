@@ -38,12 +38,15 @@ const INITIAL_FORM_STATE = {
   description2: '',
   lot: '',
   location: '',
+  
   // Quantitative fields
-  cartonBreakdown: [{ id: Date.now(), cartons: '', unitsPerCarton: '' }],
+  cartonBreakdown: [{ id: Date.now(), cartons: '', unitsPerCarton: '', weightPerCarton: '' }],
   quantity: 0,
   numberOfCartons: 0,
+  totalWeight: 0, // NEW: Grand total weight tracker
+  
   skids: '',
-  unitWeight: '',
+  unitWeight: '', // Legacy / fallback single unit item weight
   charge: ''
 };
 
@@ -185,7 +188,7 @@ export default function ReceivingOrders() {
         inventoryItem: inv._id,
         description: inv.description || inv.itemName || '', 
         description2: inv.description2 || '',
-        // Pull unit weight from the DB and populate it automatically
+        // Pull generic unit weight from DB
         unitWeight: inv.weight || inv.unitWeight || '' 
       });
     }
@@ -200,19 +203,21 @@ export default function ReceivingOrders() {
     // Auto-calculate Totals
     const totalCartons = updatedBreakdown.reduce((sum, row) => sum + (Number(row.cartons) || 0), 0);
     const totalQty = updatedBreakdown.reduce((sum, row) => sum + ((Number(row.cartons) || 0) * (Number(row.unitsPerCarton) || 0)), 0);
+    const totalWgt = updatedBreakdown.reduce((sum, row) => sum + ((Number(row.cartons) || 0) * (Number(row.weightPerCarton) || 0)), 0);
 
     setFormData({
       ...formData,
       cartonBreakdown: updatedBreakdown,
       numberOfCartons: totalCartons,
-      quantity: totalQty
+      quantity: totalQty,
+      totalWeight: totalWgt
     });
   };
 
   const addBreakdownRow = () => {
     setFormData({
       ...formData,
-      cartonBreakdown: [...formData.cartonBreakdown, { id: Date.now(), cartons: '', unitsPerCarton: '' }]
+      cartonBreakdown: [...formData.cartonBreakdown, { id: Date.now(), cartons: '', unitsPerCarton: '', weightPerCarton: '' }]
     });
   };
 
@@ -223,8 +228,15 @@ export default function ReceivingOrders() {
     // Auto-calculate Totals
     const totalCartons = updatedBreakdown.reduce((sum, row) => sum + (Number(row.cartons) || 0), 0);
     const totalQty = updatedBreakdown.reduce((sum, row) => sum + ((Number(row.cartons) || 0) * (Number(row.unitsPerCarton) || 0)), 0);
+    const totalWgt = updatedBreakdown.reduce((sum, row) => sum + ((Number(row.cartons) || 0) * (Number(row.weightPerCarton) || 0)), 0);
 
-    setFormData({ ...formData, cartonBreakdown: updatedBreakdown, numberOfCartons: totalCartons, quantity: totalQty });
+    setFormData({ 
+      ...formData, 
+      cartonBreakdown: updatedBreakdown, 
+      numberOfCartons: totalCartons, 
+      quantity: totalQty,
+      totalWeight: totalWgt
+    });
   };
 
 
@@ -247,8 +259,12 @@ export default function ReceivingOrders() {
       breakdown = [{ 
         id: Date.now(), 
         cartons: row.numberOfCartons || 1, 
-        unitsPerCarton: row.unitsPerCarton || row.quantity || 0 
+        unitsPerCarton: row.unitsPerCarton || row.quantity || 0,
+        weightPerCarton: 0
       }];
+    } else {
+      // Map UI IDs
+      breakdown = breakdown.map(b => ({ ...b, id: b.id || Math.random() }));
     }
 
     setFormData({
@@ -270,6 +286,7 @@ export default function ReceivingOrders() {
       cartonBreakdown: breakdown,
       quantity: row.quantity || 0,
       numberOfCartons: row.numberOfCartons || breakdown.reduce((sum, r) => sum + (Number(r.cartons)||0), 0),
+      totalWeight: row.totalWeight || breakdown.reduce((sum, r) => sum + ((Number(r.cartons)||0) * (Number(r.weightPerCarton)||0)), 0),
       skids: row.skids || '',
       unitWeight: row.unitWeight || '',
       charge: row.charge || ''
@@ -311,6 +328,7 @@ export default function ReceivingOrders() {
       // Quantitative Metrics
       quantity: Number(formData.quantity) || 0,
       numberOfCartons: Number(formData.numberOfCartons) || 0,
+      totalWeight: Number(formData.totalWeight) || 0,
       skids: Number(formData.skids) || 0,
       unitWeight: Number(formData.unitWeight) || 0,
       charge: Number(formData.charge) || 0,
@@ -318,7 +336,8 @@ export default function ReceivingOrders() {
       // Send the complex breakdown array
       cartonBreakdown: formData.cartonBreakdown.map(r => ({
         cartons: Number(r.cartons) || 0,
-        unitsPerCarton: Number(r.unitsPerCarton) || 0
+        unitsPerCarton: Number(r.unitsPerCarton) || 0,
+        weightPerCarton: Number(r.weightPerCarton) || 0
       })),
       
       // Send legacy fallback fields
@@ -737,9 +756,9 @@ export default function ReceivingOrders() {
                             className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-black text-slate-900 text-center outline-none focus:border-brand-gold" 
                           />
                         </div>
-                        <span className="text-slate-300 font-black text-xs pt-4">X</span>
+                        <span className="text-slate-300 font-black text-xs pt-4">×</span>
                         <div className="flex-1">
-                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block text-center">Units / Carton</label>
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block text-center">Units/Ctn</label>
                           <input 
                             type="number" min="0" placeholder="0" 
                             value={row.unitsPerCarton} 
@@ -748,14 +767,23 @@ export default function ReceivingOrders() {
                             className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-black text-slate-900 text-center outline-none focus:border-brand-gold" 
                           />
                         </div>
-                        <span className="text-slate-300 font-black text-xs pt-4">=</span>
-                        <div className="w-16 flex flex-col items-center justify-center pt-2">
-                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Total</span>
-                          <span className="text-sm font-black text-brand-gold">
-                            {((Number(row.cartons) || 0) * (Number(row.unitsPerCarton) || 0)).toLocaleString()}
+                        <span className="text-slate-300 font-black text-xs pt-4">&</span>
+                        <div className="flex-1">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block text-center">Lbs/Ctn</label>
+                          <input 
+                            type="number" step="0.01" min="0" placeholder="0.0" 
+                            value={row.weightPerCarton} 
+                            onChange={(e) => handleBreakdownChange(row.id, 'weightPerCarton', e.target.value)} 
+                            disabled={isSubmitting} 
+                            className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-black text-slate-900 text-center outline-none focus:border-brand-gold" 
+                          />
+                        </div>
+                        <div className="w-12 flex flex-col items-center justify-center pt-2 gap-1 border-l border-slate-100 pl-2">
+                          <span className="text-sm font-black text-brand-gold leading-none" title="Total Units">
+                            {((Number(row.cartons) || 0) * (Number(row.unitsPerCarton) || 0)).toLocaleString()} <span className="text-[9px]">U</span>
                           </span>
                         </div>
-                        <div className="pt-4 px-1">
+                        <div className="pt-4 pl-1">
                           <button 
                             type="button" 
                             onClick={() => removeBreakdownRow(row.id)}
@@ -770,23 +798,32 @@ export default function ReceivingOrders() {
                   </div>
 
                   {/* Auto-Calculated Totals */}
-                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-200/60">
+                  <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-200/60">
                     <div>
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 block pl-1">Total Quantity Received</label>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 block pl-1">Total Qty</label>
                       <input 
                         type="text" 
                         readOnly 
                         value={formData.quantity.toLocaleString()} 
-                        className="w-full px-4 py-3 bg-brand-gold/5 border border-brand-gold/30 rounded-xl text-lg font-black text-brand-gold cursor-not-allowed shadow-inner outline-none" 
+                        className="w-full px-4 py-3 bg-brand-gold/5 border border-brand-gold/30 rounded-xl text-lg font-black text-brand-gold cursor-not-allowed shadow-inner outline-none text-center" 
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 block pl-1">Total Cartons Sum</label>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 block pl-1">Total Cartons</label>
                       <input 
                         type="text" 
                         readOnly 
                         value={formData.numberOfCartons.toLocaleString()} 
-                        className="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-lg font-black text-slate-500 cursor-not-allowed shadow-inner outline-none" 
+                        className="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-lg font-black text-slate-500 cursor-not-allowed shadow-inner outline-none text-center" 
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 block pl-1">Total Wgt (lbs)</label>
+                      <input 
+                        type="text" 
+                        readOnly 
+                        value={formData.totalWeight.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 
+                        className="w-full px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl text-lg font-black text-emerald-700 cursor-not-allowed shadow-inner outline-none text-center" 
                       />
                     </div>
                   </div>
