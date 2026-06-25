@@ -126,13 +126,7 @@ const receivingSchema = new mongoose.Schema(
       default: 0,
       min: 0
     },
-    
-    // Financial & Weight
-    unitWeight: {
-      type: Number,
-      default: 0,
-      min: 0
-    },
+
     // NEW: The grand total weight of all cartons combined
     totalWeight: {
       type: Number,

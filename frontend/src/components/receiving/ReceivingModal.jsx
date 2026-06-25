@@ -23,7 +23,6 @@ const INITIAL_FORM_STATE = {
   numberOfCartons: 0,
   totalWeight: 0, 
   skids: '',
-  unitWeight: '', 
   charge: ''
 };
 
@@ -82,7 +81,6 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
           numberOfCartons: record.numberOfCartons || breakdown.reduce((sum, r) => sum + (Number(r.cartons)||0), 0),
           totalWeight: record.totalWeight || breakdown.reduce((sum, r) => sum + ((Number(r.cartons)||0) * (Number(r.weightPerCarton)||0)), 0),
           skids: record.skids || '',
-          unitWeight: record.unitWeight || '',
           charge: record.charge || ''
         });
       } else {
@@ -120,15 +118,15 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
   }, [locations, locSearchTerm]);
 
   // Handlers
-  const handleCustomerChange = (e) => setFormData({ ...formData, customer: e.target.value, division: '', inventoryItem: '', description: '', description2: '', unitWeight: '' });
-  const handleDivisionChange = (e) => setFormData({ ...formData, division: e.target.value, inventoryItem: '', description: '', description2: '', unitWeight: '' });
+  const handleCustomerChange = (e) => setFormData({ ...formData, customer: e.target.value, division: '', inventoryItem: '', description: '', description2: ''});
+  const handleDivisionChange = (e) => setFormData({ ...formData, division: e.target.value, inventoryItem: '', description: '', description2: ''});
   
   const handleInventoryChange = (e) => {
     const invId = e.target.value;
-    if (!invId) return setFormData({ ...formData, inventoryItem: '', description: '', description2: '', unitWeight: '' });
+    if (!invId) return setFormData({ ...formData, inventoryItem: '', description: '', description2: ''});
     const inv = availableInventory.find(i => i._id === invId);
     if (inv) {
-      setFormData({ ...formData, inventoryItem: inv._id, description: inv.description || inv.itemName || '', description2: inv.description2 || '', unitWeight: inv.weight || inv.unitWeight || '' });
+      setFormData({ ...formData, inventoryItem: inv._id, description: inv.description || inv.itemName || '', description2: inv.description2 || ''});
     }
   };
 
@@ -168,7 +166,6 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
     payload.numberOfCartons = Number(formData.numberOfCartons) || 0;
     payload.totalWeight = Number(formData.totalWeight) || 0;
     payload.skids = Number(formData.skids) || 0;
-    payload.unitWeight = Number(formData.unitWeight) || 0;
     payload.charge = Number(formData.charge) || 0;
     payload.cartonBreakdown = formData.cartonBreakdown.map(r => ({
       cartons: Number(r.cartons) || 0, unitsPerCarton: Number(r.unitsPerCarton) || 0, weightPerCarton: Number(r.weightPerCarton) || 0
@@ -402,10 +399,6 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
               <div>
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Total Skids</label>
                 <input type="number" min="0" value={formData.skids} onChange={(e) => setFormData({...formData, skids: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
-              </div>
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Unit Wt (lbs)</label>
-                <input type="number" step="0.01" min="0" value={formData.unitWeight} onChange={(e) => setFormData({...formData, unitWeight: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
               </div>
               <div>
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1 flex items-center gap-1"><DollarSign size={10}/> Applied Charge</label>
