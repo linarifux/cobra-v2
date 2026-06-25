@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useDispatch } from 'react-redux';
-import { X, Loader2, UploadCloud } from 'lucide-react';
+import { X, Loader2, UploadCloud, MapPin } from 'lucide-react';
 import { uploadImageToS3 } from '../../store/slices/uploadSlice'; 
+import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 
 const INITIAL_FORM_STATE = {
   productCode: '', description: '', description2: '', hssCode: '', division: '',
-  category1: '', category2: '', category3: '', typePiece: '', locationString: '',
+  category1: '', category2: '', category3: '', typePiece: '', 
+  locations: [], // Array of Location ObjectIds
   admin: false, offWeb: false, status: 'Active', price: 0, price2: 0,
   min: 0, max: 0, lowPoint: 0, lowPoint2: 0, openOrders: 0, available: 0,
   qtyLastReceived: 0, dateLastReceived: '', productImage: '', customer: ''
@@ -52,11 +54,25 @@ export default function InventoryFormPanel({
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isImageLoading, setIsImageLoading] = useState(false);
 
+  // Combobox States
+  const [locSearchTerm, setLocSearchTerm] = useState('');
+  const [isLocDropdownOpen, setIsLocDropdownOpen] = useState(false);
+
   const isEditMode = Boolean(itemToEdit);
 
   // Initialize form
   useEffect(() => {
     if (isEditMode) {
+      // Map populated locations from the backend down to an array of IDs
+      const mappedLocations = itemToEdit.locations?.map(l => l._id || l) || [];
+
+      // Legacy fallback in case `locations` is empty but `locationString` has data
+      if (mappedLocations.length === 0 && itemToEdit.locationString) {
+        const legacyNames = itemToEdit.locationString.split(',').map(s => s.trim());
+        const matchedIds = apiLocations.filter(loc => legacyNames.includes(loc.designation)).map(loc => loc._id);
+        mappedLocations.push(...matchedIds);
+      }
+
       setFormData({
         productCode: itemToEdit.productCode || '',
         description: itemToEdit.description || itemToEdit.itemName || '',
@@ -67,7 +83,7 @@ export default function InventoryFormPanel({
         category2: itemToEdit.category2?._id || itemToEdit.category2 || '',
         category3: itemToEdit.category3?._id || itemToEdit.category3 || '',
         typePiece: itemToEdit.typePiece || '',
-        locationString: itemToEdit.locationString || '',
+        locations: mappedLocations,
         admin: itemToEdit.admin || false,
         offWeb: itemToEdit.offWeb || false,
         status: itemToEdit.status || 'Active',
@@ -88,7 +104,6 @@ export default function InventoryFormPanel({
       setFormData({
         ...INITIAL_FORM_STATE,
         customer: apiCustomers[0]?._id || '', 
-        locationString: apiLocations[0]?.designation || '', 
       });
     }
   }, [itemToEdit, apiCustomers, apiDivisions, apiCategories, apiLocations, isEditMode]);
@@ -121,7 +136,31 @@ export default function InventoryFormPanel({
     return availableCategories.filter(cat => (cat.parentCategory?._id || cat.parentCategory) === formData.category2);
   }, [availableCategories, formData.category2]);
 
+  // Dynamic Location Filtering
+  const availableFilteredLocations = useMemo(() => {
+    if (!locSearchTerm) return apiLocations;
+    return apiLocations.filter(loc => 
+      loc.designation.toLowerCase().includes(locSearchTerm.toLowerCase()) || 
+      loc.storageCategory?.toLowerCase().includes(locSearchTerm.toLowerCase())
+    );
+  }, [apiLocations, locSearchTerm]);
+
   // --- HANDLERS ---
+  const handleAddLocation = (locId) => {
+    if (!formData.locations.includes(locId)) {
+      setFormData(prev => ({ ...prev, locations: [...prev.locations, locId] }));
+    }
+    setLocSearchTerm('');
+    setIsLocDropdownOpen(false);
+  };
+
+  const handleRemoveLocation = (locId) => {
+    setFormData(prev => ({
+      ...prev,
+      locations: prev.locations.filter(id => id !== locId)
+    }));
+  };
+
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -157,6 +196,12 @@ export default function InventoryFormPanel({
     
     setIsSubmitting(true);
 
+    // Create the legacy fallback string from our relational IDs
+    const legacyLocationString = formData.locations
+      .map(locId => apiLocations.find(l => l._id === locId)?.designation)
+      .filter(Boolean)
+      .join(', ');
+
     const payload = {
       ...formData,
       sku: formData.productCode, 
@@ -172,10 +217,13 @@ export default function InventoryFormPanel({
       category1: formData.category1 || null,
       category2: formData.category2 || null,
       category3: formData.category3 || null,
+      // Array of Location IDs for the modern schema
+      locations: formData.locations,
+      // String of Location Names for legacy schema safety
+      locationString: legacyLocationString, 
     };
 
     try {
-      // Execute the parent-provided action and link it to the Sonner toast
       const actionPromise = onSubmit(payload, isEditMode, itemToEdit?._id);
       
       toast.promise(actionPromise, {
@@ -186,8 +234,7 @@ export default function InventoryFormPanel({
 
       await actionPromise;
     } catch (err) {
-      // Intentionally caught silently to prevent browser console rejection errors.
-      // The toast.promise API already renders the error beautifully to the user.
+      // Silently caught; toast handles the UI error.
     } finally {
       setIsSubmitting(false);
     }
@@ -307,20 +354,50 @@ export default function InventoryFormPanel({
             </select>
           </div>
 
-          <div className="flex items-center">
-            <label className="w-1/3 text-sm font-semibold text-slate-600">Locations (+/-)</label>
-            <select 
-              value={formData.locationString} 
-              onChange={e => setFormData({...formData, locationString: e.target.value})} 
-              className={`w-2/3 ${inputClass}`} 
-              disabled={isSubmitting}
-            >
-              <option value="">Select location...</option>
-              {apiLocations.map(loc => (
-                <option key={loc._id} value={loc.designation}>{loc.designation}</option>
-              ))}
-            </select>
+          <div className="flex items-start pt-1">
+            <label className="w-1/3 text-sm font-semibold text-slate-600 mt-2">Locations (+/-)</label>
+            <div className="w-2/3 relative">
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {formData.locations.map(locId => {
+                  const locObj = apiLocations.find(l => l._id === locId);
+                  return (
+                    <span key={locId} className="bg-slate-100 border border-slate-200 text-slate-700 px-2 py-1 rounded-[4px] flex items-center gap-1.5 text-[10px] font-bold shadow-sm">
+                      <MapPin size={10} className="text-emerald-500" />
+                      {locObj?.designation || locId}
+                      <X size={12} className="cursor-pointer hover:text-red-500 transition-colors ml-1" onClick={() => handleRemoveLocation(locId)} />
+                    </span>
+                  );
+                })}
+              </div>
+              <input 
+                type="text" 
+                placeholder={formData.locations.length === 0 ? "Type to search (e.g. A-12)..." : "Add another location..."}
+                value={locSearchTerm}
+                onChange={(e) => { setLocSearchTerm(e.target.value); setIsLocDropdownOpen(true); }}
+                onFocus={() => setIsLocDropdownOpen(true)}
+                onBlur={() => setTimeout(() => setIsLocDropdownOpen(false), 200)}
+                disabled={isSubmitting}
+                className={`${inputClass}`}
+              />
+              <AnimatePresence>
+                {isLocDropdownOpen && (
+                  <motion.ul initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-[4px] shadow-xl max-h-48 overflow-y-auto custom-scrollbar">
+                    {availableFilteredLocations.length > 0 ? (
+                      availableFilteredLocations.map(loc => (
+                        <li key={loc._id} onClick={() => handleAddLocation(loc._id)} className="px-3 py-2 hover:bg-brand-gold/10 hover:text-brand-gold cursor-pointer border-b last:border-b-0 border-slate-100 transition-colors flex items-center justify-between">
+                          <span className="text-xs font-black">{loc.designation}</span>
+                          <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{loc.storageCategory}</span>
+                        </li>
+                      ))
+                    ) : (
+                      <li className="px-3 py-2 text-xs font-bold text-slate-400 text-center italic">No matching locations</li>
+                    )}
+                  </motion.ul>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
+
           <div className="flex items-center pt-2">
             <label className="w-1/3 text-sm font-semibold text-slate-600">Admin</label>
             <input type="checkbox" checked={formData.admin} onChange={e => setFormData({...formData, admin: e.target.checked})} className="w-4 h-4 rounded border-gray-300 text-brand-gold focus:ring-brand-gold" disabled={isSubmitting}/>

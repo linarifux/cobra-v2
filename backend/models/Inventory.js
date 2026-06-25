@@ -8,7 +8,6 @@ const auditLedgerSchema = new mongoose.Schema({
   quantityDelta: { type: Number, required: true } // Can be positive or negative
 });
 
-
 const inventorySchema = new mongoose.Schema(
   {
     // --- Core Identification ---
@@ -33,11 +32,11 @@ const inventorySchema = new mongoose.Schema(
       default: 'Active'
     },
 
-    // --- Media (Cloudinary Hosting) ---
+    // --- Media (Cloudinary/S3 Hosting) ---
     productImage: { 
       type: String, 
       trim: true,
-      default: '' // Will store the secure URL returned by Cloudinary
+      default: ''
     },
 
     // --- Descriptions & Classifications ---
@@ -45,7 +44,12 @@ const inventorySchema = new mongoose.Schema(
     description2: { type: String, trim: true },
     hssCode: { type: String, trim: true },
     typePiece: { type: String, trim: true },
-    locationString: { type: String, trim: true }, // For the manual "Locations (+/-)" input field
+    
+    //--------Relational Multiple Locations ---
+    locations: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Location'
+    }],
 
     // --- Relational Hierarchy ---
     customer: {
@@ -65,7 +69,7 @@ const inventorySchema = new mongoose.Schema(
     // --- Pricing ---
     price: { type: Number, default: 0, min: 0 },
     price2: { type: Number, default: 0, min: 0 },
-    unitCost: { type: Number, default: 0, min: 0 }, // Base cost for valuation
+    unitCost: { type: Number, default: 0, min: 0 }, 
 
     // --- Inventory Thresholds ---
     min: { type: Number, default: 0 },
@@ -80,7 +84,7 @@ const inventorySchema = new mongoose.Schema(
       default: 0,
       min: [0, 'Available units cannot be negative outside of ledger calculations']
     },
-    unitsOnHand: { type: Number, default: 0 }, // Internal count fallback
+    unitsOnHand: { type: Number, default: 0 }, 
     openOrders: { type: Number, default: 0 },
     qtyLastReceived: { type: Number, default: 0 },
     dateLastReceived: { type: Date },
@@ -114,9 +118,7 @@ inventorySchema.virtual('totalValuation').get(function() {
   return (currentQty * currentCost).toFixed(2);
 });
 
-// CRITICAL UPDATE: Two-Way Binding Virtual for Locations
-// This dynamically queries the Location collection to find all physical 
-// storage units (racks/bins/pallets) holding this specific inventory item.
+// Two-Way Binding Virtual for Locations (Reverse lookup from Location model)
 inventorySchema.virtual('storageLocations', {
   ref: 'Location',
   localField: '_id',

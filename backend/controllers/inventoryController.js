@@ -11,10 +11,9 @@ export const createInventory = catchAsync(async (req, res, next) => {
     req.body.customer = req.params.customerId;
   }
 
-  // 1. PROACTIVE ERROR HANDLING: Prevent Duplicate Product Codes
+  // PROACTIVE ERROR HANDLING: Prevent Duplicate Product Codes
   if (req.body.productCode) {
     const existingAsset = await Inventory.findOne({ productCode: req.body.productCode.trim() });
-    
     if (existingAsset) {
       return next(new AppError(`The Product Code '${req.body.productCode}' is already in use. Please choose a unique identifier.`, 400));
     }
@@ -31,13 +30,14 @@ export const createInventory = catchAsync(async (req, res, next) => {
 
   const inventory = await Inventory.create(req.body);
 
-  // Populate relational data before sending back
+  // Populate relational data (including new locations array)
   await inventory.populate([
     { path: 'customer', select: 'customerName' },
     { path: 'division', select: 'divisionName divisionCode' },
     { path: 'category1', select: 'categoryName hierarchyDepth' },
     { path: 'category2', select: 'categoryName hierarchyDepth' },
-    { path: 'category3', select: 'categoryName hierarchyDepth' }
+    { path: 'category3', select: 'categoryName hierarchyDepth' },
+    { path: 'locations', select: 'designation storageCategory level' } // <--- NEW
   ]);
   
   res.status(201).json({
@@ -61,6 +61,7 @@ export const getAllInventory = catchAsync(async (req, res, next) => {
     .populate('category1', 'categoryName')
     .populate('category2', 'categoryName')
     .populate('category3', 'categoryName')
+    .populate('locations', 'designation storageCategory level') // <--- NEW
     .sort('-createdAt');
 
   res.status(200).json({
@@ -78,7 +79,8 @@ export const getInventoryById = catchAsync(async (req, res, next) => {
     .populate('division', 'divisionName divisionCode')
     .populate('category1', 'categoryName')
     .populate('category2', 'categoryName')
-    .populate('category3', 'categoryName');
+    .populate('category3', 'categoryName')
+    .populate('locations', 'designation storageCategory level'); // <--- NEW
 
   if (!inventory) {
     return next(new AppError('No inventory item found with that ID', 404));
@@ -93,11 +95,11 @@ export const getInventoryById = catchAsync(async (req, res, next) => {
 // @desc    Update inventory item
 // @route   PUT /api/v1/inventory/:id
 export const updateInventory = catchAsync(async (req, res, next) => {
-  // 1. PROACTIVE ERROR HANDLING: Prevent stealing another item's Product Code
+  // PROACTIVE ERROR HANDLING: Prevent stealing another item's Product Code
   if (req.body.productCode) {
     const duplicate = await Inventory.findOne({ 
       productCode: req.body.productCode.trim(), 
-      _id: { $ne: req.params.id } // Search everything EXCEPT the current document
+      _id: { $ne: req.params.id }
     });
 
     if (duplicate) {
@@ -105,9 +107,7 @@ export const updateInventory = catchAsync(async (req, res, next) => {
     }
   }
 
-  // If the update includes a stock change, we append to the ledger
   const inventoryToUpdate = await Inventory.findById(req.params.id);
-  
   if (!inventoryToUpdate) {
     return next(new AppError('No inventory item found with that ID', 404));
   }
@@ -137,7 +137,8 @@ export const updateInventory = catchAsync(async (req, res, next) => {
     { path: 'division', select: 'divisionName' },
     { path: 'category1', select: 'categoryName' },
     { path: 'category2', select: 'categoryName' },
-    { path: 'category3', select: 'categoryName' }
+    { path: 'category3', select: 'categoryName' },
+    { path: 'locations', select: 'designation storageCategory level' }
   ]);
 
   res.status(200).json({

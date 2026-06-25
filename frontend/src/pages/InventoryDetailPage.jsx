@@ -1,13 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
+import { toast } from 'sonner';
 import { 
-  ArrowLeft, Edit2, Trash2, Package, Tag, User, MapPin, 
-  DollarSign, TrendingUp, History, ShieldAlert, Layers, ExternalLink, Loader2 
+  ArrowLeft, Package, Tag, User, MapPin, 
+  DollarSign, TrendingUp, History, ShieldAlert, Layers, ExternalLink, Loader2, 
+  Info, Trash2
 } from 'lucide-react';
 
 // Redux Actions
 import { fetchInventoryById, deleteInventory, clearCurrentInventoryItem } from '../store/slices/inventorySlice';
+
+// Import Confirm Hook
+import { useConfirm } from '../providers/ConfirmProvider';
 
 // Utility to sanitize S3 URLs and bypass SSL wildcard dot errors
 const sanitizeS3Url = (url) => {
@@ -25,10 +30,17 @@ const sanitizeS3Url = (url) => {
   return url;
 };
 
+// --- PROFESSIONAL ERROR TRANSLATOR ---
+const formatErrorMessage = (err) => {
+  const errorString = typeof err === 'string' ? err : (err?.message || '');
+  return errorString || 'An unexpected server error occurred.';
+};
+
 export default function InventoryDetail() {
   const { inventoryId } = useParams();
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const confirm = useConfirm();
 
   const [imageError, setImageError] = useState(false);
 
@@ -46,13 +58,28 @@ export default function InventoryDetail() {
   }, [inventoryId, dispatch]);
 
   const handleDelete = async () => {
-    if (window.confirm("Are you sure you want to permanently delete this inventory asset item?")) {
+    const isConfirmed = await confirm({
+      title: 'Delete Asset?',
+      message: 'Are you sure you want to permanently delete this inventory asset? This action cannot be undone and will remove it from all storage locations.',
+      confirmText: 'Delete Asset',
+      cancelText: 'Cancel',
+      variant: 'danger'
+    });
+
+    if (isConfirmed) {
       try {
-        await dispatch(deleteInventory(inventoryId)).unwrap();
+        const deletePromise = dispatch(deleteInventory(inventoryId)).unwrap();
+        
+        toast.promise(deletePromise, {
+          loading: 'Deleting asset...',
+          success: 'Asset permanently removed from database.',
+          error: (err) => `Delete Failed: ${formatErrorMessage(err)}`
+        });
+
+        await deletePromise;
         navigate('/inventory', { replace: true }); 
       } catch (err) {
-        console.error("Failed to delete inventory:", err);
-        alert(`Failed to delete: ${err}`);
+        // Silently caught, toast.promise handles UI feedback
       }
     }
   };
@@ -63,22 +90,24 @@ export default function InventoryDetail() {
   if (status === 'loading' || !item) {
     return (
       <div className="h-full flex flex-col justify-center items-center py-32 text-slate-400 gap-4">
-        <Loader2 className="animate-spin text-brand-gold" size={32} />
-        <p className="text-xs font-black uppercase tracking-widest">Retrieving Asset Node...</p>
+        <Loader2 className="animate-spin text-brand-gold" size={36} />
+        <p className="text-xs font-black uppercase tracking-widest animate-pulse">Retrieving Asset Node...</p>
       </div>
     );
   }
 
   if (status === 'failed') {
     return (
-      <div className="h-full max-w-[1400px] mx-auto p-6 flex justify-center items-center">
-        <div className="bg-red-50 text-red-600 p-8 rounded-[2rem] text-center text-sm font-bold border border-red-200 shadow-sm max-w-md w-full">
-          <ShieldAlert size={32} className="mx-auto mb-3 text-red-500" />
-          <p>Failed to load inventory item.</p>
-          <p className="text-xs font-medium mt-1 opacity-80">{error}</p>
+      <div className="h-full max-w-[1400px] mx-auto p-6 flex justify-center items-center min-h-[60vh]">
+        <div className="bg-white/60 backdrop-blur-2xl p-8 rounded-[2rem] text-center border border-red-100 shadow-[0_8px_30px_rgba(0,0,0,0.04)] max-w-md w-full">
+          <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-red-100 shadow-sm">
+            <ShieldAlert size={32} className="text-red-500" />
+          </div>
+          <h2 className="text-lg font-black text-slate-900 tracking-tight mb-2">Asset Retrieval Failed</h2>
+          <p className="text-xs font-bold text-slate-500 mb-8">{error || 'An unexpected error occurred while querying the database.'}</p>
           <button 
             onClick={() => navigate('/inventory', { replace: true })} 
-            className="mt-6 px-6 py-2.5 bg-red-600 text-white rounded-xl text-xs uppercase tracking-wider font-black hover:bg-red-700 transition-colors"
+            className="w-full px-6 py-3.5 bg-slate-900 text-brand-gold rounded-xl text-xs uppercase tracking-widest font-black hover:bg-slate-800 transition-all shadow-lg active:scale-95"
           >
             Return to Registry
           </button>
@@ -88,7 +117,7 @@ export default function InventoryDetail() {
   }
 
   // -------------------------------------------------------------
-  // DATA MAPPING: Safely deriving values from the updated backend schema
+  // DATA MAPPING
   // -------------------------------------------------------------
   const unitPrice = Number(item.price || 0);
   const onHand = Number(item.available || 0);
@@ -97,172 +126,190 @@ export default function InventoryDetail() {
   const safetyBuffer = Number(item.min || 0);
   const isLowStock = safetyBuffer > 0 && onHand <= safetyBuffer;
   
-  // Safely extract populated relational data based on the new schema structure
   const customerName = item.customer?.customerName || 'Unassigned Pool';
   const divisionName = item.division?.divisionName || 'Unassigned';
   const categoryName = item.category1?.categoryName || 'Unassigned';
   
-  // Check for the image field (added fallback fields just in case backend mapping changed)
   const safeImageUrl = sanitizeS3Url(item.productImage || item.image || item.imageUrl);
-
-  // Format currency nicely
   const formatCurrency = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
 
   return (
-    <div className="h-full max-w-[1400px] mx-auto p-6 space-y-6 animate-fade-in pb-20">
+    <div className="h-full max-w-[1500px] mx-auto p-6 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
       
-      {/* 1. Upper Breadcrumb / Context Action Row */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200/60 pb-4">
+      {/* 1. Header Navigation */}
+      <div className="flex items-center justify-between pb-2">
         <button 
           onClick={() => navigate('/inventory')}
-          className="flex items-center gap-2 text-[11px] font-black text-slate-500 hover:text-slate-900 uppercase tracking-widest transition-colors"
+          className="flex items-center gap-2 px-4 py-2 bg-white/60 hover:bg-white backdrop-blur-xl border border-slate-200/60 rounded-xl text-[11px] font-black text-slate-600 hover:text-slate-900 uppercase tracking-widest shadow-sm transition-all"
         >
-          <ArrowLeft size={16} /> Back to Stock Registry
+          <ArrowLeft size={16} /> Registry
         </button>
-
+        
+        {/* NEW: Action Buttons (Delete) */}
+        <button 
+          onClick={handleDelete}
+          className="flex items-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 border border-red-100 hover:border-red-200 rounded-xl text-[11px] font-black text-red-600 uppercase tracking-widest shadow-sm transition-all"
+        >
+          <Trash2 size={14} /> Purge Asset
+        </button>
       </div>
 
       {/* 2. Core Identity Hero Block */}
-      <div className="bg-slate-950 text-white rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden border border-slate-900">
+      <div className="bg-slate-900 rounded-[2.5rem] p-6 md:p-10 shadow-2xl relative overflow-hidden border border-slate-800/60">
         
-        {/* Dynamic Background Watermark */}
-        <div className="absolute right-0 top-0 h-full w-1/2 opacity-[0.04] pointer-events-none flex justify-end items-center overflow-hidden">
+        {/* Abstract Background Gradient */}
+        <div className="absolute top-0 right-0 w-3/4 h-full bg-gradient-to-l from-brand-gold/10 to-transparent pointer-events-none" />
+        
+        <div className="absolute right-0 top-0 h-full w-1/2 opacity-[0.03] pointer-events-none flex justify-end items-center overflow-hidden">
           {safeImageUrl && !imageError ? (
-            <img src={safeImageUrl} alt="" className="w-full h-full object-cover scale-150 blur-sm mix-blend-screen" />
+            <img src={safeImageUrl} alt="" className="w-full h-full object-cover scale-150 blur-md mix-blend-screen" />
           ) : (
-            <Package size={350} className="-translate-y-10 translate-x-10" />
+            <Package size={400} className="-translate-y-10 translate-x-10" />
           )}
         </div>
         
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
-          
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 sm:gap-6 w-full md:w-auto">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-8 relative z-10">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 sm:gap-8 w-full md:w-auto">
             
-            {/* Visual Thumbnail (Always rendered to preserve layout) */}
-            <div className="w-24 h-24 sm:w-28 sm:h-28 bg-slate-900/80 p-1.5 rounded-2xl shadow-xl border border-slate-800 shrink-0 flex items-center justify-center overflow-hidden backdrop-blur-md">
+            {/* Visual Thumbnail */}
+            <div className="w-28 h-28 sm:w-32 sm:h-32 bg-slate-950 p-2 rounded-[1.5rem] shadow-2xl border border-slate-800 shrink-0 flex items-center justify-center overflow-hidden backdrop-blur-md relative group">
               {safeImageUrl && !imageError ? (
                 <img 
                   src={safeImageUrl} 
                   alt={item.description || 'Product'} 
-                  className="w-full h-full object-cover rounded-xl bg-white" 
+                  className="w-full h-full object-cover rounded-xl bg-white transition-transform duration-500 group-hover:scale-110" 
                   onError={() => setImageError(true)}
                 />
               ) : (
-                <div className="w-full h-full bg-slate-800/50 rounded-xl flex flex-col items-center justify-center text-slate-500 gap-2">
-                  <Package size={28} />
-                  <span className="text-[8px] font-black uppercase tracking-widest">No Image</span>
+                <div className="w-full h-full bg-slate-900 rounded-xl flex flex-col items-center justify-center text-slate-600 gap-2">
+                  <Package size={32} />
+                  <span className="text-[9px] font-black uppercase tracking-widest">No Image</span>
                 </div>
               )}
             </div>
 
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[10px] font-mono font-black text-slate-950 uppercase tracking-widest bg-brand-gold px-2.5 py-0.5 rounded-md shadow-sm">
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="text-[11px] font-mono font-black text-slate-900 uppercase tracking-widest bg-brand-gold px-3 py-1 rounded-lg shadow-sm">
                   SKU: {item.productCode || item.sku || 'N/A'}
                 </span>
-                <span className={`px-2.5 py-0.5 text-[10px] font-black rounded-md tracking-widest uppercase border ${isLowStock ? 'bg-red-500/20 text-red-400 border-red-500/30 animate-pulse' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
-                  {item.status !== 'Active' ? item.status : (isLowStock ? 'Low Stock Warning' : 'Stable Inventory Pool')}
+                <span className={`px-3 py-1 text-[10px] font-black rounded-lg tracking-widest uppercase border backdrop-blur-sm ${isLowStock ? 'bg-red-500/10 text-red-400 border-red-500/20 animate-pulse' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
+                  {item.status !== 'Active' ? item.status : (isLowStock ? 'Low Stock Warning' : 'Active Status')}
                 </span>
               </div>
-              <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white">{item.description || item.itemName || 'Unnamed Asset'}</h1>
-              <p className="text-xs text-slate-400 font-medium pt-1">
-                Last audited on <span className="text-slate-200 font-bold">{new Date(item.lastAuditedAt || item.updatedAt).toLocaleString()}</span> by <span className="text-brand-gold font-bold">{item.lastAuditedBy || 'System Protocol'}</span>
-              </p>
+              <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white leading-tight">
+                {item.description || item.itemName || 'Unnamed Asset'}
+              </h1>
+              <div className="flex items-center gap-2 text-xs text-slate-400 font-medium">
+                <History size={14} className="text-slate-500" />
+                <span>Last audited <strong className="text-slate-200">{new Date(item.lastAuditedAt || item.updatedAt).toLocaleString()}</strong> by <strong className="text-brand-gold">{item.lastAuditedBy || 'System Protocol'}</strong></span>
+              </div>
             </div>
           </div>
           
-          <div className="bg-white/10 backdrop-blur-md border border-white/10 px-5 py-4 rounded-2xl text-right shrink-0 shadow-inner w-full md:w-auto">
-            <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Total Asset Pool Valuation</span>
-            <span className="text-3xl font-mono font-black text-emerald-400">{formatCurrency(totalAssetValue)}</span>
+          <div className="bg-slate-950/50 backdrop-blur-xl border border-white/10 px-8 py-6 rounded-[2rem] text-right shrink-0 shadow-inner w-full md:w-auto self-stretch md:self-auto flex flex-col justify-center">
+            <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Total Pool Valuation</span>
+            <span className="text-4xl font-mono font-black text-emerald-400 drop-shadow-[0_0_15px_rgba(52,211,153,0.2)]">
+              {formatCurrency(totalAssetValue)}
+            </span>
           </div>
-
         </div>
       </div>
 
-      {/* 3. Primary Performance Indicator Matrix Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      {/* 3. Primary KPI Matrix */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         
-        {/* On-Hand Stock Card */}
-        <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl shadow-sm space-y-1.5 transition-all hover:bg-white/60">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Units Available On-Hand</span>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-mono font-black text-slate-900">{onHand}</span>
-            <span className="text-xs font-bold text-slate-400">Units</span>
-          </div>
-          <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden mt-3 shadow-inner">
-            <div 
-              className={`h-full ${isLowStock ? 'bg-red-500' : 'bg-brand-gold'}`} 
-              style={{ width: `${Math.min((onHand / (safetyBuffer * 2 || 100)) * 100, 100)}%` }}
-            />
+        {/* On-Hand Stock */}
+        <div className="bg-white/60 backdrop-blur-2xl border border-white/80 p-6 rounded-[2rem] shadow-[0_8px_30px_rgba(0,0,0,0.04)] transition-all hover:bg-white/80 flex flex-col justify-between min-h-[140px]">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Available On-Hand</span>
+          <div>
+            <div className="flex items-baseline gap-2 mb-4">
+              <span className="text-4xl font-mono font-black text-slate-900 tracking-tighter">{onHand}</span>
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Units</span>
+            </div>
+            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden shadow-inner">
+              <div 
+                className={`h-full transition-all duration-700 ease-out ${isLowStock ? 'bg-red-500' : 'bg-brand-gold'}`} 
+                style={{ width: `${Math.min((onHand / (safetyBuffer * 2 || 100)) * 100, 100)}%` }}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Pending Inbound Stock Card */}
-        <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl shadow-sm space-y-1.5 transition-all hover:bg-white/60">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Pipeline Supply (On-Order)</span>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-mono font-black text-blue-600">+{item.openOrders || 0}</span>
-            <span className="text-xs font-bold text-slate-400">Inbound</span>
+        {/* Pipeline Supply */}
+        <div className="bg-white/60 backdrop-blur-2xl border border-white/80 p-6 rounded-[2rem] shadow-[0_8px_30px_rgba(0,0,0,0.04)] transition-all hover:bg-white/80 flex flex-col justify-between min-h-[140px]">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Pipeline Supply</span>
+          <div>
+            <div className="flex items-baseline gap-2 mb-2">
+              <span className="text-4xl font-mono font-black text-blue-600 tracking-tighter">+{item.openOrders || 0}</span>
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Inbound</span>
+            </div>
+            <span className="text-[10px] text-slate-500 font-bold block bg-slate-100 w-fit px-2 py-1 rounded-md">
+              Projected Pool: {onHand + (item.openOrders || 0)}
+            </span>
           </div>
-          <span className="text-[10px] text-slate-500 font-bold block mt-3">Dynamic pool sizing to {onHand + (item.openOrders || 0)}</span>
         </div>
 
-        {/* Unit Cost Valuation Card */}
-        <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl shadow-sm space-y-1.5 transition-all hover:bg-white/60">
+        {/* Unit Cost */}
+        <div className="bg-white/60 backdrop-blur-2xl border border-white/80 p-6 rounded-[2rem] shadow-[0_8px_30px_rgba(0,0,0,0.04)] transition-all hover:bg-white/80 flex flex-col justify-between min-h-[140px]">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Base Unit Cost</span>
-          <div className="flex items-baseline gap-1">
-            <DollarSign size={20} className="text-brand-gold self-center -mb-1" />
-            <span className="text-3xl font-mono font-black text-slate-900">{unitPrice.toFixed(2)}</span>
+          <div>
+            <div className="flex items-baseline gap-1 mb-2">
+              <DollarSign size={24} className="text-brand-gold self-center mb-1" />
+              <span className="text-4xl font-mono font-black text-slate-900 tracking-tighter">{unitPrice.toFixed(2)}</span>
+            </div>
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block">USD Standard</span>
           </div>
-          <span className="text-[10px] text-slate-400 font-bold block mt-3">USD standard market valuation</span>
         </div>
 
-        {/* Risk / Safety Cushion Threshold Card */}
-        <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl shadow-sm space-y-1.5 transition-all hover:bg-white/60">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Safety Buffer Threshold</span>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-mono font-black text-slate-700">{safetyBuffer}</span>
-            <span className="text-xs font-bold text-slate-400">Minimum Pool</span>
+        {/* Safety Buffer */}
+        <div className="bg-white/60 backdrop-blur-2xl border border-white/80 p-6 rounded-[2rem] shadow-[0_8px_30px_rgba(0,0,0,0.04)] transition-all hover:bg-white/80 flex flex-col justify-between min-h-[140px]">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Safety Threshold</span>
+          <div>
+            <div className="flex items-baseline gap-2 mb-2">
+              <span className="text-4xl font-mono font-black text-slate-700 tracking-tighter">{safetyBuffer}</span>
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Min Qty</span>
+            </div>
+            <span className={`text-[10px] font-bold flex items-center gap-1.5 uppercase tracking-widest ${isLowStock ? 'text-red-500' : 'text-emerald-600'}`}>
+              <ShieldAlert size={14} /> {isLowStock ? 'Action Required' : 'Secure Buffer'}
+            </span>
           </div>
-          <span className={`text-[10px] font-bold flex items-center gap-1.5 mt-3 ${isLowStock ? 'text-red-500' : 'text-slate-500'}`}>
-            <ShieldAlert size={12} /> {isLowStock ? 'Re-order allocation required' : 'Stock securely buffered'}
-          </span>
         </div>
       </div>
 
       {/* 4. Deep Operational Meta Data Sheets & Tracking Ledger */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 items-start">
         
-        {/* Left Side: Segment & Corporate Association Cards */}
-        <div className="space-y-5">
+        {/* Left Side: Meta Cards */}
+        <div className="space-y-6">
           
           {/* Card A: Lineage Hierarchy Classification */}
-          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 rounded-3xl p-5 space-y-4 shadow-sm">
-            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 pb-3 border-b border-white/60 flex items-center gap-2">
+          <div className="bg-white/60 backdrop-blur-2xl border border-white/80 rounded-[2rem] p-6 shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 pb-4 border-b border-slate-200/60 flex items-center gap-2 mb-5">
               <Layers size={14} className="text-brand-gold" /> Classification Hierarchy
             </h3>
             
-            <div className="space-y-4 text-xs font-bold">
+            <div className="space-y-5">
               <div>
-                <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest mb-1.5">Operational Division</span>
-                <p className="text-slate-900 text-sm font-black bg-white/60 px-3 py-1.5 rounded-xl border border-slate-200/60 inline-flex shadow-sm">
+                <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest mb-2">Operational Division</span>
+                <p className="text-slate-900 text-sm font-black bg-white px-4 py-2.5 rounded-xl border border-slate-200/60 inline-flex shadow-sm">
                   {divisionName}
                 </p>
               </div>
               <div>
-                <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest mb-1.5">Assigned Classifications</span>
+                <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest mb-2">Assigned Classifications</span>
                 <div className="flex flex-wrap gap-2">
-                  <span className={`inline-flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase px-2.5 py-1 rounded-lg shadow-sm border border-slate-200/60 ${item.category1 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                    <Tag size={10} className={item.category1 ? "text-brand-gold" : "text-slate-400"} /> {categoryName}
+                  <span className={`inline-flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase px-3 py-1.5 rounded-lg shadow-sm border border-slate-200/60 ${item.category1 ? 'bg-slate-900 text-brand-gold border-slate-800' : 'bg-slate-50 text-slate-400'}`}>
+                    <Tag size={12} /> {categoryName}
                   </span>
                   {item.category2?.categoryName && (
-                    <span className="inline-flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase px-2.5 py-1 rounded-lg shadow-sm bg-white text-slate-700 border border-slate-200/60">
-                      <Tag size={10} className="text-slate-400" /> {item.category2.categoryName}
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase px-3 py-1.5 rounded-lg shadow-sm bg-white text-slate-600 border border-slate-200/60">
+                      <Tag size={12} className="text-slate-400" /> {item.category2.categoryName}
                     </span>
                   )}
                   {item.typePiece && (
-                    <span className="inline-flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase px-2.5 py-1 rounded-lg shadow-sm bg-brand-gold/10 text-brand-gold border border-brand-gold/20">
-                      <Package size={10} /> {item.typePiece}
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase px-3 py-1.5 rounded-lg shadow-sm bg-brand-gold/10 text-brand-gold border border-brand-gold/20">
+                      <Package size={12} /> {item.typePiece}
                     </span>
                   )}
                 </div>
@@ -271,87 +318,110 @@ export default function InventoryDetail() {
           </div>
 
           {/* Card B: B2B Accounts Ecosystem Links */}
-          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 rounded-3xl p-5 space-y-4 shadow-sm">
-            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 pb-3 border-b border-white/60 flex items-center gap-2">
-              <User size={14} className="text-brand-gold" /> B2B Stakeholder Architecture
+          <div className="bg-white/60 backdrop-blur-2xl border border-white/80 rounded-[2rem] p-6 shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 pb-4 border-b border-slate-200/60 flex items-center gap-2 mb-5">
+              <User size={14} className="text-brand-gold" /> Ecosystem Architecture
             </h3>
             
-            <div className="space-y-3 text-xs font-bold">
+            <div className="space-y-4">
               <div>
-                <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest mb-1">Supplier / Sourcing Data</span>
-                <p className="text-slate-800 font-extrabold mt-0.5 flex items-center gap-1.5 bg-white/60 px-3 py-2 rounded-xl border border-slate-200/60 shadow-sm">
-                  Internal Supply <span className="text-[10px] text-slate-400 font-normal font-mono">(System Recorded)</span>
+                <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest mb-2">Sourcing Profile</span>
+                <p className="text-slate-800 text-xs font-black bg-slate-50 px-4 py-3 rounded-xl border border-slate-200 shadow-inner flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 block"></span> Internal Supply Protocol
                 </p>
               </div>
               <div>
-                <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest mb-1">Target Client Account Allocation</span>
-                <p className="text-slate-900 font-extrabold mt-0.5 flex items-center gap-2 bg-white/60 px-3 py-2 rounded-xl border border-slate-200/60 shadow-sm">
-                  <User size={14} className="text-brand-gold" />
-                  <span>{customerName}</span>
+                <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest mb-2">Client Allocation</span>
+                <p className="text-slate-900 text-sm font-black bg-white px-4 py-3 rounded-xl border border-slate-200/60 shadow-sm flex items-center gap-2">
+                  <User size={16} className="text-brand-gold" /> {customerName}
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Card C: Logistics Deployment Vector */}
-          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 rounded-3xl p-5 space-y-4 shadow-sm">
-            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 pb-3 border-b border-white/60 flex items-center gap-2">
-              <MapPin size={14} className="text-brand-gold" /> Logistics Deployment
+          {/* Card C: Logistics Deployment Vector (NEW ARRAY LOGIC) */}
+          <div className="bg-white/60 backdrop-blur-2xl border border-white/80 rounded-[2rem] p-6 shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 pb-4 border-b border-slate-200/60 flex items-center gap-2 mb-5">
+              <MapPin size={14} className="text-brand-gold" /> Deployment Vector
             </h3>
             
-            <div className="space-y-2 text-xs font-bold">
-              <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest mb-1">Active Vault Coordinates</span>
-              <div className="flex items-center gap-2 text-slate-800 font-extrabold bg-white/60 px-3 py-2 rounded-xl border border-slate-200/60 shadow-sm w-fit">
-                <MapPin size={14} className="text-brand-gold shrink-0" />
-                <span className="truncate">{item.locationString || 'Unassigned Facility'}</span>
+            <div>
+              <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest mb-2">Locations</span>
+              
+              {/* Maps over multiple locations, with legacy fallback */}
+              {item.locations?.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {item.locations.map((loc, idx) => (
+                    <div key={loc._id || idx} className="flex items-center gap-2 bg-white px-3 py-2.5 rounded-xl border border-slate-200/60 shadow-sm w-fit">
+                      <MapPin size={14} className="text-emerald-500 shrink-0" />
+                      <span className="text-sm font-black text-slate-900 truncate">{loc.designation || loc}</span>
+                      {loc.storageCategory && (
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-l border-slate-200 pl-2 ml-1">
+                          {loc.storageCategory}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : item.locationString ? (
+                <div className="flex items-center gap-2 text-slate-900 text-sm font-black bg-white px-4 py-3 rounded-xl border border-slate-200/60 shadow-sm w-fit max-w-full">
+                  <MapPin size={16} className="text-emerald-500 shrink-0" />
+                  <span className="truncate">{item.locationString}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-slate-400 text-sm font-bold bg-slate-50 border border-slate-200 border-dashed px-4 py-3 rounded-xl w-fit max-w-full">
+                  <MapPin size={16} className="text-slate-300 shrink-0" />
+                  <span className="truncate italic">Unassigned Facility</span>
+                </div>
+              )}
+
+              <div className="bg-blue-50 border border-blue-100 text-blue-700 px-4 py-3 rounded-xl mt-4 text-[10px] font-bold leading-relaxed flex gap-3 items-start">
+                <Info size={14} className="shrink-0 mt-0.5" />
+                <p>Cross-dock adjustments require verified barcode validation matching on-site vault sequences.</p>
               </div>
-              <p className="text-[10px] text-slate-500 font-medium pt-1.5 leading-relaxed">
-                Cross-dock adjustments require verified barcode validation matching on-site vault sequences.
-              </p>
             </div>
           </div>
-
         </div>
 
-        {/* Right Side: Historical Stock Log Ledger (Spans 2 Columns) */}
-        <div className="lg:col-span-2 bg-white/40 backdrop-blur-2xl border border-white/60 rounded-3xl p-6 shadow-sm space-y-5">
-          <div className="flex justify-between items-center pb-3 border-b border-white/60">
-            <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-900 flex items-center gap-2">
-              <History size={16} className="text-brand-gold" /> Stock Movement Audit Ledger
+        {/* Right Side: Ledger Table (Spans 2 Columns) */}
+        <div className="xl:col-span-2 bg-white/60 backdrop-blur-2xl border border-white/80 rounded-[2rem] p-6 md:p-8 shadow-[0_8px_30px_rgba(0,0,0,0.04)] h-full flex flex-col">
+          <div className="flex flex-col sm:flex-row justify-between sm:items-center pb-5 border-b border-slate-200/60 mb-6 gap-4">
+            <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 flex items-center gap-2">
+              <History size={18} className="text-brand-gold" /> Audit Ledger
             </h3>
-            <span className="text-[9px] font-black tracking-widest text-slate-500 bg-white/60 border border-slate-200/60 px-2.5 py-1 rounded-md uppercase shadow-sm">Realtime Sync Stream</span>
+            <span className="text-[9px] font-black tracking-widest text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-lg uppercase shadow-sm">
+              Realtime Sync Stream
+            </span>
           </div>
 
-          <div className="overflow-x-auto scrollbar-hide min-h-[300px]">
-            <table className="w-full text-left border-collapse text-xs font-bold">
+          <div className="overflow-x-auto w-full flex-1">
+            <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-white/40 text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                  <th className="pb-3 w-[25%]">Timestamp</th>
-                  <th className="pb-3 w-[35%]">Adjustment Event</th>
-                  <th className="pb-3 w-[25%]">Reference ID</th>
-                  <th className="pb-3 text-center w-[15%]">Quantity Δ</th>
+                <tr className="border-b border-slate-200 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50/50">
+                  <th className="p-4 rounded-tl-xl w-[25%]">Timestamp</th>
+                  <th className="p-4 w-[35%]">Adjustment Event</th>
+                  <th className="p-4 w-[25%]">Reference ID</th>
+                  <th className="p-4 rounded-tr-xl text-center w-[15%]">Delta</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/40 text-slate-700">
+              <tbody className="divide-y divide-slate-100 text-sm">
                 {item.auditLedger && item.auditLedger.length > 0 ? (
-                  // Slice and reverse so the newest transactions appear at the top
                   item.auditLedger.slice().reverse().map((log) => (
-                    <tr key={log._id} className="hover:bg-white/40 transition-colors group">
-                      {/* Formatted Date & Time */}
-                      <td className="py-3.5 font-mono text-slate-500 font-semibold text-[10px]">
+                    <tr key={log._id} className="hover:bg-slate-50/80 transition-colors group">
+                      <td className="p-4 text-xs font-mono font-bold text-slate-500 whitespace-nowrap">
                         {new Date(log.timestamp).toLocaleString('en-US', {
                           month: 'short', day: 'numeric', year: 'numeric', 
                           hour: 'numeric', minute: '2-digit'
                         })}
                       </td>
-                      <td className="py-3.5 font-extrabold text-slate-900">{log.event}</td>
-                      <td className="py-3.5 font-mono text-slate-500">
-                        <span className="inline-flex items-center gap-1 hover:text-brand-gold transition-colors cursor-pointer bg-white/40 px-2 py-0.5 rounded border border-white/60 shadow-sm truncate max-w-[150px]">
-                          {log.referenceId} <ExternalLink size={10} className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                      <td className="p-4 font-black text-slate-800">{log.event}</td>
+                      <td className="p-4 text-xs font-mono font-bold text-slate-500">
+                        <span className="inline-flex items-center gap-1.5 hover:text-brand-gold transition-colors cursor-pointer bg-white px-2.5 py-1 rounded border border-slate-200 shadow-sm truncate max-w-[150px]">
+                          {log.referenceId} <ExternalLink size={12} className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                         </span>
                       </td>
-                      <td className="py-3.5 text-center font-mono font-black">
-                        <span className={`px-2 py-1 rounded-md text-[11px] border shadow-sm ${log.quantityDelta >= 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                      <td className="p-4 text-center">
+                        <span className={`inline-flex justify-center items-center px-3 py-1 rounded-lg text-xs font-black font-mono border shadow-sm w-16 ${log.quantityDelta >= 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
                           {log.quantityDelta > 0 ? '+' : ''}{log.quantityDelta}
                         </span>
                       </td>
@@ -359,8 +429,8 @@ export default function InventoryDetail() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={4} className="py-8 text-center text-slate-400 font-semibold text-[11px] uppercase tracking-widest bg-white/20 rounded-xl">
-                      No audit records found for this item.
+                    <td colSpan={4} className="py-16 text-center text-slate-400 font-bold text-xs uppercase tracking-widest bg-slate-50/50">
+                      No audit records found.
                     </td>
                   </tr>
                 )}
@@ -368,10 +438,10 @@ export default function InventoryDetail() {
             </table>
           </div>
           
-          <div className="bg-slate-900 rounded-2xl p-4 flex items-start gap-3 text-[11px] text-slate-400 font-medium shadow-inner">
-            <TrendingUp size={16} className="text-brand-gold mt-0.5 shrink-0" />
+          <div className="bg-slate-900 rounded-2xl p-5 mt-6 flex items-start gap-4 text-xs text-slate-400 font-medium shadow-inner">
+            <TrendingUp size={20} className="text-brand-gold shrink-0" />
             <p className="leading-relaxed">
-              Inventory metrics dynamically balance across system checkouts. Adjusting asset specifications or triggering stock decommission updates entries across real-time integrated analytics frameworks instantly.
+              Metrics dynamically balance across system checkouts. Adjusting asset specifications or triggering stock decommission updates entries across real-time analytics frameworks instantly.
             </p>
           </div>
         </div>
