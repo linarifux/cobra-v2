@@ -21,7 +21,7 @@ export const createReceiving = catchAsync(async (req, res, next) => {
         { path: 'category3', select: 'categoryName' }
       ]
     },
-    { path: 'location', select: 'designation' }
+    { path: 'locations', select: 'designation storageCategory' }
   ]);
 
   res.status(201).json({
@@ -46,7 +46,7 @@ export const getAllReceiving = catchAsync(async (req, res, next) => {
         { path: 'category3', select: 'categoryName' }
       ]
     })
-    .populate('location', 'designation storageCategory');
+    .populate('locations', 'designation storageCategory')
 
   res.status(200).json({
     status: 'success',
@@ -70,7 +70,7 @@ export const getReceivingById = catchAsync(async (req, res, next) => {
         { path: 'category3', select: 'categoryName' }
       ]
     })
-    .populate('location', 'designation storageCategory');
+    .populate('locations', 'designation storageCategory')
 
   if (!receiving) {
     return next(new AppError('No receiving record found with that ID', 404));
@@ -107,7 +107,7 @@ export const updateReceiving = catchAsync(async (req, res, next) => {
         { path: 'category3', select: 'categoryName' }
       ]
     },
-    { path: 'location', select: 'designation' }
+    { path: 'locations', select: 'designation storageCategory' }
   ]);
 
   res.status(200).json({

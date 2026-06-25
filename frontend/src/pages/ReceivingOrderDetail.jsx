@@ -38,21 +38,26 @@ export default function ReceivingOrderDetail() {
     // Use the backend's totalWeight if available, otherwise calculate it as a fallback
     const totalWgt = Number(currentLog.totalWeight) || breakdown.reduce((sum, b) => sum + ((Number(b.cartons)||0) * (Number(b.weightPerCarton)||0)), 0) || (qty * Number(currentLog.unitWeight || 0));
 
+    const inv = currentLog.inventoryItem || {};
+
+    // Safely extract category names whether they are populated objects or just strings
+    const getCatName = (cat) => typeof cat === 'object' && cat !== null ? cat.categoryName : (cat || '');
+
     return [{
       id: currentLog._id,
-      name: currentLog.inventoryItem?.itemName || currentLog.inventoryItem?.description || 'Unknown Item',
-      sku: currentLog.inventoryItem?.sku || currentLog.inventoryItem?.productCode || 'N/A',
-      division: currentLog.inventoryItem?.division?.divisionName || 'Unassigned Division',
+      name: inv.itemName || inv.description || 'Unknown Item',
+      sku: inv.sku || inv.productCode || 'N/A',
+      division: inv.division?.divisionName || inv.division || 'Unassigned Division',
       
       // Core Categories
-      category1: currentLog.inventoryItem?.category1?.categoryName || '',
-      category2: currentLog.inventoryItem?.category2?.categoryName || '',
-      category3: currentLog.inventoryItem?.category3?.categoryName || '',
-      category: currentLog.inventoryItem?.category1?.categoryName || 'Unassigned Category', // UI Fallback
+      category1: getCatName(inv.category1),
+      category2: getCatName(inv.category2),
+      category3: getCatName(inv.category3),
+      category: getCatName(inv.category1) || 'Unassigned Category', // UI Fallback
       
       // Descriptions from Inventory Table
-      description1: currentLog.inventoryItem?.description || currentLog.inventoryItem?.itemName || '—',
-      description2: currentLog.inventoryItem?.description2 || '—',
+      description1: inv.description || inv.itemName || '—',
+      description2: inv.description2 || '—',
 
       cartonBreakdown: breakdown,
       totalCartons: currentLog.numberOfCartons || 0,
@@ -147,7 +152,7 @@ export default function ReceivingOrderDetail() {
                 </span>
               </div>
               <p className="text-slate-500 font-medium text-sm mt-0.5">
-                Logged on {new Date(currentLog.dateReceived).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                Date: {new Date(currentLog.dateReceived).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
               </p>
             </div>
           </div>
@@ -170,24 +175,68 @@ export default function ReceivingOrderDetail() {
           </div>
         </div>
 
-        {/* Quick Stats Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        {/* Quick Stats Grid (Removed Storage Location, shifted to 5 columns on large screens) */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           {[
             { label: 'Customer', val: currentLog.customer?.customerName || '—', icon: Building2 },
             { label: 'Carrier', val: currentLog.carrier || '—', icon: Truck },
             { label: 'Vendor', val: currentLog.vendor || '—', icon: UserCircle },
-            { label: 'Storage Location', val: currentLog.location?.designation || 'Unassigned', icon: MapPin },
             { label: 'Total Weight', val: `${calculatedTotalWeight} lbs`, icon: Weight }, 
             { label: 'Skids Rcvd', val: `${currentLog.skids || 0} Skids`, icon: Package },
           ].map((stat, i) => (
-            <div key={i} className="bg-white/60 backdrop-blur-xl border border-white/80 p-5 rounded-[1.5rem] shadow-sm flex items-center gap-3 transition-colors hover:bg-white/80">
+            <div key={i} className="bg-white/60 backdrop-blur-xl border border-white/80 p-5 rounded-3xl shadow-sm flex items-center gap-3 transition-colors hover:bg-white/80">
               <div className="p-2.5 bg-slate-100 rounded-xl text-brand-gold shrink-0 border border-slate-200/60"><stat.icon size={20} /></div>
               <div className="overflow-hidden">
                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest truncate mb-0.5">{stat.label}</p>
-                <p className="text-sm font-black text-slate-900 truncate">{stat.val}</p>
+                <p className="text-sm font-black text-slate-900 truncate" title={stat.val}>{stat.val}</p>
               </div>
             </div>
           ))}
+        </div>
+
+        {/* NEW: Robust Storage Locations Banner */}
+        <div className="bg-white/80 backdrop-blur-2xl border border-emerald-100 p-5 sm:p-6 rounded-[2rem] shadow-sm flex flex-col md:flex-row md:items-center gap-4 sm:gap-6 relative overflow-hidden">
+          {/* Decorative background element */}
+          <div className="absolute top-1/2 -translate-y-1/2 right-0 p-8 opacity-5 pointer-events-none">
+            <MapPin size={120} />
+          </div>
+          
+          <div className="flex items-center gap-4 shrink-0 z-10">
+            <div className="p-4 bg-emerald-100/50 rounded-2xl text-emerald-600 border border-emerald-200/50">
+              <MapPin size={24} />
+            </div>
+            <div>
+              <h2 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Assigned Storage Locations</h2>
+              <p className="text-sm font-bold text-slate-900 mt-0.5">Where to find these items</p>
+            </div>
+          </div>
+
+          <div className="hidden md:block w-px h-12 bg-slate-200 mx-2 z-10"></div>
+
+          <div className="flex flex-wrap gap-2 sm:gap-3 items-center flex-1 z-10">
+            {currentLog.locations?.length > 0 ? (
+              currentLog.locations.map((loc, idx) => (
+                <div key={idx} className="flex items-center gap-2 bg-white border border-slate-200 px-4 py-2 rounded-xl shadow-sm hover:border-emerald-300 hover:shadow-md transition-all group cursor-default">
+                  <MapPin size={14} className="text-emerald-500 group-hover:animate-bounce" />
+                  <span className="text-sm font-black text-slate-700">{loc?.designation || loc}</span>
+                  {loc?.storageCategory && (
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-l border-slate-200 pl-2 ml-1">
+                      {loc.storageCategory}
+                    </span>
+                  )}
+                </div>
+              ))
+            ) : currentLog.location?.designation ? (
+              <div className="flex items-center gap-2 bg-white border border-slate-200 px-4 py-2 rounded-xl shadow-sm">
+                <MapPin size={14} className="text-emerald-500" />
+                <span className="text-sm font-black text-slate-700">{currentLog.location.designation}</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 border-dashed px-4 py-2 rounded-xl text-slate-400 italic text-sm font-bold">
+                Unassigned Location
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Main Split View */}
@@ -302,8 +351,8 @@ export default function ReceivingOrderDetail() {
           className="bg-white text-black font-sans w-[8.5in] p-[0.5in] leading-tight"
         >
           {/* Header Block: Division Only */}
-          <div className="relative mb-6 pb-4 border-b-2 border-black">
-            <h1 className="text-center font-black text-[22pt] tracking-tight uppercase text-black m-0">
+          <div className="mb-6 pb-4 border-b-2 border-black text-center relative">
+            <h1 className="font-black text-[24pt] tracking-tight uppercase text-black m-0">
               {primaryItem.division}
             </h1>
             
@@ -399,7 +448,7 @@ export default function ReceivingOrderDetail() {
                 </span>
               </div>
 
-              {/* Replaced Receiver Description with Inventory Description 1 & 2 */}
+              {/* Descriptions 1 & 2 directly from inventory */}
               <div className="flex items-start mt-2">
                 <span className="w-40 font-bold text-black shrink-0">Description 1:</span>
                 <span className="flex-1 text-black">{primaryItem.description1}</span>

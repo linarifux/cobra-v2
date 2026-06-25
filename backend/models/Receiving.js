@@ -13,7 +13,7 @@ const cartonBreakdownSchema = new mongoose.Schema({
     min: 0,
     default: 0
   },
-  // NEW: Track weight for this specific carton configuration
+  // Track weight for this specific carton configuration
   weightPerCarton: {
     type: Number,
     min: 0,
@@ -75,10 +75,12 @@ const receivingSchema = new mongoose.Schema(
       ref: 'Inventory',
       required: [true, 'An inventory item reference is required']
     },
-    location: {
+    
+    // Array for multiple storage locations
+    locations: [{
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Location',
-    },
+      ref: 'Location'
+    }],
 
     // Item Details
     description: {
@@ -127,7 +129,7 @@ const receivingSchema = new mongoose.Schema(
       min: 0
     },
 
-    // NEW: The grand total weight of all cartons combined
+    // The grand total weight of all cartons combined
     totalWeight: {
       type: Number,
       default: 0,
