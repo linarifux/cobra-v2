@@ -16,6 +16,7 @@ export default function ReceivingTable({ filteredData, openEditModal, handleDele
               <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Inventory Item</th>
               <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Locations</th>
               <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Qty</th>
+              <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Total Wt (lbs)</th>
               <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Skids</th>
               <th className="p-5"></th>
             </tr>
@@ -56,8 +57,15 @@ export default function ReceivingTable({ filteredData, openEditModal, handleDele
                       <span className="text-slate-400 italic">Unassigned</span>
                     )}
                   </td>
-                  <td className="p-5 text-sm font-black text-emerald-700 text-center">{Number(row.quantity).toLocaleString()}</td>
-                  <td className="p-5 text-sm font-bold text-slate-600 text-center">{row.skids}</td>
+                  <td className="p-5 text-sm font-black text-emerald-700 text-center">
+                    {Number(row.quantity).toLocaleString()}
+                  </td>
+                  <td className="p-5 text-sm font-black text-slate-700 text-center">
+                    {Number(row.totalWeight || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td className="p-5 text-sm font-bold text-slate-600 text-center">
+                    {row.skids}
+                  </td>
                   <td className="p-5 text-right whitespace-nowrap">
                     <div className="flex justify-end gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
                       <Link to={`/receiving/${row._id}`} className="p-2 hover:bg-white rounded-xl text-slate-400 hover:text-brand-gold transition-colors border border-transparent hover:border-slate-100 shadow-sm"><Eye size={16} /></Link>
@@ -69,7 +77,8 @@ export default function ReceivingTable({ filteredData, openEditModal, handleDele
               ))
             ) : (
               <tr>
-                <td colSpan="9" className="py-16 text-center text-slate-400 font-bold text-sm bg-white/30">
+                {/* Updated colSpan from 9 to 10 to account for the new column */}
+                <td colSpan="10" className="py-16 text-center text-slate-400 font-bold text-sm bg-white/30">
                   No receiving logs found matching your criteria.
                 </td>
               </tr>
