@@ -8,6 +8,7 @@ const auditLedgerSchema = new mongoose.Schema({
   quantityDelta: { type: Number, required: true } // Can be positive or negative
 });
 
+
 const inventorySchema = new mongoose.Schema(
   {
     // --- Core Identification ---

@@ -2,7 +2,10 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Package, Plus, Trash2, X, Loader2, DollarSign, Filter } from 'lucide-react';
+
+// Redux Thunks
 import { createReceivingLog, updateReceivingLog } from '../../store/slices/receivingSlice';
+import { fetchInventory } from '../../store/slices/inventorySlice'; // NEW: Imported to sync stock levels
 
 const INITIAL_FORM_STATE = {
   dateReceived: new Date().toISOString().split('T')[0],
@@ -179,6 +182,10 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
       } else {
         await dispatch(createReceivingLog(payload)).unwrap();
       }
+      
+      // CRITICAL NEW LINE: Fetch inventory to instantly update the stock level
+      dispatch(fetchInventory());
+
       onClose();
     } catch (err) {
       alert(`Error saving receiving log: ${err}`);
@@ -399,6 +406,10 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
               <div>
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Total Skids</label>
                 <input type="number" min="0" value={formData.skids} onChange={(e) => setFormData({...formData, skids: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
+              </div>
+              <div>
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Unit Wt (lbs)</label>
+                <input type="number" step="0.01" min="0" value={formData.unitWeight} onChange={(e) => setFormData({...formData, unitWeight: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
               </div>
               <div>
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1 flex items-center gap-1"><DollarSign size={10}/> Applied Charge</label>

@@ -20,7 +20,7 @@ router.route('/')
   
 
 router.route('/:id')
-  .get(getInventoryById)
+  .get(restrictTo('super_admin','admin', 'staff', 'warehouse'), getInventoryById)
   // Warehouse staff can adjust stock; admins/staff can edit full details
   .put(restrictTo('super_admin','admin', 'staff', 'warehouse'), updateInventory)
   // .put(updateInventory)

@@ -11,6 +11,7 @@ export const createInventory = catchAsync(async (req, res, next) => {
     req.body.customer = req.params.customerId;
   }
 
+  
   // Automatically inject the initial baseline ledger entry if stock is provided
   // UPDATED: Now checks 'available' and references 'productCode'
   if (req.body.available > 0 && (!req.body.auditLedger || req.body.auditLedger.length === 0)) {
