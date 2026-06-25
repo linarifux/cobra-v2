@@ -11,9 +11,16 @@ export const createInventory = catchAsync(async (req, res, next) => {
     req.body.customer = req.params.customerId;
   }
 
-  
+  // 1. PROACTIVE ERROR HANDLING: Prevent Duplicate Product Codes
+  if (req.body.productCode) {
+    const existingAsset = await Inventory.findOne({ productCode: req.body.productCode.trim() });
+    
+    if (existingAsset) {
+      return next(new AppError(`The Product Code '${req.body.productCode}' is already in use. Please choose a unique identifier.`, 400));
+    }
+  }
+
   // Automatically inject the initial baseline ledger entry if stock is provided
-  // UPDATED: Now checks 'available' and references 'productCode'
   if (req.body.available > 0 && (!req.body.auditLedger || req.body.auditLedger.length === 0)) {
     req.body.auditLedger = [{
       event: 'Baseline Audit Intake',
@@ -25,7 +32,6 @@ export const createInventory = catchAsync(async (req, res, next) => {
   const inventory = await Inventory.create(req.body);
 
   // Populate relational data before sending back
-  // UPDATED: Now maps to the singular division and category1/2/3 fields
   await inventory.populate([
     { path: 'customer', select: 'customerName' },
     { path: 'division', select: 'divisionName divisionCode' },
@@ -34,7 +40,6 @@ export const createInventory = catchAsync(async (req, res, next) => {
     { path: 'category3', select: 'categoryName hierarchyDepth' }
   ]);
   
-
   res.status(201).json({
     status: 'success',
     data: { inventory }
@@ -88,6 +93,18 @@ export const getInventoryById = catchAsync(async (req, res, next) => {
 // @desc    Update inventory item
 // @route   PUT /api/v1/inventory/:id
 export const updateInventory = catchAsync(async (req, res, next) => {
+  // 1. PROACTIVE ERROR HANDLING: Prevent stealing another item's Product Code
+  if (req.body.productCode) {
+    const duplicate = await Inventory.findOne({ 
+      productCode: req.body.productCode.trim(), 
+      _id: { $ne: req.params.id } // Search everything EXCEPT the current document
+    });
+
+    if (duplicate) {
+      return next(new AppError(`The Product Code '${req.body.productCode}' is already assigned to a different inventory asset.`, 400));
+    }
+  }
+
   // If the update includes a stock change, we append to the ledger
   const inventoryToUpdate = await Inventory.findById(req.params.id);
   
@@ -96,7 +113,6 @@ export const updateInventory = catchAsync(async (req, res, next) => {
   }
 
   // Handle manual stock adjustments pushing to the ledger
-  // UPDATED: Tracks changes based on the 'available' threshold instead of unitsOnHand
   if (req.body.available !== undefined && req.body.available !== inventoryToUpdate.available) {
     const delta = req.body.available - inventoryToUpdate.available;
     

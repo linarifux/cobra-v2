@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useDispatch } from 'react-redux';
 import { X, Loader2, UploadCloud } from 'lucide-react';
 import { uploadImageToS3 } from '../../store/slices/uploadSlice'; 
+import { toast } from 'sonner';
 
 const INITIAL_FORM_STATE = {
   productCode: '', description: '', description2: '', hssCode: '', division: '',
@@ -11,9 +12,7 @@ const INITIAL_FORM_STATE = {
   qtyLastReceived: 0, dateLastReceived: '', productImage: '', customer: ''
 };
 
-
 // --- FIX 1: Universal Path-Style Sanitizer ---
-// Converts virtual-hosted URLs into universal path-style URLs to bypass SSL dot errors.
 const sanitizeS3Url = (url) => {
   if (!url) return '';
   try {
@@ -27,6 +26,19 @@ const sanitizeS3Url = (url) => {
     return url;
   }
   return url;
+};
+
+// --- PROFESSIONAL ERROR TRANSLATOR ---
+const formatErrorMessage = (err) => {
+  const errorString = typeof err === 'string' ? err : (err?.message || '');
+  
+  if (errorString.includes('E11000') || errorString.includes('duplicate key')) {
+    return 'This Product Code already exists. Please choose a unique code.';
+  }
+  if (errorString.includes('validation failed')) {
+    return 'Please check your inputs and try again.';
+  }
+  return errorString || 'An unexpected server error occurred.';
 };
 
 export default function InventoryFormPanel({ 
@@ -81,50 +93,33 @@ export default function InventoryFormPanel({
     }
   }, [itemToEdit, apiCustomers, apiDivisions, apiCategories, apiLocations, isEditMode]);
 
-
   // --- CASCADING DROPDOWN LOGIC ---
-  
-  // 1. Filter Type Pieces by Customer
   const availableTypePieces = useMemo(() => {
     if (!formData.customer) return [];
     return apiTypePieces.filter(tp => (tp.customer?._id || tp.customer) === formData.customer);
   }, [apiTypePieces, formData.customer]);
 
-  // 2. Filter Divisions by Customer
   const availableDivisions = useMemo(() => {
     if (!formData.customer) return [];
     return apiDivisions.filter(div => (div.customer?._id || div.customer) === formData.customer);
   }, [apiDivisions, formData.customer]);
 
-  // 3. Filter Categories by Division (Base List)
   const availableCategories = useMemo(() => {
     if (!formData.division) return [];
     return apiCategories.filter(cat => (cat.division?._id || cat.division) === formData.division);
   }, [apiCategories, formData.division]);
 
-  // 4. Filter Category 1 (Only Top-Level Categories without a parent)
-  const availableCat1 = useMemo(() => {
-    return availableCategories.filter(cat => !cat.parentCategory);
-  }, [availableCategories]);
+  const availableCat1 = useMemo(() => availableCategories.filter(cat => !cat.parentCategory), [availableCategories]);
 
-  // 5. Filter Category 2 (Only Children of Category 1)
   const availableCat2 = useMemo(() => {
     if (!formData.category1) return [];
-    return availableCategories.filter(cat => {
-      const parentId = cat.parentCategory?._id || cat.parentCategory;
-      return parentId === formData.category1;
-    });
+    return availableCategories.filter(cat => (cat.parentCategory?._id || cat.parentCategory) === formData.category1);
   }, [availableCategories, formData.category1]);
 
-  // 6. Filter Category 3 (Only Children of Category 2)
   const availableCat3 = useMemo(() => {
     if (!formData.category2) return [];
-    return availableCategories.filter(cat => {
-      const parentId = cat.parentCategory?._id || cat.parentCategory;
-      return parentId === formData.category2;
-    });
+    return availableCategories.filter(cat => (cat.parentCategory?._id || cat.parentCategory) === formData.category2);
   }, [availableCategories, formData.category2]);
-
 
   // --- HANDLERS ---
   const handleImageUpload = async (e) => {
@@ -132,24 +127,18 @@ export default function InventoryFormPanel({
     if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
-      alert("Image is too large. Please select an image under 5MB.");
-      return;
+      return toast.warning('File Too Large', { description: 'Please select an image under 5MB.' });
     }
 
     setIsUploadingImage(true);
 
     try {
       let finalImageUrl = await dispatch(uploadImageToS3(file)).unwrap();
-      
-      // Sanitizing the URL ensures SSL works instantly
       finalImageUrl = sanitizeS3Url(finalImageUrl);
-      
       setFormData(prev => ({ ...prev, productImage: finalImageUrl }));
       setIsImageLoading(true); 
-
     } catch (err) {
-      console.error("Redux S3 Upload error:", err);
-      alert(err || "Failed to upload image. Please try again.");
+      toast.error('Upload Failed', { description: err || 'Failed to upload image to S3. Please try again.' });
     } finally {
       setIsUploadingImage(false);
     }
@@ -163,15 +152,14 @@ export default function InventoryFormPanel({
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.productCode || !formData.description || !formData.customer) {
-      alert("Product Code, Description, and Customer are required.");
-      return;
+      return toast.warning('Missing Fields', { description: 'Product Code, Description, and Customer are required.' });
     }
     
     setIsSubmitting(true);
 
     const payload = {
       ...formData,
-      sku: formData.productCode, // <-- FIX: Map productCode to sku for the backend
+      sku: formData.productCode, 
       itemName: formData.description,
       price: Number(formData.price) || 0,
       price2: Number(formData.price2) || 0,
@@ -187,7 +175,19 @@ export default function InventoryFormPanel({
     };
 
     try {
-      await onSubmit(payload, isEditMode, itemToEdit?._id);
+      // Execute the parent-provided action and link it to the Sonner toast
+      const actionPromise = onSubmit(payload, isEditMode, itemToEdit?._id);
+      
+      toast.promise(actionPromise, {
+        loading: isEditMode ? 'Updating inventory asset...' : 'Provisioning new asset...',
+        success: `Asset successfully ${isEditMode ? 'updated' : 'created'}.`,
+        error: (err) => formatErrorMessage(err)
+      });
+
+      await actionPromise;
+    } catch (err) {
+      // Intentionally caught silently to prevent browser console rejection errors.
+      // The toast.promise API already renders the error beautifully to the user.
     } finally {
       setIsSubmitting(false);
     }
@@ -205,18 +205,13 @@ export default function InventoryFormPanel({
             {isEditMode ? `Edit Item: ${formData.productCode}` : 'New Inventory Item'}
           </h3>
           
-          {/* CUSTOMER SELECT - Changing this resets children */}
           <select 
             required 
             value={formData.customer} 
             onChange={e => setFormData({
               ...formData, 
               customer: e.target.value, 
-              division: '', 
-              category1: '', 
-              category2: '', 
-              category3: '', 
-              typePiece: ''
+              division: '', category1: '', category2: '', category3: '', typePiece: ''
             })} 
             className="border border-slate-300 rounded px-3 py-1 text-sm bg-slate-50 font-semibold text-brand-gold outline-none"
           >
@@ -224,7 +219,6 @@ export default function InventoryFormPanel({
             {apiCustomers.map(cust => <option key={cust._id} value={cust._id}>{cust.customerName}</option>)}
           </select>
 
-          {/* DIVISION SELECT - Changing this resets categories */}
           <div className="flex items-center">
             <label className="text-sm mr-2 font-semibold text-slate-600">Division</label>
             <select 
@@ -232,9 +226,7 @@ export default function InventoryFormPanel({
               onChange={e => setFormData({
                 ...formData, 
                 division: e.target.value, 
-                category1: '', 
-                category2: '', 
-                category3: ''
+                category1: '', category2: '', category3: ''
               })} 
               className={`min-w-[150px] ${inputClass}`} 
               disabled={isSubmitting || !formData.customer || availableDivisions.length === 0}
@@ -267,12 +259,7 @@ export default function InventoryFormPanel({
             <label className="w-1/3 text-sm font-semibold text-slate-600">Category 1</label>
             <select 
               value={formData.category1} 
-              onChange={e => setFormData({
-                ...formData, 
-                category1: e.target.value,
-                category2: '', // Reset child category
-                category3: ''  // Reset grandchild category
-              })} 
+              onChange={e => setFormData({ ...formData, category1: e.target.value, category2: '', category3: '' })} 
               className={`w-2/3 ${inputClass}`} 
               disabled={isSubmitting || !formData.division || availableCat1.length === 0}
             >
@@ -284,11 +271,7 @@ export default function InventoryFormPanel({
             <label className="w-1/3 text-sm font-semibold text-slate-600">Category 2</label>
             <select 
               value={formData.category2} 
-              onChange={e => setFormData({
-                ...formData, 
-                category2: e.target.value,
-                category3: '' // Reset grandchild category
-              })} 
+              onChange={e => setFormData({ ...formData, category2: e.target.value, category3: '' })} 
               className={`w-2/3 ${inputClass}`} 
               disabled={isSubmitting || !formData.category1 || availableCat2.length === 0}
             >
@@ -416,8 +399,6 @@ export default function InventoryFormPanel({
         
         {formData.productImage ? (
           <div className="w-full border border-slate-200 rounded overflow-hidden shadow-sm relative min-h-[150px] bg-slate-50 flex items-center justify-center">
-            
-            {/* Loading Overlay */}
             {isImageLoading && (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-50/80 backdrop-blur-sm">
                 <Loader2 className="animate-spin text-brand-gold mb-2" size={24} />
@@ -432,7 +413,6 @@ export default function InventoryFormPanel({
               onLoad={() => setIsImageLoading(false)} 
               onError={() => {
                 setIsImageLoading(false);
-                console.error("Failed to load image. S3 Bucket Policy is likely blocking public access.");
               }}
             />
           </div>

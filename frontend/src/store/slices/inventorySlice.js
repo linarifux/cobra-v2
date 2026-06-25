@@ -35,8 +35,7 @@ export const createInventory = createAsyncThunk(
       const response = await api.post('/inventory', inventoryData);
       return response.data.data.inventory;
     } catch (error) {
-      console.log(error);
-      
+      // Cleanly pass the server error message to the component for the Toast notification
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to create inventory item');
     }
   }

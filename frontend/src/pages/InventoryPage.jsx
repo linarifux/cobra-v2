@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 
 // Redux Actions
 import { fetchInventory, createInventory, updateInventory, deleteInventory } from '../store/slices/inventorySlice';
@@ -16,8 +17,18 @@ import InventoryFilterBar from '../components/inventory/InventoryFilterBar';
 import InventoryTable from '../components/inventory/InventoryTable';
 import InventoryFormPanel from '../components/inventory/InventoryFormPanel';
 
+// Import Confirm Hook
+import { useConfirm } from '../providers/ConfirmProvider';
+
+// --- PROFESSIONAL ERROR TRANSLATOR ---
+const formatErrorMessage = (err) => {
+  const errorString = typeof err === 'string' ? err : (err?.message || '');
+  return errorString || 'An unexpected server error occurred.';
+};
+
 export default function InventoryPage() {
   const dispatch = useDispatch();
+  const confirm = useConfirm();
 
   // Safely extract items and statuses, defaulting to empty arrays to prevent mapping crashes
   const { items: apiInventory = [], status: invStatus, error: invError } = useSelector(state => state.inventory || {});
@@ -40,10 +51,9 @@ export default function InventoryPage() {
   useEffect(() => {
     loadAllData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dispatch]); // Only depend on dispatch to prevent infinite loops
+  }, [dispatch]);
 
   // --- 2. GLOBAL LOADING & ERROR GATES ---
-  // We MUST wait for all resources to stop being 'idle' or 'loading'
   const isGlobalLoading = 
     invStatus === 'idle' || invStatus === 'loading' ||
     custStatus === 'idle' || custStatus === 'loading' ||
@@ -84,27 +94,44 @@ export default function InventoryPage() {
     }
   };
 
-  const handleFormSubmit = async (payload, isEdit, id) => {
-    try {
-      if (isEdit) {
-        await dispatch(updateInventory({ id, inventoryData: payload })).unwrap();
-      } else {
-        await dispatch(createInventory(payload)).unwrap();
-      }
-      setShowFormPanel(false);
-    } catch (err) {
-      console.error("Failed to save inventory:", err);
-      alert(`Error saving inventory: ${err}`);
-      throw err; 
-    }
+  const handleFormSubmit = (payload, isEdit, id) => {
+    // We strictly return the promise here so the child component (InventoryFormPanel)
+    // can hook it into its `toast.promise` UI.
+    const actionPromise = isEdit
+      ? dispatch(updateInventory({ id, inventoryData: payload })).unwrap()
+      : dispatch(createInventory(payload)).unwrap();
+
+    // Close the panel ONLY if the server request successfully resolves
+    actionPromise
+      .then(() => setShowFormPanel(false))
+      .catch(() => {}); // Caught silently, the child's toast handles the UI error
+      
+    return actionPromise; 
   };
 
   const handleDeleteItem = async (id) => {
-    if (window.confirm("Are you sure you want to permanently delete this inventory asset item?")) {
+    // Replaced native window.confirm with your custom confirm provider
+    const isConfirmed = await confirm({
+      title: 'Delete Asset?',
+      message: 'Are you sure you want to permanently delete this inventory asset? This action cannot be undone and will remove it from all storage locations.',
+      confirmText: 'Delete Asset',
+      cancelText: 'Cancel',
+      variant: 'danger'
+    });
+
+    if (isConfirmed) {
       try {
-        await dispatch(deleteInventory(id)).unwrap();
+        const deletePromise = dispatch(deleteInventory(id)).unwrap();
+        
+        toast.promise(deletePromise, {
+          loading: 'Deleting asset...',
+          success: 'Asset permanently removed from database.',
+          error: (err) => `Delete Failed: ${formatErrorMessage(err)}`
+        });
+
+        await deletePromise;
       } catch (err) {
-        console.error("Failed to delete inventory:", err);
+        // Handled silently by toast.promise
       }
     }
   };
@@ -193,7 +220,7 @@ export default function InventoryPage() {
 
   // ONLY render the page once we mathematically guarantee all arrays exist and are loaded.
   return (
-    <div className="h-full max-w-[1400px] mx-auto p-6 space-y-6 animate-fade-in">
+    <div className="h-full max-w-[1500px] mx-auto p-6 space-y-6 animate-in fade-in duration-500 pb-20">
       
       <InventoryHeader onAddClick={handleOpenAdd} />
 
