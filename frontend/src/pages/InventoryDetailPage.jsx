@@ -340,7 +340,7 @@ export default function InventoryDetail() {
           </div>
 
           {/* Card C: Logistics Deployment Vector (NEW ARRAY LOGIC) */}
-          <div className="bg-white/60 backdrop-blur-2xl border border-white/80 rounded-[2rem] p-6 shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
+          <div className="bg-white/60 backdrop-blur-2xl border border-white/80 rounded-4xl p-6 shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
             <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 pb-4 border-b border-slate-200/60 flex items-center gap-2 mb-5">
               <MapPin size={14} className="text-brand-gold" /> Deployment Vector
             </h3>

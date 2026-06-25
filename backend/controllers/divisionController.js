@@ -12,7 +12,7 @@ export const createDivision = catchAsync(async (req, res, next) => {
 
   const division = await Division.create(req.body);
 
-  // FIX: Explicitly populate the customer field before returning the new division
+  // Populate customer before returning
   await division.populate('customer', 'customerName contactEmail');
 
   res.status(201).json({
@@ -32,6 +32,11 @@ export const getAllDivisions = catchAsync(async (req, res, next) => {
 
   const divisions = await Division.find(filter)
     .populate('customer', 'customerName contactEmail') 
+    // NEW: Populate our virtual 'users' array with specific, safe fields
+    .populate({
+      path: 'users',
+      select: 'name email role portal isActive'
+    })
     .sort('divisionName');
 
   res.status(200).json({
@@ -45,7 +50,11 @@ export const getAllDivisions = catchAsync(async (req, res, next) => {
 // @route   GET /api/v1/divisions/:id
 export const getDivision = catchAsync(async (req, res, next) => {
   const division = await Division.findById(req.params.id)
-    .populate('customer', 'customerName contactEmail');
+    .populate('customer', 'customerName contactEmail')
+    .populate({
+      path: 'users',
+      select: 'name email role portal isActive'
+    });
 
   if (!division) {
     return next(new AppError('No division found with that ID', 404));
@@ -67,7 +76,12 @@ export const updateDivision = catchAsync(async (req, res, next) => {
       new: true,
       runValidators: true 
     }
-  ).populate('customer', 'customerName contactEmail');
+  )
+  .populate('customer', 'customerName contactEmail')
+  .populate({
+    path: 'users',
+    select: 'name email role portal isActive'
+  });
 
   if (!division) {
     return next(new AppError('No division found with that ID', 404));

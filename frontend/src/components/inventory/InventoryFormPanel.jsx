@@ -475,7 +475,7 @@ export default function InventoryFormPanel({
         </div>
         
         {formData.productImage ? (
-          <div className="w-full border border-slate-200 rounded overflow-hidden shadow-sm relative min-h-[150px] bg-slate-50 flex items-center justify-center">
+          <div className="w-full border border-slate-200 rounded overflow-hidden shadow-sm relative min-h-37.5 bg-slate-50 flex items-center justify-center">
             {isImageLoading && (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-50/80 backdrop-blur-sm">
                 <Loader2 className="animate-spin text-brand-gold mb-2" size={24} />
@@ -516,7 +516,7 @@ export default function InventoryFormPanel({
 
       <div className="flex items-center justify-end gap-3 pt-6 border-t border-slate-200 mt-8">
         <button type="button" disabled={isSubmitting} onClick={onClose} className="px-5 py-2.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-bold rounded shadow-sm transition-colors disabled:opacity-50">Cancel</button>
-        <button type="submit" disabled={isSubmitting || isUploadingImage} className="flex justify-center items-center min-w-[140px] px-6 py-2.5 bg-brand-gold hover:bg-brand-gold-hover text-white font-bold rounded shadow-md transition-all disabled:opacity-70">
+        <button type="submit" disabled={isSubmitting || isUploadingImage} className="flex justify-center items-center min-w-35 px-6 py-2.5 bg-brand-gold hover:bg-brand-gold-hover text-white font-bold rounded shadow-md transition-all disabled:opacity-70">
           {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : (isEditMode ? 'Save Changes' : 'Create Item')}
         </button>
       </div>

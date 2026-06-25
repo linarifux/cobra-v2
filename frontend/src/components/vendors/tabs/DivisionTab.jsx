@@ -1,157 +1,291 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Layers, Plus, User, ToggleLeft, ToggleRight, Trash2, Tag, Edit2, Check, X, Loader2 } from 'lucide-react';
+import { 
+  Layers, Plus, Users, ToggleLeft, ToggleRight, Trash2, Tag, 
+  Edit2, Check, X, Loader2, Mail, Phone, MapPin, UserCircle 
+} from 'lucide-react';
+import { toast } from 'sonner';
 
-// Redux Thunks
 import { createDivision, updateDivision, deleteDivision } from '../../../store/slices/divisionSlice';
 import { fetchUsers, updateUser } from '../../../store/slices/userSlice';
-import { fetchCategories } from '../../../store/slices/categorySlice'; // NEW: Import categories
+import { fetchCategories } from '../../../store/slices/categorySlice'; 
+import { useConfirm } from '../../../providers/ConfirmProvider';
+import AddDivisionForm from '../../division/AddDivisionForm';
+
+const formatErrorMessage = (err) => {
+  const errorString = typeof err === 'string' ? err : (err?.message || '');
+  if (errorString.includes('E11000') || errorString.includes('duplicate key')) {
+    return 'This Division Code is already in use. Please use a unique identifier.';
+  }
+  return errorString || 'An unexpected server error occurred.';
+};
+
+const INITIAL_FORM_STATE = { 
+  divisionName: '', divisionCode: '', managers: [], status: 'Active',
+  contactName: '', contactEmail: '', contactNumber: '', 
+  line1: '', line2: '', city: '', state: '', zip: ''
+};
 
 export default function DivisionTab({ divisions = [], customerData }) {
   const dispatch = useDispatch();
+  const confirm = useConfirm();
   
   const [showAddForm, setShowAddForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // Creation state
-  const [newDivision, setNewDivision] = useState({ divisionName: '', divisionCode: '', manager: '', status: 'Active' });
-
-  // Inline Editing States
+  const [newDivision, setNewDivision] = useState(INITIAL_FORM_STATE);
   const [editingId, setEditingId] = useState(null);
-  const [editFormData, setEditFormData] = useState({ divisionName: '', divisionCode: '', manager: '' });
+  const [editFormData, setEditFormData] = useState(INITIAL_FORM_STATE);
 
-  // --- Redux State & Fetching ---
   const { items: apiUsers = [], status: userStatus } = useSelector(state => state.users || {});
-  const { items: apiCategories = [], status: catStatus } = useSelector(state => state.categories || {}); // NEW: Categories State
+  const { items: apiCategories = [], status: catStatus } = useSelector(state => state.categories || {});
 
   useEffect(() => {
     if (userStatus === 'idle') dispatch(fetchUsers());
-    if (catStatus === 'idle') dispatch(fetchCategories()); // NEW: Fetch Categories
+    if (catStatus === 'idle') dispatch(fetchCategories()); 
   }, [userStatus, catStatus, dispatch]);
 
-  // 1. FILTER STAFF: Only allow Order Portal users to be assigned as division heads
   const orderPortalStaff = useMemo(() => {
     return apiUsers.filter(user => user.portal === 'order');
   }, [apiUsers]);
 
-  // --- CRUD Handlers ---
+  const formatFullAddress = (address) => {
+    if (!address) return null;
+    const parts = [address.line1, address.line2, address.city, address.state, address.zip].filter(Boolean);
+    return parts.length > 0 ? parts.join(', ') : null;
+  };
 
+  // --- CRUD Handlers ---
   const handleToggleStatus = async (div) => {
     try {
-      await dispatch(updateDivision({ 
+      const newStatus = div.status === 'Active' ? 'Inactive' : 'Active';
+      const actionPromise = dispatch(updateDivision({ 
         id: div._id, 
-        divisionData: { status: div.status === 'Active' ? 'Inactive' : 'Active' } 
+        divisionData: { status: newStatus } 
       })).unwrap();
-    } catch (err) {
-      alert(`Failed to update status: ${err}`);
-    }
+
+      toast.promise(actionPromise, {
+        loading: 'Updating division status...',
+        success: `Status updated to ${newStatus}.`,
+        error: (err) => formatErrorMessage(err)
+      });
+
+      await actionPromise;
+    } catch (err) {}
   };
 
   const handleAddDivision = async (e) => {
     e.preventDefault();
-    if (!newDivision.divisionName || !newDivision.divisionCode) return;
+    if (!newDivision.divisionName || !newDivision.divisionCode) {
+      return toast.warning('Missing Data', { description: 'Division Name and Internal Code are required.' });
+    }
     
     setIsSubmitting(true);
-    try {
-      // 1. Create the Division
-      const createdDiv = await dispatch(createDivision({
-        divisionName: newDivision.divisionName,
-        divisionCode: newDivision.divisionCode.toUpperCase(),
-        customer: customerData._id, 
-        status: newDivision.status || 'Active'
-      })).unwrap();
-
-      // 2. Synchronize User Array: Attach this new division to the selected manager's profile
-      if (newDivision.manager && createdDiv._id) {
-        const selectedUser = orderPortalStaff.find(u => u._id === newDivision.manager);
-        if (selectedUser) {
-          const currentDivIds = (selectedUser.divisions || []).map(d => d._id || d);
-          const updatedDivs = [...new Set([...currentDivIds, createdDiv._id])];
-          await dispatch(updateUser({ id: selectedUser._id, userData: { divisions: updatedDivs } })).unwrap();
-          dispatch(fetchUsers()); // Re-fetch to keep UI in sync
-        }
+    
+    const payload = {
+      divisionName: newDivision.divisionName.trim(),
+      divisionCode: newDivision.divisionCode.trim().toUpperCase(),
+      customer: customerData._id, 
+      status: newDivision.status || 'Active',
+      contactName: newDivision.contactName?.trim() || undefined,
+      contactEmail: newDivision.contactEmail?.trim().toLowerCase() || undefined,
+      contactNumber: newDivision.contactNumber?.trim() || undefined,
+      address: { 
+        line1: newDivision.line1?.trim() || undefined, 
+        line2: newDivision.line2?.trim() || undefined, 
+        city: newDivision.city?.trim() || undefined, 
+        state: newDivision.state?.trim() || undefined, 
+        zip: newDivision.zip?.trim() || undefined 
       }
+    };
+
+    const syncProcess = async () => {
+      const createdDiv = await dispatch(createDivision(payload)).unwrap();
+
+      if (newDivision.managers.length > 0 && createdDiv._id) {
+        const updatePromises = newDivision.managers.map(async (userId) => {
+          const selectedUser = orderPortalStaff.find(u => String(u._id) === String(userId));
+          if (selectedUser) {
+            const currentDivIds = (selectedUser.divisions || []).map(d => String(d._id || d));
+            const updatedDivs = [...new Set([...currentDivIds, String(createdDiv._id)])];
+            return dispatch(updateUser({ id: selectedUser._id, userData: { divisions: updatedDivs } })).unwrap();
+          }
+        });
+        await Promise.all(updatePromises);
+        dispatch(fetchUsers()); 
+      }
+    };
+
+    try {
+      // FIX: Trigger syncProcess EXACTLY ONCE and store it in a variable
+      const actionPromise = syncProcess();
+
+      toast.promise(actionPromise, {
+        loading: 'Provisioning division and syncing staff access...',
+        success: 'Division architecture successfully deployed.',
+        error: (err) => formatErrorMessage(err)
+      });
+
+      // Wait for that exact same promise to finish
+      await actionPromise;
       
-      setNewDivision({ divisionName: '', divisionCode: '', manager: '', status: 'Active' });
+      // If it succeeds, clear the form and close it
+      setNewDivision(INITIAL_FORM_STATE);
       setShowAddForm(false);
     } catch (err) {
-      alert(`Failed to add division: ${err}`);
+      // If it fails (e.g. duplicate code), it catches silently, leaving the form OPEN so the user can fix it
     } finally {
-      setIsSubmitting(false);
+      setIsSubmitting(false); // Always unlock the submit button
     }
   };
 
   const startEditing = (div) => {
     setEditingId(div._id);
     
-    // Reverse lookup: Find which order portal user has this division ID in their array
-    const assignedUser = orderPortalStaff.find(u => 
-      u.divisions?.some(d => (d._id || d) === div._id)
-    );
+    const assignedUserIds = orderPortalStaff
+      .filter(u => u.divisions?.some(d => String(d._id || d) === String(div._id)))
+      .map(u => String(u._id));
 
     setEditFormData({
       divisionName: div.divisionName || '',
       divisionCode: div.divisionCode || div.code || '', 
-      manager: assignedUser ? assignedUser._id : '' // Set exact MongoDB ObjectId
+      managers: assignedUserIds, 
+      contactName: div.contactName || '',
+      contactEmail: div.contactEmail || '',
+      contactNumber: div.contactNumber || '',
+      line1: div.address?.line1 || '',
+      line2: div.address?.line2 || '',
+      city: div.address?.city || '',
+      state: div.address?.state || '',
+      zip: div.address?.zip || ''
     });
   };
 
+  const handleAddEditManager = (userId) => {
+    if (!userId || editFormData.managers.includes(userId)) return;
+    setEditFormData(prev => ({ ...prev, managers: [...prev.managers, userId] }));
+  };
+
+  const handleRemoveEditManager = (userId) => {
+    setEditFormData(prev => ({ ...prev, managers: prev.managers.filter(id => id !== userId) }));
+  };
+
   const handleSaveEdit = async (id) => {
-    if (!editFormData.divisionName || !editFormData.divisionCode) return;
+    if (!editFormData.divisionName || !editFormData.divisionCode) {
+      return toast.warning('Missing Data', { description: 'Division Name and Internal Code are required.' });
+    }
     
     setIsSubmitting(true);
-    try {
-      // 1. Update the Division details
-      await dispatch(updateDivision({ 
-        id, 
-        divisionData: { 
-          divisionName: editFormData.divisionName, 
-          divisionCode: editFormData.divisionCode.toUpperCase() 
-        } 
-      })).unwrap();
-      
-      // 2. Synchronize User Arrays if the Manager changed
-      const oldManager = orderPortalStaff.find(u => u.divisions?.some(d => (d._id || d) === id));
-      const oldManagerId = oldManager ? oldManager._id : null;
-      const newManagerId = editFormData.manager;
-
-      if (oldManagerId !== newManagerId) {
-        // Remove division from the OLD manager's array
-        if (oldManagerId) {
-          const updatedDivs = (oldManager.divisions || []).map(d => d._id || d).filter(divId => divId !== id);
-          await dispatch(updateUser({ id: oldManagerId, userData: { divisions: updatedDivs } }));
-        }
-        
-        // Add division to the NEW manager's array
-        if (newManagerId) {
-          const newUser = orderPortalStaff.find(u => u._id === newManagerId);
-          if (newUser) {
-            const currentDivs = (newUser.divisions || []).map(d => d._id || d);
-            const updatedDivs = [...new Set([...currentDivs, id])];
-            await dispatch(updateUser({ id: newManagerId, userData: { divisions: updatedDivs } }));
-          }
-        }
-        dispatch(fetchUsers()); // Re-fetch to sync UI
+    
+    const payload = {
+      divisionName: editFormData.divisionName.trim(), 
+      divisionCode: editFormData.divisionCode.trim().toUpperCase(),
+      contactName: editFormData.contactName?.trim() || undefined,
+      contactEmail: editFormData.contactEmail?.trim().toLowerCase() || undefined,
+      contactNumber: editFormData.contactNumber?.trim() || undefined,
+      address: { 
+        line1: editFormData.line1?.trim() || undefined, 
+        line2: editFormData.line2?.trim() || undefined, 
+        city: editFormData.city?.trim() || undefined, 
+        state: editFormData.state?.trim() || undefined, 
+        zip: editFormData.zip?.trim() || undefined 
       }
+    };
 
+    const syncProcess = async () => {
+      await dispatch(updateDivision({ id, divisionData: payload })).unwrap();
+
+      const oldManagerIds = orderPortalStaff
+        .filter(u => u.divisions?.some(d => String(d._id || d) === String(id)))
+        .map(u => String(u._id));
+      
+      const newManagerIds = editFormData.managers;
+
+      const usersToRemove = oldManagerIds.filter(uid => !newManagerIds.includes(uid));
+      const usersToAdd = newManagerIds.filter(uid => !oldManagerIds.includes(uid));
+
+      const removePromises = usersToRemove.map(async (userId) => {
+        const user = orderPortalStaff.find(u => String(u._id) === userId);
+        if (user) {
+          const updatedDivs = (user.divisions || []).map(d => String(d._id || d)).filter(dId => dId !== String(id));
+          return dispatch(updateUser({ id: userId, userData: { divisions: updatedDivs } })).unwrap();
+        }
+      });
+
+      const addPromises = usersToAdd.map(async (userId) => {
+        const user = orderPortalStaff.find(u => String(u._id) === userId);
+        if (user) {
+          const currentDivs = (user.divisions || []).map(d => String(d._id || d));
+          const updatedDivs = [...new Set([...currentDivs, String(id)])];
+          return dispatch(updateUser({ id: userId, userData: { divisions: updatedDivs } })).unwrap();
+        }
+      });
+
+      await Promise.all([...removePromises, ...addPromises]);
+      dispatch(fetchUsers()); 
+    };
+
+    try {
+      // FIX: Trigger exactly once
+      const actionPromise = syncProcess();
+
+      toast.promise(actionPromise, {
+        loading: 'Saving modifications & syncing staff access...',
+        success: 'Division updated successfully.',
+        error: (err) => formatErrorMessage(err)
+      });
+
+      await actionPromise;
+      
+      // Close inline editing
       setEditingId(null);
     } catch (err) {
-      alert(`Failed to save changes: ${err}`);
+      // Caught silently
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm("Are you sure you want to permanently delete this division? Any associated items must be reassigned.")) {
-      try {
+    const isConfirmed = await confirm({
+      title: 'Decouple Division?',
+      message: 'Are you sure you want to permanently delete this division? Any associated items must be reassigned.',
+      confirmText: 'Delete Division',
+      cancelText: 'Cancel',
+      variant: 'danger'
+    });
+
+    if (isConfirmed) {
+      const syncProcess = async () => {
         await dispatch(deleteDivision(id)).unwrap();
-        dispatch(fetchUsers()); // Refresh users just in case it clears references
-      } catch (err) {
-        alert(`Failed to delete division: ${err}`);
-      }
+        
+        const usersToUpdate = orderPortalStaff.filter(u => u.divisions?.some(d => String(d._id || d) === String(id)));
+        
+        const updatePromises = usersToUpdate.map(async (user) => {
+          const updatedDivs = user.divisions.map(d => String(d._id || d)).filter(dId => dId !== String(id));
+          return dispatch(updateUser({ id: user._id, userData: { divisions: updatedDivs } })).unwrap();
+        });
+
+        await Promise.all(updatePromises);
+        dispatch(fetchUsers()); 
+      };
+
+      try {
+        // FIX: Trigger exactly once
+        const actionPromise = syncProcess();
+
+        toast.promise(actionPromise, {
+          loading: 'Decoupling division and cleaning databases...',
+          success: 'Division permanently removed from network.',
+          error: (err) => `Delete Failed: ${formatErrorMessage(err)}`
+        });
+
+        await actionPromise;
+      } catch (err) {}
     }
   };
+
+  const inputClass = "w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold transition-all";
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -171,181 +305,185 @@ export default function DivisionTab({ divisions = [], customerData }) {
         </button>
       </div>
 
-      {/* Add New Division Form Panel */}
       {showAddForm && (
-        <form onSubmit={handleAddDivision} className="bg-white/60 border border-slate-200/80 p-5 rounded-2xl grid grid-cols-1 md:grid-cols-3 gap-4 items-end shadow-sm">
-          <div>
-            <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Division Name</label>
-            <input 
-              type="text" 
-              placeholder="e.g. North American Supply"
-              value={newDivision.divisionName}
-              onChange={e => setNewDivision({...newDivision, divisionName: e.target.value})}
-              disabled={isSubmitting}
-              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold transition-all"
-              required
-            />
-          </div>
-          <div>
-            <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Internal Code</label>
-            <input 
-              type="text" 
-              placeholder="e.g. DIV-NAS"
-              value={newDivision.divisionCode}
-              onChange={e => setNewDivision({...newDivision, divisionCode: e.target.value})}
-              disabled={isSubmitting}
-              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono uppercase font-semibold outline-none focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold transition-all"
-              required
-            />
-          </div>
-          <div className="flex gap-2 items-end">
-            <div className="flex-1">
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Division Head / Manager</label>
-              <select 
-                value={newDivision.manager}
-                onChange={e => setNewDivision({...newDivision, manager: e.target.value})}
-                disabled={isSubmitting}
-                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold transition-all h-[34px] cursor-pointer"
-              >
-                <option value="">Unassigned</option>
-                {orderPortalStaff.map(member => (
-                  <option key={member._id} value={member._id}>{member.name}</option>
-                ))}
-              </select>
-            </div>
-            <button type="submit" disabled={isSubmitting} className="flex justify-center items-center w-16 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase rounded-xl h-[34px] tracking-wider shrink-0 transition-colors disabled:opacity-70">
-              {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : 'Save'}
-            </button>
-          </div>
-        </form>
+        <AddDivisionForm 
+          newDivision={newDivision} 
+          setNewDivision={setNewDivision} 
+          onSubmit={handleAddDivision} 
+          staffList={orderPortalStaff} 
+          isSubmitting={isSubmitting}
+          onCancel={() => setShowAddForm(false)}
+        />
       )}
 
-      {/* Grid List of Divisions */}
       {divisions.length === 0 && !showAddForm ? (
-        <div className="text-center py-10 bg-white/40 border border-slate-200 border-dashed rounded-2xl text-slate-400 font-bold text-sm">
+        <div className="text-center py-10 bg-white/40 border border-slate-200 border-dashed rounded-[2rem] text-slate-400 font-bold text-sm shadow-sm">
           No divisions registered for this customer yet.
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {divisions.map((div) => {
             const isEditing = editingId === div._id;
             
-            // Resolve Manager Name dynamically via User schema's divisions array
-            const assignedUser = orderPortalStaff.find(u => 
-              u.divisions?.some(d => (d._id || d) === div._id)
-            );
-
-            // Dynamically count categories associated with this division
-            const totalCategories = apiCategories.filter(cat => 
-              (cat.division?._id || cat.division) === div._id
-            ).length;
+            const assignedUsers = orderPortalStaff.filter(u => u.divisions?.some(d => String(d._id || d) === String(div._id)));
+            const totalCategories = apiCategories.filter(cat => String(cat.division?._id || cat.division) === String(div._id)).length;
+            const fullAddress = formatFullAddress(div.address);
 
             return (
-              <div 
-                key={div._id} 
-                className={`border rounded-2xl p-5 bg-white/50 backdrop-blur-sm transition-all shadow-sm flex flex-col justify-between ${div.status === 'Active' ? 'border-slate-200/80 hover:border-slate-300' : 'border-slate-200/40 opacity-60 hover:opacity-100'}`}
-              >
+              <div key={div._id} className={`border rounded-[2rem] p-6 bg-white/60 backdrop-blur-xl transition-all shadow-[0_8px_30px_rgba(0,0,0,0.04)] flex flex-col justify-between ${div.status === 'Active' ? 'border-slate-200/80 hover:border-slate-300/80' : 'border-slate-200/40 opacity-70 hover:opacity-100'}`}>
                 <div>
-                  {/* Header Row */}
                   {isEditing ? (
-                    <div className="space-y-3 mb-3">
-                      <div>
-                        <label className="text-[9px] font-black uppercase text-slate-400">Code</label>
-                        <input 
-                          type="text"
-                          value={editFormData.divisionCode}
-                          onChange={e => setEditFormData({...editFormData, divisionCode: e.target.value})}
-                          disabled={isSubmitting}
-                          className="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs font-mono font-bold uppercase outline-none focus:ring-1 focus:ring-brand-gold focus:border-brand-gold"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[9px] font-black uppercase text-slate-400">Division Name</label>
-                        <input 
-                          type="text"
-                          value={editFormData.divisionName}
-                          onChange={e => setEditFormData({...editFormData, divisionName: e.target.value})}
-                          disabled={isSubmitting}
-                          className="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs font-bold outline-none focus:ring-1 focus:ring-brand-gold focus:border-brand-gold"
-                        />
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex justify-between items-start gap-2 mb-2">
-                      <div>
-                        <span className="text-[9px] font-mono font-black text-slate-400 uppercase tracking-widest bg-slate-100 px-1.5 py-0.5 rounded-md border border-slate-200">
-                          {div.divisionCode || div.code || 'NO-CODE'}
-                        </span>
-                        <h4 className="font-black text-slate-900 text-sm mt-1.5 leading-tight">{div.divisionName}</h4>
-                      </div>
-                      <span className={`px-2 py-0.5 text-[9px] font-black rounded-full tracking-wide uppercase border ${div.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
-                        {div.status || 'Active'}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Content Stats breakdown summary lines */}
-                  <div className="space-y-2 pt-3 mt-3 border-t border-slate-100 text-xs text-slate-600">
-                    <div className="flex items-center gap-2 font-medium min-h-[28px]">
-                      <User size={13} className="text-slate-400 shrink-0" />
-                      <span className="w-full flex items-center gap-1.5">
-                        <span className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">Head:</span>
-                        {isEditing ? (
-                          <select
-                            value={editFormData.manager}
-                            onChange={e => setEditFormData({...editFormData, manager: e.target.value})}
-                            disabled={isSubmitting}
-                            className="px-2 py-1 border border-slate-300 rounded-md text-xs outline-none bg-white font-semibold flex-1 focus:border-brand-gold"
+                    <div className="space-y-4 mb-4">
+                      {/* Edit Core Info */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-b border-slate-100 pb-4">
+                        <div>
+                          <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Division Code</label>
+                          <input type="text" value={editFormData.divisionCode} onChange={e => setEditFormData({...editFormData, divisionCode: e.target.value})} disabled={isSubmitting} className={`${inputClass} font-mono uppercase`} />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Division Name</label>
+                          <input type="text" value={editFormData.divisionName} onChange={e => setEditFormData({...editFormData, divisionName: e.target.value})} disabled={isSubmitting} className={inputClass} />
+                        </div>
+                        
+                        <div className="sm:col-span-2">
+                          <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Authorized Staff</label>
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            {editFormData.managers.map(userId => {
+                              const staff = orderPortalStaff.find(s => String(s._id) === userId);
+                              if (!staff) return null;
+                              return (
+                                <span key={userId} className="bg-white border border-slate-200 text-slate-700 px-2.5 py-1 rounded-lg flex items-center gap-1.5 text-[10px] font-bold shadow-sm">
+                                  {staff.name}
+                                  <X size={12} className="cursor-pointer hover:text-red-500 transition-colors text-slate-400" onClick={() => handleRemoveEditManager(userId)} />
+                                </span>
+                              );
+                            })}
+                          </div>
+                          <select 
+                            value="" 
+                            onChange={e => handleAddEditManager(e.target.value)} 
+                            disabled={isSubmitting} 
+                            className={`${inputClass} cursor-pointer`}
                           >
-                            <option value="">Unassigned</option>
-                            {orderPortalStaff.map(member => (
+                            <option value="">+ Assign Staff Member...</option>
+                            {orderPortalStaff.filter(s => !editFormData.managers.includes(String(s._id))).map(member => (
                               <option key={member._id} value={member._id}>{member.name}</option>
                             ))}
                           </select>
-                        ) : (
-                          <strong className="text-slate-800 font-bold truncate">
-                            {assignedUser?.name || 'Unassigned'}
-                          </strong>
-                        )}
-                      </span>
+                        </div>
+                      </div>
+                      
+                      {/* Edit Contact & Address */}
+                      <div className="grid grid-cols-1 sm:grid-cols-6 gap-3">
+                        <div className="sm:col-span-2">
+                          <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Contact Name</label>
+                          <input type="text" value={editFormData.contactName} onChange={e => setEditFormData({...editFormData, contactName: e.target.value})} disabled={isSubmitting} className={inputClass} />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Contact Email</label>
+                          <input type="email" value={editFormData.contactEmail} onChange={e => setEditFormData({...editFormData, contactEmail: e.target.value})} disabled={isSubmitting} className={inputClass} />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Phone</label>
+                          <input type="text" value={editFormData.contactNumber} onChange={e => setEditFormData({...editFormData, contactNumber: e.target.value})} disabled={isSubmitting} className={inputClass} />
+                        </div>
+                        <div className="sm:col-span-3">
+                          <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Address Line 1</label>
+                          <input type="text" value={editFormData.line1} onChange={e => setEditFormData({...editFormData, line1: e.target.value})} disabled={isSubmitting} className={inputClass} />
+                        </div>
+                        <div className="sm:col-span-3">
+                          <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Address Line 2</label>
+                          <input type="text" value={editFormData.line2} onChange={e => setEditFormData({...editFormData, line2: e.target.value})} disabled={isSubmitting} className={inputClass} />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">City</label>
+                          <input type="text" value={editFormData.city} onChange={e => setEditFormData({...editFormData, city: e.target.value})} disabled={isSubmitting} className={inputClass} />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">State / Region</label>
+                          <input type="text" value={editFormData.state} onChange={e => setEditFormData({...editFormData, state: e.target.value})} disabled={isSubmitting} className={inputClass} />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Zip Code</label>
+                          <input type="text" value={editFormData.zip} onChange={e => setEditFormData({...editFormData, zip: e.target.value})} disabled={isSubmitting} className={inputClass} />
+                        </div>
+                      </div>
                     </div>
-                    
-                    <div className="flex items-center gap-2 font-medium">
-                      <Tag size={13} className="text-slate-400" />
-                      <span className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">Total Categories:</span>
-                      <strong className="text-slate-900 font-black bg-slate-100 px-1.5 py-0.5 rounded-md text-[11px] border border-slate-200">
-                        {totalCategories}
-                      </strong>
-                    </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between items-start gap-4 mb-4">
+                        <div>
+                          <span className="text-[10px] font-mono font-black text-slate-600 uppercase tracking-widest bg-white border border-slate-200 px-2 py-0.5 rounded-md shadow-sm">
+                            {div.divisionCode || div.code || 'NO-CODE'}
+                          </span>
+                          <h4 className="font-black text-slate-900 text-lg mt-2 leading-tight tracking-tight">{div.divisionName}</h4>
+                        </div>
+                        <span className={`px-2.5 py-1 text-[9px] font-black rounded-lg tracking-widest uppercase border shadow-sm shrink-0 ${div.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                          {div.status || 'Active'}
+                        </span>
+                      </div>
+
+                      {/* Display Contact Info Block */}
+                      {(div.contactName || div.contactEmail || div.contactNumber || fullAddress) && (
+                        <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-sm mb-4 space-y-2">
+                          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-1">Directory Profile</span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 gap-x-4 text-[11px] font-bold text-slate-600">
+                            {div.contactName && <div className="flex items-center gap-1.5 truncate"><UserCircle size={13} className="text-brand-gold shrink-0"/> <span className="truncate">{div.contactName}</span></div>}
+                            {div.contactEmail && <div className="flex items-center gap-1.5 truncate"><Mail size={13} className="text-slate-400 shrink-0"/> <a href={`mailto:${div.contactEmail}`} className="truncate hover:text-brand-gold transition-colors">{div.contactEmail}</a></div>}
+                            {div.contactNumber && <div className="flex items-center gap-1.5 truncate"><Phone size={13} className="text-slate-400 shrink-0"/> <span className="truncate">{div.contactNumber}</span></div>}
+                            {fullAddress && <div className="flex items-start gap-1.5 sm:col-span-2"><MapPin size={13} className="text-slate-400 shrink-0 mt-0.5"/> <span className="leading-tight">{fullAddress}</span></div>}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="space-y-3 pt-3 border-t border-slate-200/60 text-xs text-slate-600">
+                        
+                        <div className="flex items-start gap-2 font-medium">
+                          <Users size={14} className="text-slate-400 shrink-0 mt-0.5" />
+                          <div className="w-full flex flex-col gap-1.5">
+                            <span className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">Authorized Staff:</span>
+                            {assignedUsers.length > 0 ? (
+                              <div className="flex flex-wrap gap-1.5">
+                                {assignedUsers.map(u => (
+                                  <span key={u._id} className="text-slate-800 text-[10px] font-bold bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
+                                    {u.name}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 text-[10px] font-bold italic">No staff assigned</span>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-2 font-medium">
+                          <Tag size={14} className="text-slate-400 shrink-0" />
+                          <span className="flex items-center gap-2">
+                            <span className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">Total Categories:</span>
+                            <strong className="text-slate-900 font-black bg-white px-2 py-0.5 rounded-md text-[11px] border border-slate-200 shadow-sm">
+                              {totalCategories}
+                            </strong>
+                          </span>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Actions Footer Section */}
-                <div className="flex justify-between items-center pt-4 mt-4 border-t border-slate-100/80">
+                <div className="flex justify-between items-center pt-4 mt-4 border-t border-slate-200/60">
                   {isEditing ? (
                     <div className="flex items-center gap-2 w-full justify-end">
-                      <button 
-                        onClick={() => setEditingId(null)}
-                        disabled={isSubmitting}
-                        className="flex items-center gap-1 text-[10px] font-black text-slate-500 hover:text-slate-800 bg-slate-100 px-3 py-1.5 rounded-lg uppercase tracking-wider transition-colors disabled:opacity-50"
-                      >
+                      <button type="button" onClick={() => setEditingId(null)} disabled={isSubmitting} className="flex items-center gap-1 text-[10px] font-black text-slate-500 hover:text-slate-800 bg-white border border-slate-200 shadow-sm px-3 py-1.5 rounded-lg uppercase tracking-wider transition-colors disabled:opacity-50">
                         <X size={12} /> Cancel
                       </button>
-                      <button 
-                        onClick={() => handleSaveEdit(div._id)}
-                        disabled={isSubmitting}
-                        className="flex items-center gap-1 text-[10px] font-black text-white bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 rounded-lg uppercase tracking-wider transition-colors shadow-sm disabled:opacity-70"
-                      >
-                        {isSubmitting ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} 
-                        Save
+                      <button type="button" onClick={() => handleSaveEdit(div._id)} disabled={isSubmitting} className="flex items-center gap-1 text-[10px] font-black text-white bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 rounded-lg uppercase tracking-wider transition-colors shadow-md disabled:opacity-70">
+                        {isSubmitting ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Save Updates
                       </button>
                     </div>
                   ) : (
                     <>
-                      <button 
-                        onClick={() => handleToggleStatus(div)}
-                        className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${div.status === 'Active' ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-emerald-600'}`}
-                      >
+                      <button onClick={() => handleToggleStatus(div)} className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${div.status === 'Active' ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-emerald-600'}`}>
                         {div.status === 'Active' ? (
                           <><ToggleRight size={18} className="text-emerald-500" /> Deactivate</>
                         ) : (
@@ -354,19 +492,11 @@ export default function DivisionTab({ divisions = [], customerData }) {
                       </button>
 
                       <div className="flex items-center gap-1">
-                        <button 
-                          onClick={() => startEditing(div)}
-                          className="p-1.5 text-slate-400 hover:text-brand-gold hover:bg-brand-gold/10 rounded-lg transition-all"
-                          title="Edit Division Architecture"
-                        >
-                          <Edit2 size={13} />
+                        <button onClick={() => startEditing(div)} className="p-1.5 text-slate-400 hover:text-brand-gold hover:bg-brand-gold/10 rounded-lg transition-all" title="Edit Division Architecture">
+                          <Edit2 size={14} />
                         </button>
-                        <button 
-                          onClick={() => handleDelete(div._id)}
-                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                          title="Remove Division"
-                        >
-                          <Trash2 size={13} />
+                        <button onClick={() => handleDelete(div._id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all" title="Remove Division">
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     </>

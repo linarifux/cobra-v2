@@ -7,7 +7,6 @@ export const fetchUsers = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const response = await api.get('/users');
-      
       return response.data.data.users || response.data.data; 
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch users');
@@ -21,6 +20,7 @@ export const createUser = createAsyncThunk(
   async (userData, { rejectWithValue }) => {
     try {
       const payload = { ...userData };
+      
       // Strip out customer assignment if the user is an internal admin
       if (payload.portal === 'admin') delete payload.customer;
 
@@ -35,9 +35,11 @@ export const createUser = createAsyncThunk(
 // 3. Update Existing User
 export const updateUser = createAsyncThunk(
   'users/updateUser',
-  async ({ id, ...userData }, { rejectWithValue }) => {
+  async ({ id, userData, ...rest }, { rejectWithValue }) => {
     try {
-      const payload = { ...userData };
+      // FIX: Safely handle both { id, userData: {...} } AND { id, name: '...', email: '...' } dispatch patterns
+      const payload = userData ? { ...userData } : { ...rest };
+      
       if (payload.portal === 'admin') delete payload.customer;
       
       // If password is empty, don't send it to backend so we don't accidentally overwrite it

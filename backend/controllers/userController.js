@@ -5,7 +5,7 @@ import AppError from '../utils/AppError.js';
 // @desc    Create a new user (Order Portal users or Admin users)
 // @route   POST /api/v1/users
 export const createUser = catchAsync(async (req, res, next) => {
-  const { name, email, password, portal, role, customer } = req.body;
+  const { name, email, password, portal, role, customer, divisions } = req.body;
 
   // Security Check: Only super_admins can create other Admin portal users
   if (portal === 'admin' && req.user.role !== 'super_admin') {
@@ -23,10 +23,16 @@ export const createUser = catchAsync(async (req, res, next) => {
     password,
     portal,
     role,
-    customer: portal === 'order' ? customer : undefined
+    customer: portal === 'order' ? customer : undefined,
+    divisions: portal === 'order' ? (divisions || []) : []
   });
 
+  // Strip password from memory before returning
   newUser.password = undefined;
+
+  // Populate relational arrays so the frontend has immediate access to names/codes
+  await newUser.populate('customer', 'customerName');
+  await newUser.populate('divisions', 'divisionName divisionCode status');
 
   res.status(201).json({
     status: 'success',
@@ -40,7 +46,9 @@ export const getAllUsers = catchAsync(async (req, res, next) => {
   // Allows querying like /api/v1/users?portal=order&customer=123
   const filter = { ...req.query }; 
   
-  const users = await User.find(filter).populate('customer', 'customerName');
+  const users = await User.find(filter)
+    .populate('customer', 'customerName')
+    .populate('divisions', 'divisionName divisionCode status'); // <--- CRITICAL FOR FRONTEND
 
   res.status(200).json({
     status: 'success',
@@ -49,13 +57,14 @@ export const getAllUsers = catchAsync(async (req, res, next) => {
   });
 });
 
-// @desc    Update a user (Role, Name, Active Status)
+// @desc    Update a user (Role, Name, Active Status, Divisions)
 // @route   PUT /api/v1/users/:id
 export const updateUser = catchAsync(async (req, res, next) => {
-  // Prevent password updates through this route
-  // if (req.body.password) {
-  //   return next(new AppError('This route is not for password updates.', 400));
-  // }
+  
+  // Security Check: Prevent accidental password overwrites via standard PUT requests
+  if (req.body.password) {
+    return next(new AppError('This route is not for password updates. Please use the secure password reset flow.', 400));
+  }
 
   const userToUpdate = await User.findById(req.params.id);
   if (!userToUpdate) return next(new AppError('No user found', 404));
@@ -68,7 +77,9 @@ export const updateUser = catchAsync(async (req, res, next) => {
   const updatedUser = await User.findByIdAndUpdate(req.params.id, req.body, {
     new: true,
     runValidators: true
-  }).populate('customer', 'customerName');
+  })
+  .populate('customer', 'customerName')
+  .populate('divisions', 'divisionName divisionCode status'); // <--- CRITICAL FOR FRONTEND
 
   res.status(200).json({
     status: 'success',
@@ -79,7 +90,7 @@ export const updateUser = catchAsync(async (req, res, next) => {
 // @desc    Delete a user completely
 // @route   DELETE /api/v1/users/:id
 export const deleteUser = catchAsync(async (req, res, next) => {
-  // This route is strictly protected by middleware to ONLY allow super_admin
+  // This route should ideally be protected by middleware to ONLY allow super_admin
   const user = await User.findByIdAndDelete(req.params.id);
 
   if (!user) {
