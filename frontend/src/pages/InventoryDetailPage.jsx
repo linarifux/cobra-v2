@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { 
   ArrowLeft, Package, Tag, User, MapPin, 
   DollarSign, TrendingUp, History, ShieldAlert, Layers, ExternalLink, Loader2, 
-  Info, Trash2
+  Info, Trash2, Box // Added Box icon for Type Piece
 } from 'lucide-react';
 
 // Redux Actions
@@ -145,7 +145,7 @@ export default function InventoryDetail() {
           <ArrowLeft size={16} /> Registry
         </button>
         
-        {/* NEW: Action Buttons (Delete) */}
+        {/* Action Buttons (Delete) */}
         <button 
           onClick={handleDelete}
           className="flex items-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 border border-red-100 hover:border-red-200 rounded-xl text-[11px] font-black text-red-600 uppercase tracking-widest shadow-sm transition-all"
@@ -193,6 +193,16 @@ export default function InventoryDetail() {
                 <span className="text-[11px] font-mono font-black text-slate-900 uppercase tracking-widest bg-brand-gold px-3 py-1 rounded-lg shadow-sm">
                   SKU: {item.productCode || item.sku || 'N/A'}
                 </span>
+                
+                {/* PROMINENT TYPE PIECE BADGE */}
+                {console.log(item)
+                }
+                {item.typePiece && (
+                  <span className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-black rounded-lg tracking-widest uppercase border border-slate-700 bg-slate-800/80 text-slate-300 shadow-sm backdrop-blur-sm">
+                    <Box size={12} className="text-brand-gold" /> {item.typePiece}
+                  </span>
+                )}
+
                 <span className={`px-3 py-1 text-[10px] font-black rounded-lg tracking-widest uppercase border backdrop-blur-sm ${isLowStock ? 'bg-red-500/10 text-red-400 border-red-500/20 animate-pulse' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
                   {item.status !== 'Active' ? item.status : (isLowStock ? 'Low Stock Warning' : 'Active Status')}
                 </span>
@@ -307,6 +317,7 @@ export default function InventoryDetail() {
                       <Tag size={12} className="text-slate-400" /> {item.category2.categoryName}
                     </span>
                   )}
+                  {/* Kept here as well for thoroughness in the hierarchy view */}
                   {item.typePiece && (
                     <span className="inline-flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase px-3 py-1.5 rounded-lg shadow-sm bg-brand-gold/10 text-brand-gold border border-brand-gold/20">
                       <Package size={12} /> {item.typePiece}
@@ -339,14 +350,14 @@ export default function InventoryDetail() {
             </div>
           </div>
 
-          {/* Card C: Logistics Deployment Vector (NEW ARRAY LOGIC) */}
-          <div className="bg-white/60 backdrop-blur-2xl border border-white/80 rounded-4xl p-6 shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
+          {/* Card C: Logistics Deployment Vector */}
+          <div className="bg-white/60 backdrop-blur-2xl border border-white/80 rounded-[2rem] p-6 shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
             <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 pb-4 border-b border-slate-200/60 flex items-center gap-2 mb-5">
               <MapPin size={14} className="text-brand-gold" /> Deployment Vector
             </h3>
             
             <div>
-              <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest mb-2">Locations</span>
+              <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest mb-2">Active Coordinates</span>
               
               {/* Maps over multiple locations, with legacy fallback */}
               {item.locations?.length > 0 ? (
