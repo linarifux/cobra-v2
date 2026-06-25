@@ -178,6 +178,12 @@ export default function InventoryPage() {
       const matchesStock = onlyAvailable ? item.available > 0 : true;
 
       return matchesSearch && matchesCustomer && matchesDivision && matchesCategory && matchesStock;
+    })
+    // FIX: Added alphanumeric sorting by Item Code
+    .sort((a, b) => {
+      const codeA = a.code || '';
+      const codeB = b.code || '';
+      return codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
     });
   }, [search, customerFilter, divisionFilter, categoryFilter, onlyAvailable, mappedInventory]);
 
