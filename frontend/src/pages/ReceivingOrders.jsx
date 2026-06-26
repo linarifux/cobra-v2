@@ -22,12 +22,16 @@ export default function ReceivingOrders() {
   const dispatch = useDispatch();
   const confirm = useConfirm();
 
-  // --- Redux State ---
+  // --- Redux State Extraction ---
   const { items: receivingData = [], status, error: recError } = useSelector(state => state.receiving || {});
-  const { status: custStatus } = useSelector(state => state.customers || {});
-  const { status: invStatus } = useSelector(state => state.inventory || {});
+  
+  // Extracting both items and status for our relational dropdowns
+  const { items: customers = [], status: custStatus } = useSelector(state => state.customers || {});
+  const { items: inventory = [], status: invStatus } = useSelector(state => state.inventory || {});
+  const { items: divisions = [], status: divStatus } = useSelector(state => state.divisions || {});
+  
+  // Status only for loaders
   const { status: locStatus } = useSelector(state => state.locations || {});
-  const { status: divStatus } = useSelector(state => state.divisions || {});
   const { status: catStatus } = useSelector(state => state.categories || {});
 
   const loadAllData = () => {
@@ -55,7 +59,46 @@ export default function ReceivingOrders() {
   const [searchTerm, setSearchTerm] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [customerFilter, setCustomerFilter] = useState('All');
+  const [divisionFilter, setDivisionFilter] = useState('All');
+  const [itemFilter, setItemFilter] = useState('All');
 
+  // Auto-reset child filters if parent filter changes
+  useEffect(() => {
+    setDivisionFilter('All');
+    setItemFilter('All');
+  }, [customerFilter]);
+
+  useEffect(() => {
+    setItemFilter('All');
+  }, [divisionFilter]);
+
+  // --- Cascading Dropdown Logic ---
+  const availableDivisions = useMemo(() => {
+    if (customerFilter === 'All') return divisions;
+    return divisions.filter(div => (div.customer?._id || div.customer) === customerFilter);
+  }, [divisions, customerFilter]);
+
+  const availableInventory = useMemo(() => {
+    let filtered = inventory;
+    
+    if (customerFilter !== 'All') {
+      filtered = filtered.filter(inv => (inv.customer?._id || inv.customer) === customerFilter);
+    }
+    if (divisionFilter !== 'All') {
+      filtered = filtered.filter(inv => (inv.division?._id || inv.division) === divisionFilter);
+    }
+    
+    // FIX: Spread the filtered array into a new array [...filtered] before applying .sort() 
+    // This prevents the "read-only" Redux strict-mode error!
+    return [...filtered].sort((a, b) => {
+      const nameA = a.productCode || a.sku || a.itemName || '';
+      const nameB = b.productCode || b.sku || b.itemName || '';
+      return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }, [inventory, customerFilter, divisionFilter]);
+
+  // --- Table Data Filtering ---
   const filteredData = useMemo(() => {
     if (!Array.isArray(receivingData)) return [];
     return receivingData.filter(row => {
@@ -69,11 +112,21 @@ export default function ReceivingOrders() {
       const rowDate = new Date(row.dateReceived).toISOString().split('T')[0];
       const matchesFrom = !fromDate || rowDate >= fromDate;
       const matchesTo = !toDate || rowDate <= toDate;
+      
+      // Relational Matches
+      const rowCustId = row.customer?._id || row.customer;
+      const rowDivId = row?.inventoryItem?.division?._id;
+      const rowInvId = row.inventoryItem?._id || row.inventoryItem;
 
-      return matchesSearch && matchesFrom && matchesTo;
+      const matchesCustomer = customerFilter === 'All' || rowCustId === customerFilter;
+      const matchesDivision = divisionFilter === 'All' || rowDivId === divisionFilter;
+      const matchesItem = itemFilter === 'All' || rowInvId === itemFilter;
+
+      return matchesSearch && matchesFrom && matchesTo && matchesCustomer && matchesDivision && matchesItem;
     });
-  }, [receivingData, searchTerm, fromDate, toDate]);
+  }, [receivingData, searchTerm, fromDate, toDate, customerFilter, divisionFilter, itemFilter]);
 
+  // --- Modal Handlers ---
   const openNewModal = () => { setSelectedRecord(null); setIsModalOpen(true); };
   const openEditModal = (row) => { setSelectedRecord(row); setIsModalOpen(true); };
   
@@ -125,7 +178,15 @@ export default function ReceivingOrders() {
         searchTerm={searchTerm} setSearchTerm={setSearchTerm} 
         fromDate={fromDate} setFromDate={setFromDate} 
         toDate={toDate} setToDate={setToDate} 
-        clearFilters={() => { setSearchTerm(''); setFromDate(''); setToDate(''); }} 
+        
+        customerFilter={customerFilter} setCustomerFilter={setCustomerFilter} customersList={customers}
+        divisionFilter={divisionFilter} setDivisionFilter={setDivisionFilter} divisionsList={availableDivisions}
+        itemFilter={itemFilter} setItemFilter={setItemFilter} inventoryList={availableInventory}
+        
+        clearFilters={() => { 
+          setSearchTerm(''); setFromDate(''); setToDate(''); 
+          setCustomerFilter('All'); setDivisionFilter('All'); setItemFilter('All');
+        }} 
       />
 
       <ReceivingTable filteredData={filteredData} openEditModal={openEditModal} handleDelete={handleDelete} />

@@ -104,7 +104,19 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
 
   const availableInventory = useMemo(() => {
     if (!formData.customer || !formData.division) return [];
-    return inventory.filter(inv => (inv.customer?._id || inv.customer) === formData.customer && (inv.division?._id || inv.division) === formData.division);
+    
+    // Filter by customer and division
+    const filtered = inventory.filter(inv => 
+      (inv.customer?._id || inv.customer) === formData.customer && 
+      (inv.division?._id || inv.division) === formData.division
+    );
+    
+    // SORT ALPHANUMERICALLY BY ITEM CODE / NAME
+    return filtered.sort((a, b) => {
+      const nameA = a.productCode || a.sku || a.itemName || a.description || '';
+      const nameB = b.productCode || b.sku || b.itemName || b.description || '';
+      return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+    });
   }, [inventory, formData.customer, formData.division]);
 
   const selectedInvDetails = useMemo(() => {

@@ -13,6 +13,7 @@ export default function ReceivingTable({ filteredData, openEditModal, handleDele
               <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">RCV ID</th>
               <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Vendor</th>
               <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer</th>
+              <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Item Code</th>
               <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Inventory Item</th>
               <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Locations</th>
               <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Qty</th>
@@ -36,6 +37,7 @@ export default function ReceivingTable({ filteredData, openEditModal, handleDele
                     {row.carrier && <div className="text-[10px] text-slate-400 uppercase mt-0.5">VIA: {row.carrier}</div>}
                   </td>
                   <td className="p-5 text-sm font-semibold text-slate-600">{row.customer?.customerName || '—'}</td>
+                  <td className="p-5 text-[12px] text-slate-600">{row?.inventoryItem?.sku || '—'}</td>
                   <td className="p-5 text-sm font-bold text-slate-900">
                     <div className="flex flex-col">
                       <span>{row.inventoryItem?.itemName || '—'}</span>
