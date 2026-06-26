@@ -15,17 +15,17 @@ const router = express.Router({ mergeParams: true });
 router.use(protect);
 
 router.route('/')
-  .get(restrictTo('super_admin','admin', 'staff', 'manager'), getAllInventory)
-  .post(restrictTo('super_admin','admin', 'staff', 'manager'), createInventory);
+  .get(restrictTo('super_admin','admin', 'staff', 'manager','standard', 'super_user'), getAllInventory)
+  .post(restrictTo('super_admin','admin', 'staff', 'manager','standard', 'super_user'), createInventory);
   
 
 router.route('/:id')
-  .get(restrictTo('super_admin','admin', 'staff', 'manager'), getInventoryById)
+  .get(restrictTo('super_admin','admin', 'staff', 'manager','standard', 'super_user'), getInventoryById)
   // Warehouse staff can adjust stock; admins/staff can edit full details
-  .put(restrictTo('super_admin','admin', 'staff', 'manager'), updateInventory)
+  .put(restrictTo('super_admin','admin', 'staff', 'manager','standard', 'super_user'), updateInventory)
   // .put(updateInventory)
   // Only admins and staff can permanently delete inventory records
-  .delete(restrictTo('super_admin','admin', 'staff', 'manager'), deleteInventory);
+  .delete(restrictTo('super_admin','admin', 'staff', 'manager','standard', 'super_user'), deleteInventory);
   // .delete(deleteInventory);
 
 export default router;
