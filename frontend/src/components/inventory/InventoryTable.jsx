@@ -13,7 +13,7 @@ export default function InventoryTable({ filteredInventory, apiInventory, onEdit
             <tr>
               <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Item Code</th>
               <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Description</th>
-              <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Customer</th>
+              <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Customer/Division</th>
               <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Price</th>
               <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500">Stock</th>
               <th className="p-4 text-[10px] font-black uppercase tracking-wider text-slate-500 text-right">Actions</th>
@@ -59,6 +59,9 @@ export default function InventoryTable({ filteredInventory, apiInventory, onEdit
                       <div className="text-slate-700 flex items-center gap-1.5 text-[12px] font-bold">
                         <User size={12} className="text-brand-gold shrink-0" />
                         <span className="truncate max-w-[150px]">{item.customer}</span>
+                        -
+                        <br />
+                        <span>{item.division}</span>
                       </div>
                     </td>
 
