@@ -62,9 +62,9 @@ export const getAllUsers = catchAsync(async (req, res, next) => {
 export const updateUser = catchAsync(async (req, res, next) => {
   
   // Security Check: Prevent accidental password overwrites via standard PUT requests
-  if (req.body.password) {
-    return next(new AppError('This route is not for password updates. Please use the secure password reset flow.', 400));
-  }
+  // if (req.body.password) {
+  //   return next(new AppError('This route is not for password updates. Please use the secure password reset flow.', 400));
+  // }
 
   const userToUpdate = await User.findById(req.params.id);
   if (!userToUpdate) return next(new AppError('No user found', 404));

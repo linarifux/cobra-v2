@@ -43,7 +43,7 @@ const userSchema = new mongoose.Schema({
     ref: 'Division',
     validate: [
       function(val) {
-        // FIX: Handle Mongoose update context context vs document context
+        // Handle Mongoose update context vs document context
         const portalValue = this.get ? this.get('portal') : this._update?.portal || this.portal;
         
         // Temporarily bypassed for flexible creation workflows, but strict logic left intact:
@@ -76,13 +76,29 @@ userSchema.pre('validate', function() {
   }
 });
 
-// Hash password before saving
+// 1. Hash password before saving (Triggered on User.create or user.save())
 userSchema.pre('save', async function () {
   // Only run this function if password was actually modified
-  if (!this.isModified('password')) return;
+  if (!this.isModified('password')) return ;
   
   // Hash the password with cost of 12
   this.password = await bcrypt.hash(this.password, 12);
+  
+});
+
+// 2. NEW: Hash password on updates (Triggered on findByIdAndUpdate)
+userSchema.pre('findOneAndUpdate', async function () {
+  const update = this.getUpdate();
+  
+  // Check if the password is being updated directly
+  if (update.password) {
+    update.password = await bcrypt.hash(update.password, 12);
+  } 
+  // Check if the password is being updated inside a $set operator (Mongoose sometimes wraps it)
+  else if (update.$set && update.$set.password) {
+    update.$set.password = await bcrypt.hash(update.$set.password, 12);
+  }
+  
 });
 
 // Instance method to verify password during login

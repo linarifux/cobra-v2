@@ -26,7 +26,7 @@ router.use('/:customerId/divisions', divisionRouter);
 router.use('/:customerId/orders', orderRouter);
 router.use('/:customerId/inventory', inventoryRouter);
 router.use('/:customerId/addresses', addressRouter);
-router.use('/:customerId/users', userRouter); // <-- NEW: Connect nested users route
+router.use('/:customerId/users', userRouter); 
 
 // ---------------------------------------------------------
 // CUSTOMER-SPECIFIC CUSTOM ENDPOINTS

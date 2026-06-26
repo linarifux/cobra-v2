@@ -5,6 +5,8 @@ import AppError from '../utils/AppError.js';
 
 // 1. Protect routes (Verify token and inject User into request)
 export const protect = catchAsync(async (req, res, next) => {
+  // console.log(req.headers)
+  
   let token;
 
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
