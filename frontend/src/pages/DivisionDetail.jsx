@@ -53,6 +53,8 @@ export default function DivisionDetail() {
   const { items: users = [], status: userStatus } = useSelector(state => state.users || {});
   const { items: inventory = [], status: invStatus } = useSelector(state => state.inventory || {});
   const { items: customers = [], status: custStatus } = useSelector(state => state.customers || {});
+    const { currentCustomer: customer, status, error } = useSelector((state) => state.customers || {});
+  
   
   // Extract the arrays for the child tabs
   const { items: allTypePieces = [], status: tpStatus, error: tpError } = useSelector(state => state.typePieces || {});
@@ -98,23 +100,10 @@ export default function DivisionDetail() {
     return allRates.filter(r => String(r.division?._id || r.division) === String(division._id));
   }, [allRates, division]);
 
-  // FIX: Intelligent Type Piece Filtering
-  // Inherit "Global" customer assets AND include Division-specific assets
-  const divisionTypePieces = useMemo(() => {
+  const customerTypePieces = useMemo(() => {
     if (!division || !division.customer) return [];
-    
-    const divCustomerId = String(division.customer?._id || division.customer);
-    const currentDivId = String(division._id);
-
-    return allTypePieces.filter(tp => {
-      const belongsToCustomer = String(tp.customer?._id || tp.customer) === divCustomerId;
-      const tpDivId = tp.division?._id || tp.division;
-      
-      // Keep it if it has no division (Global) OR if it belongs to THIS division
-      const isGlobalOrLocal = !tpDivId || String(tpDivId) === currentDivId;
-      
-      return belongsToCustomer && isGlobalOrLocal;
-    });
+    const divCustomerId = division.customer?._id || division.customer;
+    return allTypePieces.filter(tp => String(tp.customer?._id || tp.customer) === String(divCustomerId));
   }, [allTypePieces, division]);
 
   const divisionReceivingLogs = useMemo(() => {
@@ -262,8 +251,8 @@ export default function DivisionDetail() {
       <div className="h-full flex flex-col justify-center items-center min-h-[60vh] gap-4">
         <Building2 className="text-slate-300" size={48} />
         <h2 className="text-xl font-black text-slate-700 uppercase">Division Not Found</h2>
-        <button onClick={() => navigate('/divisions')} className="px-6 py-2 bg-slate-900 text-white rounded-xl text-xs font-black uppercase mt-4">
-          Return to Directory
+        <button onClick={() => navigate(-1)} className="px-6 py-2 bg-slate-900 text-white rounded-xl text-xs font-black uppercase mt-4">
+          Go Back
         </button>
       </div>
     );
@@ -280,10 +269,10 @@ export default function DivisionDetail() {
       {/* 1. Header Navigation */}
       <div className="flex items-center justify-between bg-white/30 p-3 rounded-2xl border border-white/50 backdrop-blur-xl transition-all duration-300 gap-4 shadow-sm">
         <button 
-          onClick={() => navigate('/divisions')}
+          onClick={() => navigate(-1)}
           className="flex items-center gap-2 px-3 py-1.5 text-slate-500 hover:text-slate-900 transition-colors duration-200 shrink-0 rounded-xl hover:bg-white/50"
         >
-          <ArrowLeft size={16} /> <span className="text-[11px] font-black uppercase tracking-widest hidden sm:inline">Back to Directory</span>
+          <ArrowLeft size={16} /> <span className="text-[11px] font-black uppercase tracking-widest hidden sm:inline">Back</span>
         </button>
         
         <button 
@@ -427,17 +416,18 @@ export default function DivisionDetail() {
                 <ActiveTabComponent 
                   divisionData={division}
                   division={division}
-                  customer={division.customer}
+                  customer={customer}
                   inventory={divisionInventory}
                   staff={assignedStaff}
                   rates={divisionRates}
-                  typePieces={divisionTypePieces} // <--- Passed Correctly Here
+                  typePieces={customerTypePieces}
                   receivingLogs={divisionReceivingLogs}
                   totalAssets={totalAssets}
                   totalValuation={totalValuation}
                   operationalScore={operationalScore}
                   setRates={() => console.warn('Dispatch actions via Redux')}
                   setDivisions={() => console.warn('Dispatch actions via Redux')}
+                  customerData={division.customer}
                 />
               </motion.div>
             </AnimatePresence>

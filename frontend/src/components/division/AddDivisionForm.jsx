@@ -165,7 +165,7 @@ export default function AddDivisionForm({
           disabled={isSubmitting} 
           className="flex justify-center items-center w-full bg-slate-900 hover:bg-slate-800 text-brand-gold font-black text-xs uppercase rounded-xl py-2.5 tracking-wider transition-colors shadow-md disabled:opacity-70 h-[36px]"
         >
-          {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : 'Deploy Division'}
+          {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : 'Create'}
         </button>
       </div>
     </form>

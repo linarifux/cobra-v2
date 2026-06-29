@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom'; // NEW: Imported useNavigate
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Layers, Plus, Search, Filter, Edit2, Trash2, 
-  ToggleLeft, ToggleRight, Loader2, AlertTriangle, RefreshCw, MapPin, User 
+  ToggleLeft, ToggleRight, Loader2, AlertTriangle, RefreshCw, MapPin, User, ArrowLeft 
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -20,7 +20,7 @@ import AddDivisionForm from '../components/division/AddDivisionForm';
 export default function DivisionsPage() {
   const dispatch = useDispatch();
   const confirm = useConfirm();
-  const navigate = useNavigate(); // NEW: Initialized navigate
+  const navigate = useNavigate();
 
   // --- Redux State ---
   const { items: divisions = [], status: divStatus, error: divError } = useSelector(state => state.divisions || {});
@@ -230,7 +230,17 @@ export default function DivisionsPage() {
   return (
     <div className="space-y-6 animate-slide-in-right relative max-w-[1500px] mx-auto p-6 pb-20">
       
-      {/* 1. Header */}
+      {/* --- Top Navigation Header --- */}
+      <div className="flex items-center justify-between pb-1 ">
+        <button 
+          onClick={() => navigate(-1)}
+          className="flex items-center gap-2 px-3 py-1.5 text-slate-500 hover:text-slate-900 transition-colors duration-200 shrink-0 rounded-xl hover:bg-slate-100"
+        >
+          <ArrowLeft size={16} /> <span className="text-[11px] font-black uppercase tracking-widest">Back</span>
+        </button>
+      </div>
+
+      {/* 1. Main Title Block */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-900 rounded-[2rem] p-6 md:p-8 shadow-2xl border border-slate-800/60 overflow-hidden relative">
         <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-brand-gold/10 to-transparent pointer-events-none" />
         <div className="relative z-10">
@@ -240,7 +250,7 @@ export default function DivisionsPage() {
           <p className="text-slate-400 font-medium text-sm mt-1">Manage corporate boundaries, branch logistics, and segment access.</p>
         </div>
         <button onClick={openNewModal} className="relative z-10 flex items-center justify-center gap-2 px-6 py-3.5 bg-brand-gold hover:bg-brand-gold/90 text-slate-900 rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-lg active:scale-95 shrink-0">
-          <Plus size={16} /> Deploy Division
+          <Plus size={16} /> Add Division
         </button>
       </div>
 
@@ -351,7 +361,7 @@ export default function DivisionsPage() {
                     </td>
                     
                     <td className="p-5 text-right">
-                      {/* NEW: e.stopPropagation() prevents the row click from firing when interacting with these buttons */}
+                      {/* e.stopPropagation() prevents the row click from firing when interacting with these buttons */}
                       <div className="flex items-center justify-end gap-2">
                         <button onClick={(e) => { e.stopPropagation(); handleToggleStatus(div); }} className={`p-2 rounded-xl transition-all border ${div.status === 'Active' ? 'text-slate-500 bg-white border-slate-200 hover:text-slate-900 hover:border-slate-300 shadow-sm' : 'text-slate-400 bg-slate-50 border-slate-200 hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50'}`} title={div.status === 'Active' ? "Deactivate" : "Activate"}>
                           {div.status === 'Active' ? <ToggleRight size={16} className="text-emerald-500" /> : <ToggleLeft size={16} />}

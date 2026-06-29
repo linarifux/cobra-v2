@@ -215,7 +215,7 @@ export default function CustomersPage() {
                     return (
                       <tr 
                         key={customer._id} 
-                        onClick={() => navigate(`/customers/${customer._id}`)} 
+                        onClick={() => navigate(`/customers/${customer._id}/divisions`)} 
                         className="hover:bg-white/60 transition-colors cursor-pointer group"
                       >
                         <td className="p-4">

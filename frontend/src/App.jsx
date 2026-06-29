@@ -96,11 +96,11 @@ export default function App() {
               <Route path="/orders" element={<OrdersPage />} />
               <Route path="/orders/:id" element={<OrderDetailsPage />} />
               <Route path="/customers" element={<CustomersPage />} />
-              <Route path="/customers/:id" element={<CustomerDetailsPage />} />
+              <Route path="/customers/:id/divisions" element={<DivisionsPage />} />
               <Route path="/customers/:id/edit" element={<EditCustomerDetailsPage />} />
               
               {/* Division Routes */}
-              <Route path="/divisions" element={<DivisionsPage />} />
+              {/* <Route path="/divisions" element={<DivisionsPage />} /> */}
               {/* FIX: Ensure param matches the component's expected useParam hook and pass as a JSX element */}
               <Route path="/divisions/:divisionId" element={<DivisionDetail />} />
               

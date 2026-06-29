@@ -20,11 +20,17 @@ const carrierServiceSchema = new mongoose.Schema({
 
 const carrierSchema = new mongoose.Schema(
   {
+    // NEW: Scope this carrier configuration to a specific division
+    division: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Division',
+      required: [true, 'A division reference is required']
+    },
     carrierType: {
       type: String,
       required: [true, 'Carrier type is required'],
       enum: ['FedEx', 'USPS', 'UPS', 'LTL'],
-      unique: true // Ensure only one profile per carrier type
+      // Note: Removed global `unique: true` here. It is now handled by the compound index below.
     },
     accountName: {
       type: String,
@@ -62,5 +68,10 @@ const carrierSchema = new mongoose.Schema(
     timestamps: true 
   }
 );
+
+// NEW COMPOUND INDEX: 
+// Ensures that any single Division can only have ONE configuration per Carrier Type (e.g., 1 FedEx, 1 UPS)
+// while allowing other Divisions to have their own distinct FedEx/UPS accounts.
+carrierSchema.index({ division: 1, carrierType: 1 }, { unique: true });
 
 export default mongoose.model('Carrier', carrierSchema);
