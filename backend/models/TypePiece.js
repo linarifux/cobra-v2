@@ -11,6 +11,11 @@ const typePieceSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Customer',
       required: [true, 'A customer reference is required']
+    },
+    division: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Division',
+      required: false 
     }
   },
   {
@@ -20,8 +25,8 @@ const typePieceSchema = new mongoose.Schema(
   }
 );
 
-// Add an index to make querying by customer faster, 
-// since the UI lists them alongside the customer name.
-typePieceSchema.index({ customer: 1 });
+// Compound Index: Optimizes queries filtering by just customer, 
+// AND queries filtering by both customer + division simultaneously.
+typePieceSchema.index({ customer: 1, division: 1 });
 
 export default mongoose.model('TypePiece', typePieceSchema);

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom'; // NEW: Imported useNavigate
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Layers, Plus, Search, Filter, Edit2, Trash2, 
@@ -19,6 +20,7 @@ import AddDivisionForm from '../components/division/AddDivisionForm';
 export default function DivisionsPage() {
   const dispatch = useDispatch();
   const confirm = useConfirm();
+  const navigate = useNavigate(); // NEW: Initialized navigate
 
   // --- Redux State ---
   const { items: divisions = [], status: divStatus, error: divError } = useSelector(state => state.divisions || {});
@@ -292,11 +294,15 @@ export default function DivisionsPage() {
                 const assignedUsers = orderPortalStaff.filter(u => u.divisions?.some(d => String(d._id || d) === String(div._id)));
                 
                 return (
-                  <tr key={div._id} className={`hover:bg-white/60 transition-colors group ${div.status !== 'Active' && 'opacity-60 grayscale-[30%]'}`}>
+                  <tr 
+                    key={div._id} 
+                    onClick={() => navigate(`/divisions/${div._id}`)}
+                    className={`cursor-pointer hover:bg-white/60 transition-colors group ${div.status !== 'Active' && 'opacity-60 grayscale-[30%]'}`}
+                  >
                     <td className="p-5">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center border border-slate-200 shrink-0">
-                          <Layers size={18} className="text-slate-400" />
+                          <Layers size={18} className="text-slate-400 group-hover:text-brand-gold transition-colors" />
                         </div>
                         <div>
                           <p className="text-sm font-black text-slate-900 leading-tight group-hover:text-brand-gold transition-colors">{div.divisionName}</p>
@@ -345,14 +351,15 @@ export default function DivisionsPage() {
                     </td>
                     
                     <td className="p-5 text-right">
+                      {/* NEW: e.stopPropagation() prevents the row click from firing when interacting with these buttons */}
                       <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => handleToggleStatus(div)} className={`p-2 rounded-xl transition-all border ${div.status === 'Active' ? 'text-slate-500 bg-white border-slate-200 hover:text-slate-900 hover:border-slate-300 shadow-sm' : 'text-slate-400 bg-slate-50 border-slate-200 hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50'}`} title={div.status === 'Active' ? "Deactivate" : "Activate"}>
+                        <button onClick={(e) => { e.stopPropagation(); handleToggleStatus(div); }} className={`p-2 rounded-xl transition-all border ${div.status === 'Active' ? 'text-slate-500 bg-white border-slate-200 hover:text-slate-900 hover:border-slate-300 shadow-sm' : 'text-slate-400 bg-slate-50 border-slate-200 hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50'}`} title={div.status === 'Active' ? "Deactivate" : "Activate"}>
                           {div.status === 'Active' ? <ToggleRight size={16} className="text-emerald-500" /> : <ToggleLeft size={16} />}
                         </button>
-                        <button onClick={() => openEditModal(div)} className="p-2 text-slate-500 bg-white border border-slate-200 rounded-xl hover:text-brand-gold hover:border-brand-gold/50 shadow-sm transition-all" title="Edit Division">
+                        <button onClick={(e) => { e.stopPropagation(); openEditModal(div); }} className="p-2 text-slate-500 bg-white border border-slate-200 rounded-xl hover:text-brand-gold hover:border-brand-gold/50 shadow-sm transition-all" title="Edit Division">
                           <Edit2 size={16} />
                         </button>
-                        <button onClick={() => handleDelete(div._id)} className="p-2 text-slate-400 bg-white border border-slate-200 rounded-xl hover:text-red-600 hover:bg-red-50 hover:border-red-200 shadow-sm transition-all" title="Delete Division">
+                        <button onClick={(e) => { e.stopPropagation(); handleDelete(div._id); }} className="p-2 text-slate-400 bg-white border border-slate-200 rounded-xl hover:text-red-600 hover:bg-red-50 hover:border-red-200 shadow-sm transition-all" title="Delete Division">
                           <Trash2 size={16} />
                         </button>
                       </div>
@@ -384,7 +391,7 @@ export default function DivisionsPage() {
                 setNewDivision={setFormData} 
                 onSubmit={handleFormSubmit} 
                 staffList={orderPortalStaff} 
-                customersList={customers} // Passing customers allows the dropdown to appear
+                customersList={customers}
                 isSubmitting={isSubmitting}
                 onCancel={() => setIsModalOpen(false)}
               />

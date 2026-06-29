@@ -9,7 +9,7 @@ import {
 // Redux Actions
 import { fetchCustomerById, clearCurrentCustomer } from '../store/slices/customerSlice';
 import { fetchDivisions } from '../store/slices/divisionSlice';
-import { fetchRates } from '../store/slices/rateSlice'; // Make sure you've created this slice!
+import { fetchRates } from '../store/slices/rateSlice'; 
 
 // Tab Components imports
 import OverviewTab from '../components/vendors/tabs/OverviewTab';
@@ -59,6 +59,7 @@ export default function CustomerDetailsPage() {
     'Staff': StaffTab,
     'Type Pieces': TypePiece 
   };
+  
   
   const ActiveComponent = TabComponents[activeTab];
 

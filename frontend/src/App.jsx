@@ -32,6 +32,7 @@ import NotFoundPage from './pages/NotFoundPage';
 
 // IMPORT THE GLOBAL CONFIRM PROVIDER
 import { ConfirmProvider } from './providers/ConfirmProvider';
+import DivisionDetail from './pages/DivisionDetail';
 
 /**
  * ProtectedRoute Wrapper
@@ -97,8 +98,12 @@ export default function App() {
               <Route path="/customers" element={<CustomersPage />} />
               <Route path="/customers/:id" element={<CustomerDetailsPage />} />
               <Route path="/customers/:id/edit" element={<EditCustomerDetailsPage />} />
-              {/* Hide the divisions from the sidebar. kept it for future reference */}
+              
+              {/* Division Routes */}
               <Route path="/divisions" element={<DivisionsPage />} />
+              {/* FIX: Ensure param matches the component's expected useParam hook and pass as a JSX element */}
+              <Route path="/divisions/:divisionId" element={<DivisionDetail />} />
+              
               <Route path="/inventory" element={<InventoryPage />} />
               <Route path="/inventory/:inventoryId" element={<InventoryDetailPage />} />
               <Route path="/categories" element={<CategoryPage />} />
