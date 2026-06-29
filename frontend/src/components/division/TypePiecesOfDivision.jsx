@@ -69,10 +69,10 @@ export default function TypePiecesOfDivision({ division, typePieces = [] }) {
       let actionPromise;
       if (isEditMode) {
         actionPromise = dispatch(updateTypePiece({ id: editingId, updateData: payload })).unwrap();
-        toast.promise(actionPromise, { loading: 'Updating configuration...', success: 'Configuration updated.', error: 'Failed to update.' });
+        toast.promise(actionPromise, { loading: 'Updating Type...', success: 'Type updated.', error: 'Failed to update.' });
       } else {
         actionPromise = dispatch(createTypePiece(payload)).unwrap();
-        toast.promise(actionPromise, { loading: 'Creating configuration...', success: 'New configuration added.', error: 'Failed to create.' });
+        toast.promise(actionPromise, { loading: 'Creating Type...', success: 'New Type added.', error: 'Failed to create.' });
       }
       
       await actionPromise;
@@ -87,8 +87,8 @@ export default function TypePiecesOfDivision({ division, typePieces = [] }) {
   const handleDelete = async (tp) => {
     const isConfirmed = await confirm({
       title: 'Delete Type Piece?',
-      message: `Are you sure you want to remove "${tp.typePieceName}"? This may affect inventory items currently utilizing this configuration.`,
-      confirmText: 'Delete Configuration',
+      message: `Are you sure you want to remove "${tp.typePieceName}"? This may affect inventory items currently utilizing this Type.`,
+      confirmText: 'Delete Type',
       cancelText: 'Cancel',
       variant: 'danger'
     });
@@ -97,9 +97,9 @@ export default function TypePiecesOfDivision({ division, typePieces = [] }) {
       try {
         const actionPromise = dispatch(deleteTypePiece(tp._id)).unwrap();
         toast.promise(actionPromise, {
-          loading: 'Deleting type piece configuration...',
-          success: 'Configuration successfully removed.',
-          error: 'Failed to delete configuration.'
+          loading: 'Deleting type piece...',
+          success: 'Type successfully removed.',
+          error: 'Failed to delete Type.'
         });
         await actionPromise;
       } catch (err) {
@@ -114,7 +114,7 @@ export default function TypePiecesOfDivision({ division, typePieces = [] }) {
       {/* 1. Header & Search Bar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 pb-6 border-b border-slate-200/60">
         <div className="flex-1 w-full max-w-md relative">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Search Configurations</label>
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Search Type</label>
           <div className="relative">
             <Search className="absolute left-4 top-3 w-4 h-4 text-slate-400" />
             <input 
@@ -139,11 +139,11 @@ export default function TypePiecesOfDivision({ division, typePieces = [] }) {
       {filteredPieces.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 px-4 text-center bg-slate-50/50 rounded-[2rem] border border-slate-200 border-dashed">
           <Layers size={48} className="text-slate-300 mb-4" />
-          <h3 className="text-lg font-black text-slate-700 tracking-tight mb-1">No Configurations Found</h3>
+          <h3 className="text-lg font-black text-slate-700 tracking-tight mb-1">No Types Found</h3>
           <p className="text-sm font-bold text-slate-400 max-w-sm">
             {searchTerm 
               ? `No type pieces matched your search for "${searchTerm}".`
-              : "This division has no specific type piece configurations defined yet."}
+              : "This division has no specific type piece defined yet."}
           </p>
         </div>
       ) : (
@@ -151,7 +151,7 @@ export default function TypePiecesOfDivision({ division, typePieces = [] }) {
           
           {/* List Header */}
           <div className="flex items-center px-6 py-4 bg-slate-50/50 border-b border-slate-100 hidden sm:flex">
-            <div className="flex-1 text-[10px] font-black text-slate-400 uppercase tracking-widest">Configuration Name</div>
+            <div className="flex-1 text-[10px] font-black text-slate-400 uppercase tracking-widest">Type Name</div>
             <div className="w-1/3 text-[10px] font-black text-slate-400 uppercase tracking-widest pl-4">Scope</div>
             <div className="w-32 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</div>
           </div>
@@ -229,7 +229,7 @@ export default function TypePiecesOfDivision({ division, typePieces = [] }) {
               <div className="flex justify-between items-center p-6 border-b border-slate-100">
                 <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
                   <Box className="text-brand-gold" size={20} />
-                  {isEditMode ? 'Edit Configuration' : 'New Configuration'}
+                  {isEditMode ? 'Edit Type' : 'New Type'}
                 </h3>
                 <button onClick={handleClosePanel} disabled={isSubmitting} className="text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-full hover:bg-slate-100">
                   <X size={20} />
@@ -248,7 +248,7 @@ export default function TypePiecesOfDivision({ division, typePieces = [] }) {
                   <div>
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block ml-1">Type Piece Name <span className="text-red-400">*</span></label>
                     <input 
-                      type="text" required placeholder="e.g. Standard Pallet"
+                      type="text" required placeholder="e.g. Folder"
                       value={formData.typePieceName} onChange={(e) => setFormData({...formData, typePieceName: e.target.value})} disabled={isSubmitting}
                       className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-brand-gold/50 outline-none transition-all shadow-sm"
                     />
@@ -263,7 +263,7 @@ export default function TypePiecesOfDivision({ division, typePieces = [] }) {
                     disabled={isSubmitting}
                     className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-brand-gold font-black py-3.5 px-4 rounded-xl transition-all shadow-md active:scale-95 disabled:opacity-70 text-xs uppercase tracking-widest"
                   >
-                    {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : (isEditMode ? 'Save Updates' : 'Deploy Configuration')}
+                    {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : (isEditMode ? 'Save Updates' : 'Deploy Type')}
                   </button>
                 </div>
               </form>
