@@ -131,7 +131,7 @@ export default function TypePiecesOfDivision({ division, typePieces = [] }) {
           onClick={openAddPanel}
           className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-[11px] font-black uppercase tracking-widest transition-all shadow-sm shrink-0"
         >
-          <Plus size={14} /> New Config
+          <Plus size={14} /> New Type
         </button>
       </div>
 
