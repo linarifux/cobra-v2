@@ -96,7 +96,7 @@ export default function App() {
               <Route path="/orders" element={<OrdersPage />} />
               <Route path="/orders/:id" element={<OrderDetailsPage />} />
               <Route path="/customers" element={<CustomersPage />} />
-              <Route path="/customers/:id/divisions" element={<DivisionsPage />} />
+              <Route path="/customers/:customerId/divisions" element={<DivisionsPage />} />
               <Route path="/customers/:id/edit" element={<EditCustomerDetailsPage />} />
               
               {/* Division Routes */}

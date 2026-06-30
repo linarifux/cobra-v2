@@ -28,26 +28,28 @@ router.use('/:divisionId/type-pieces', typePieceRouter);
 // ==========================================
 // Require a valid login token for ALL division routes
 // UNCOMMENT IN PRODUCTION
-// router.use(protect);
+router.use(protect);
 
 // ==========================================
 // 3. CORE DIVISION ROUTES
 // ==========================================
 router
   .route('/')
-  .get(getAllDivisions)
+  .get(restrictTo('admin', 'super_admin'), getAllDivisions)
+  // .get(getAllDivisions)
   // UNCOMMENT IN PRODUCTION
-  // .post(restrictTo('admin', 'staff'), createDivision);
-  .post(createDivision);
+  .post(restrictTo('admin', 'super_admin'), createDivision);
+  // .post(createDivision);
 
 router
   .route('/:id')
-  .get(getDivision)
+  .get(restrictTo('admin', 'super_admin'), getDivision)
+  // .get(getDivision)
   // UNCOMMENT IN PRODUCTION
-  // .put(restrictTo('admin', 'staff'), updateDivision)
-  .put(updateDivision)
+  .put(restrictTo('admin', 'super_admin'), updateDivision)
+  // .put(updateDivision)
   // UNCOMMENT IN PRODUCTION
-  // .delete(restrictTo('admin', 'staff'), deleteDivision);
-  .delete(deleteDivision);
+  .delete(restrictTo('admin', 'super_admin'), deleteDivision);
+  // .delete(deleteDivision);
 
 export default router;

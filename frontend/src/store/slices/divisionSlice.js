@@ -1,13 +1,19 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '../../utils/api'; // Adjust the import path if necessary based on your folder structure
 
-// 1. Fetch All Divisions
+// --- Thunks ---
+
+// 1. Fetch Divisions (Supports fetching globally OR scoped to a specific customer)
 export const fetchDivisions = createAsyncThunk(
   'divisions/fetchDivisions',
-  async (_, { rejectWithValue }) => {
+  async (customerId = '', { rejectWithValue }) => {
     try {
-      const response = await api.get('/divisions');
-      return response.data.data.divisions; 
+      // Dynamically switch to the nested route if filtering by a specific customer
+      const url = customerId ? `/customers/${customerId}/divisions` : '/divisions';
+      const response = await api.get(url);
+      
+      // Defensive fallback against API wrapping changes
+      return response.data.data.divisions || response.data.data || [];
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch divisions');
     }
@@ -20,7 +26,7 @@ export const createDivision = createAsyncThunk(
   async (divisionData, { rejectWithValue }) => {
     try {
       const response = await api.post('/divisions', divisionData);
-      return response.data.data.division;
+      return response.data.data.division || response.data.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to create division');
     }
@@ -33,7 +39,7 @@ export const updateDivision = createAsyncThunk(
   async ({ id, divisionData }, { rejectWithValue }) => {
     try {
       const response = await api.put(`/divisions/${id}`, divisionData);
-      return response.data.data.division;
+      return response.data.data.division || response.data.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to update division');
     }
@@ -46,13 +52,14 @@ export const deleteDivision = createAsyncThunk(
   async (id, { rejectWithValue }) => {
     try {
       await api.delete(`/divisions/${id}`);
-      return id; 
+      return id; // Return ID to filter out of the Redux state array
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to delete division');
     }
   }
 );
 
+// --- Slice Definition ---
 const divisionSlice = createSlice({
   name: 'divisions',
   initialState: {
@@ -60,12 +67,20 @@ const divisionSlice = createSlice({
     status: 'idle', // 'idle' | 'loading' | 'succeeded' | 'failed'
     error: null
   },
-  reducers: {},
+  reducers: {
+    // Utility to wipe state (e.g., on user logout or when leaving a customer context)
+    clearDivisions: (state) => {
+      state.items = [];
+      state.status = 'idle';
+      state.error = null;
+    }
+  },
   extraReducers: (builder) => {
     builder
-      // Fetch
+      // --- Fetch ---
       .addCase(fetchDivisions.pending, (state) => {
         state.status = 'loading';
+        state.error = null;
       })
       .addCase(fetchDivisions.fulfilled, (state, action) => {
         state.status = 'succeeded';
@@ -75,22 +90,28 @@ const divisionSlice = createSlice({
         state.status = 'failed';
         state.error = action.payload;
       })
-      // Create
+      
+      // --- Create ---
       .addCase(createDivision.fulfilled, (state, action) => {
         state.items.push(action.payload);
       })
-      // Update
+      
+      // --- Update ---
       .addCase(updateDivision.fulfilled, (state, action) => {
-        const index = state.items.findIndex(div => div._id === action.payload._id);
+        // Enforce string comparison to prevent ID type mismatch bugs
+        const index = state.items.findIndex(div => String(div._id) === String(action.payload._id));
         if (index !== -1) {
           state.items[index] = action.payload;
         }
       })
-      // Delete
+      
+      // --- Delete ---
       .addCase(deleteDivision.fulfilled, (state, action) => {
-        state.items = state.items.filter(div => div._id !== action.payload);
+        // Enforce string comparison to prevent ID type mismatch bugs
+        state.items = state.items.filter(div => String(div._id) !== String(action.payload));
       });
   }
 });
 
+export const { clearDivisions } = divisionSlice.actions;
 export default divisionSlice.reducer;

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Layers, Plus, Search, Filter, Edit2, Trash2, 
@@ -21,14 +21,19 @@ export default function DivisionsPage() {
   const dispatch = useDispatch();
   const confirm = useConfirm();
   const navigate = useNavigate();
-
+  
+  // NEW: Grab the customerId from the URL (e.g., /customers/123/divisions)
+  const { customerId } = useParams();
+  
   // --- Redux State ---
   const { items: divisions = [], status: divStatus, error: divError } = useSelector(state => state.divisions || {});
+  
   const { items: customers = [], status: custStatus } = useSelector(state => state.customers || {});
   const { items: users = [], status: userStatus } = useSelector(state => state.users || {});
 
   const loadAllData = () => {
-    if (divStatus === 'idle' || divStatus === 'failed') dispatch(fetchDivisions());
+    // NEW: Pass the customerId down to the thunk to hit the nested API route
+    if (divStatus === 'idle' || divStatus === 'failed') dispatch(fetchDivisions(customerId));
     if (custStatus === 'idle' || custStatus === 'failed') dispatch(fetchCustomers());
     if (userStatus === 'idle' || userStatus === 'failed') dispatch(fetchUsers());
   };
@@ -36,7 +41,15 @@ export default function DivisionsPage() {
   useEffect(() => {
     loadAllData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dispatch]);
+  }, [dispatch, customerId]);
+
+  // NEW: Intelligent Auto-Redirect UX
+  // If the customer has exactly ONE division, skip this directory and go straight to details
+  useEffect(() => {
+    if (divStatus === 'succeeded' && divisions.length === 1) {
+      navigate(`/divisions/${divisions[0]._id}`, { replace: true });
+    }
+  }, [divStatus, divisions, navigate]);
 
   const isGlobalLoading = [divStatus, custStatus, userStatus].some(s => s === 'idle' || s === 'loading');
   const hasGlobalError = [divStatus, custStatus, userStatus].some(s => s === 'failed');
@@ -50,11 +63,11 @@ export default function DivisionsPage() {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [customerFilter, setCustomerFilter] = useState('All');
-  const [statusFilter, setStatusFilter] = useState('All'); // 'All', 'Active', 'Inactive'
+  const [statusFilter, setStatusFilter] = useState('All'); 
 
   // --- Form State Management ---
   const INITIAL_FORM_STATE = { 
-    divisionName: '', divisionCode: '', managers: [], status: 'Active', customer: '',
+    divisionName: '', divisionCode: '', managers: [], status: 'Active', customer: customerId || '', // Default to active customer
     contactName: '', contactEmail: '', contactNumber: '', line1: '', line2: '', city: '', state: '', zip: ''
   };
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
@@ -203,6 +216,16 @@ export default function DivisionsPage() {
   };
 
   // --- Renders ---
+  // Wait to render the main UI if we are in the middle of a length === 1 auto-redirect
+  if (divStatus === 'succeeded' && divisions.length === 1) {
+    return (
+      <div className="h-full flex flex-col justify-center items-center min-h-[60vh] gap-4">
+        <Loader2 className="animate-spin text-brand-gold" size={36} />
+        <p className="text-sm font-black text-slate-700 uppercase tracking-widest">Routing to Division...</p>
+      </div>
+    );
+  }
+
   if (hasGlobalError && !isGlobalLoading) {
     return (
       <div className="h-full flex items-center justify-center min-h-[60vh]">
@@ -231,7 +254,7 @@ export default function DivisionsPage() {
     <div className="space-y-6 animate-slide-in-right relative max-w-[1500px] mx-auto p-6 pb-20">
       
       {/* --- Top Navigation Header --- */}
-      <div className="flex items-center justify-between pb-1 ">
+      <div className="flex items-center justify-between pb-1">
         <button 
           onClick={() => navigate(-1)}
           className="flex items-center gap-2 px-3 py-1.5 text-slate-500 hover:text-slate-900 transition-colors duration-200 shrink-0 rounded-xl hover:bg-slate-100"
@@ -250,7 +273,7 @@ export default function DivisionsPage() {
           <p className="text-slate-400 font-medium text-sm mt-1">Manage corporate boundaries, branch logistics, and segment access.</p>
         </div>
         <button onClick={openNewModal} className="relative z-10 flex items-center justify-center gap-2 px-6 py-3.5 bg-brand-gold hover:bg-brand-gold/90 text-slate-900 rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-lg active:scale-95 shrink-0">
-          <Plus size={16} /> Add Division
+          <Plus size={16} /> Deploy Division
         </button>
       </div>
 
@@ -381,7 +404,7 @@ export default function DivisionsPage() {
                   <td colSpan={5} className="py-20 text-center text-slate-400">
                     <Layers className="mx-auto mb-3 opacity-20" size={48} />
                     <p className="text-sm font-black uppercase tracking-widest mb-1">No Divisions Found</p>
-                    <p className="text-xs font-bold">Try adjusting your filters or search term.</p>
+                    <p className="text-xs font-bold">Use the button above to deploy a new division for this customer.</p>
                   </td>
                 </tr>
               )}

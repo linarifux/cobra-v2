@@ -2,12 +2,17 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { 
-  Search, Download, Plus, ChevronRight, Package, Loader2, X
+  Search, Download, Plus, Package, Loader2, X,
+  Building2, Edit2, Trash2
 } from 'lucide-react';
-import PageHeader from '../components/PageHeader';
-import { fetchCustomers, createCustomer } from '../store/slices/customerSlice';
+import { toast } from 'sonner';
 
-// Abstract initial state outside the component to prevent recreation on every render
+import PageHeader from '../components/PageHeader';
+import { useConfirm } from '../providers/ConfirmProvider';
+// Make sure you have updateCustomer and deleteCustomer exported from your slice!
+import { fetchCustomers, createCustomer, updateCustomer, deleteCustomer } from '../store/slices/customerSlice';
+
+// Abstract initial state outside the component
 const INITIAL_FORM_STATE = {
   customerName: '',
   contactName: '',
@@ -23,6 +28,7 @@ const INITIAL_FORM_STATE = {
 export default function CustomersPage() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const confirm = useConfirm();
   
   // Safely default items to an empty array to prevent undefined crashes
   const { items: customersData = [], status, error } = useSelector((state) => state.customers);
@@ -32,8 +38,10 @@ export default function CustomersPage() {
   const [filterStatus, setFilterStatus] = useState('All');
   const [filterCategory, setFilterCategory] = useState('All');
 
-  // Modal State
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  // Modal & Form State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
 
@@ -51,7 +59,6 @@ export default function CustomersPage() {
       const email = c?.contactEmail?.toLowerCase() || '';
       const query = searchQuery.toLowerCase();
       
-      // Provide fallback values matching our backend defaults
       const currentStatus = c?.status || 'Active'; 
       const currentCategory = c?.category || 'Standard'; 
 
@@ -63,8 +70,56 @@ export default function CustomersPage() {
     });
   }, [searchQuery, filterStatus, filterCategory, customersData]);
 
-  // Handle Form Submission
-  const handleCreateCustomer = async (e) => {
+  // --- Handlers ---
+  const handleOpenAdd = () => {
+    setIsEditMode(false);
+    setEditingId(null);
+    setFormData(INITIAL_FORM_STATE);
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEdit = (customer) => {
+    setIsEditMode(true);
+    setEditingId(customer._id);
+    setFormData({
+      customerName: customer.customerName || '',
+      contactName: customer.contactName || '',
+      contactEmail: customer.contactEmail || '',
+      contactNumber: customer.contactNumber || '',
+      addressLine1: customer.address?.line1 || '',
+      addressLine2: customer.address?.line2 || '',
+      city: customer.address?.city || '',
+      state: customer.address?.state || '',
+      zip: customer.address?.zip || ''
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteCustomer = async (id, name) => {
+    const isConfirmed = await confirm({
+      title: 'Delete Customer?',
+      message: `Are you sure you want to permanently delete "${name}"? This action will cascade and remove all associated divisions, configurations, and data.`,
+      confirmText: 'Delete Customer',
+      cancelText: 'Cancel',
+      variant: 'danger'
+    });
+
+    if (isConfirmed) {
+      try {
+        const actionPromise = dispatch(deleteCustomer(id)).unwrap();
+        toast.promise(actionPromise, {
+          loading: 'Deleting customer...',
+          success: 'Customer successfully deleted.',
+          error: 'Failed to delete customer.'
+        });
+        await actionPromise;
+      } catch (err) {
+        console.error("Delete Error:", err);
+      }
+    }
+  };
+
+  const handleFormSubmit = async (e) => {
     e.preventDefault();
     if (!formData.customerName.trim()) return; 
     
@@ -85,12 +140,20 @@ export default function CustomersPage() {
     };
 
     try {
-      await dispatch(createCustomer(payload)).unwrap();
+      let actionPromise;
+      if (isEditMode) {
+        actionPromise = dispatch(updateCustomer({ id: editingId, customerData: payload })).unwrap();
+        toast.promise(actionPromise, { loading: 'Saving updates...', success: 'Profile updated successfully.', error: 'Failed to update.' });
+      } else {
+        actionPromise = dispatch(createCustomer(payload)).unwrap();
+        toast.promise(actionPromise, { loading: 'Registering customer...', success: 'Customer node created.', error: 'Failed to create.' });
+      }
+      
+      await actionPromise;
       setFormData(INITIAL_FORM_STATE);
-      setIsAddModalOpen(false);
+      setIsModalOpen(false);
     } catch (err) {
-      console.error("Failed to create customer:", err);
-      alert(`Error creating customer: ${err}`);
+      console.error("Operation failed:", err);
     } finally {
       setIsSubmitting(false);
     }
@@ -98,13 +161,13 @@ export default function CustomersPage() {
 
   // Prevent background scrolling when modal is open
   useEffect(() => {
-    if (isAddModalOpen) {
+    if (isModalOpen) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = 'unset';
     }
     return () => { document.body.style.overflow = 'unset'; };
-  }, [isAddModalOpen]);
+  }, [isModalOpen]);
 
   return (
     <div className="h-full p-6 space-y-6 relative">
@@ -164,12 +227,12 @@ export default function CustomersPage() {
           <button className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl text-xs font-bold border border-slate-200 hover:bg-slate-50 transition-colors shadow-sm">
             <Download size={14} /> Export
           </button>
-          <button 
-            onClick={() => setIsAddModalOpen(true)}
+          {/* <button 
+            onClick={handleOpenAdd}
             className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors shadow-md"
           >
             <Plus size={14} /> Add Customer
-          </button>
+          </button> */}
         </div>
       </div>
 
@@ -186,7 +249,7 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {/* Render table if not strictly failed (handles 'idle', 'loading' with cached data, and 'succeeded') */}
+      {/* Render table if not strictly failed */}
       {status !== 'failed' && (customersData.length > 0 || status === 'succeeded') && (
         <div className="bg-white/40 backdrop-blur-2xl border border-white/60 rounded-3xl overflow-hidden shadow-sm animate-fade-in">
           <div className="overflow-x-auto">
@@ -198,13 +261,12 @@ export default function CustomersPage() {
                   <th className="p-4 w-[15%]">Open Orders</th>
                   <th className="p-4 w-[25%]">Location</th>
                   <th className="p-4 w-[10%]">Status</th>
-                  <th className="p-4 w-[5%] text-right">View</th>
+                  <th className="p-4 w-[15%] text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/40">
                 {filteredCustomers.length > 0 ? (
                   filteredCustomers.map((customer) => {
-                    // Modern clean way to format city/state using optional chaining
                     const location = [customer.address?.city, customer.address?.state]
                       .filter(Boolean)
                       .join(', ') || 'No location set';
@@ -215,11 +277,16 @@ export default function CustomersPage() {
                     return (
                       <tr 
                         key={customer._id} 
-                        onClick={() => navigate(`/customers/${customer._id}/divisions`)} 
-                        className="hover:bg-white/60 transition-colors cursor-pointer group"
+                        className="hover:bg-white/60 transition-colors group"
                       >
                         <td className="p-4">
-                          <div className="font-bold text-sm text-slate-900 truncate max-w-[200px]">{customer.customerName}</div>
+                          <button
+                            onClick={() => navigate(`/customers/${customer._id}/divisions`)} 
+                            className="font-bold text-sm text-slate-900 truncate max-w-[200px] hover:text-brand-gold transition-colors text-left"
+                            title="Manage Divisions"
+                          >
+                            {customer.customerName}
+                          </button>
                           <div className="text-[10px] text-slate-400 truncate mt-0.5 max-w-[200px]">{customer.contactEmail || 'No email provided'}</div>
                         </td>
                         <td className="p-4 font-medium text-slate-600">{customer.category || 'Standard'}</td>
@@ -239,7 +306,29 @@ export default function CustomersPage() {
                           </span>
                         </td>
                         <td className="p-4 text-right">
-                          <ChevronRight size={18} className="text-slate-400 group-hover:text-brand-gold ml-auto transition-colors" />
+                          <div className="flex items-center justify-end gap-2">
+                            <button 
+                              onClick={() => navigate(`/customers/${customer._id}/divisions`)}
+                              className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-brand-gold hover:border-brand-gold/50 shadow-sm transition-all" 
+                              title="Manage Divisions"
+                            >
+                              <Building2 size={14} />
+                            </button>
+                            <button 
+                              onClick={() => handleOpenEdit(customer)}
+                              className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 shadow-sm transition-all" 
+                              title="Edit Customer"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteCustomer(customer._id, customer.customerName)}
+                              className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-red-600 hover:border-red-200 hover:bg-red-50 shadow-sm transition-all" 
+                              title="Delete Customer"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )
@@ -257,25 +346,29 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {/* Add Customer Modal */}
-      <div className={`fixed inset-0 z-50 flex items-center justify-center transition-all duration-300 ${isAddModalOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
-        <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => !isSubmitting && setIsAddModalOpen(false)} />
+      {/* Add/Edit Customer Modal */}
+      <div className={`fixed inset-0 z-50 flex items-center justify-center transition-all duration-300 ${isModalOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
+        <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => !isSubmitting && setIsModalOpen(false)} />
         
-        <div className={`relative w-full max-w-2xl bg-white/95 backdrop-blur-xl border border-white/50 p-6 md:p-8 rounded-3xl shadow-2xl transition-transform duration-300 ${isAddModalOpen ? 'scale-100 translate-y-0' : 'scale-95 translate-y-4'}`}>
+        <div className={`relative w-full max-w-2xl bg-white/95 backdrop-blur-xl border border-white/50 p-6 md:p-8 rounded-3xl shadow-2xl transition-transform duration-300 ${isModalOpen ? 'scale-100 translate-y-0' : 'scale-95 translate-y-4'}`}>
           <div className="flex justify-between items-center mb-6">
             <div>
-              <h2 className="text-xl font-black text-slate-900 tracking-tight">Register New Customer</h2>
-              <p className="text-xs font-medium text-slate-500 mt-1">Add a new partner to your fulfillment network.</p>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">
+                {isEditMode ? 'Edit Customer Profile' : 'Register New Customer'}
+              </h2>
+              <p className="text-xs font-medium text-slate-500 mt-1">
+                {isEditMode ? 'Update the details for this partner.' : 'Add a new partner to your fulfillment network.'}
+              </p>
             </div>
             <button 
-              onClick={() => !isSubmitting && setIsAddModalOpen(false)} 
+              onClick={() => !isSubmitting && setIsModalOpen(false)} 
               className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition-colors"
             >
               <X size={18} />
             </button>
           </div>
           
-          <form onSubmit={handleCreateCustomer} className="space-y-4">
+          <form onSubmit={handleFormSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2">
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Customer / Company Name <span className="text-red-500">*</span></label>
@@ -331,7 +424,7 @@ export default function CustomersPage() {
             <div className="pt-6 flex gap-3">
               <button 
                 type="button" 
-                onClick={() => setIsAddModalOpen(false)}
+                onClick={() => setIsModalOpen(false)}
                 disabled={isSubmitting}
                 className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50"
               >
@@ -342,7 +435,7 @@ export default function CustomersPage() {
                 disabled={isSubmitting}
                 className="flex-[2] flex justify-center items-center gap-2 px-4 py-3 bg-brand-gold hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-brand-gold/20 transition-all disabled:opacity-70"
               >
-                {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : 'Register Customer Node'}
+                {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : (isEditMode ? 'Save Updates' : 'Register Customer Node')}
               </button>
             </div>
           </form>

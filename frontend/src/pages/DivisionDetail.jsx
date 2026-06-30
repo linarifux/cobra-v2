@@ -22,7 +22,7 @@ import AddDivisionForm from '../components/division/AddDivisionForm';
 
 // Tab Components imports
 import OverviewTab from '../components/vendors/tabs/OverviewTab';
-import InventoryTab from '../components/vendors/tabs/InventoryTab';
+import InventoriesOfDivision from '../components/division/InventoriesOfDivision'; // <--- UPDATED IMPORT
 import ProcessingTab from '../components/vendors/tabs/ProcessingTab';
 import RatesTab from '../components/vendors/tabs/RatesTab';
 import CarrierTab from '../components/vendors/tabs/CarrierTab'; 
@@ -31,7 +31,7 @@ import StaffOfDivision from '../components/division/StaffOfDivision';
 
 const TabComponents = { 
   'Overview': OverviewTab, 
-  'Inventory': InventoryTab, 
+  'Inventory': InventoriesOfDivision, // <--- UPDATED MAPPING
   'Processing': ProcessingTab, 
   'Carrier': CarrierTab, 
   'Rates': RatesTab, 
@@ -53,8 +53,7 @@ export default function DivisionDetail() {
   const { items: users = [], status: userStatus } = useSelector(state => state.users || {});
   const { items: inventory = [], status: invStatus } = useSelector(state => state.inventory || {});
   const { items: customers = [], status: custStatus } = useSelector(state => state.customers || {});
-    const { currentCustomer: customer, status, error } = useSelector((state) => state.customers || {});
-  
+  const { currentCustomer: customer, status, error } = useSelector((state) => state.customers || {});
   
   // Extract the arrays for the child tabs
   const { items: allTypePieces = [], status: tpStatus, error: tpError } = useSelector(state => state.typePieces || {});
