@@ -130,6 +130,8 @@ export default function InventoryDetail() {
   const divisionName = item.division?.divisionName || 'Unassigned';
   const categoryName = item.category1?.categoryName || 'Unassigned';
   
+  console.log(item);
+  
   const safeImageUrl = sanitizeS3Url(item.productImage || item.image || item.imageUrl);
   const formatCurrency = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
 

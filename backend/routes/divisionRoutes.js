@@ -8,8 +8,13 @@ import {
 } from '../controllers/divisionController.js';
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
+import carrierRouter from './carrierRoutes.js'
+
+
 // mergeParams: true allows access to parent router params (like customerId)
 const router = express.Router({ mergeParams: true });
+
+router.use('/:divisionId/carriers', carrierRouter)
 
 // Require a valid login token for ALL division routes
 // router.use(protect);

@@ -8,6 +8,7 @@ import {
 } from '../controllers/carrierController.js';
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
+
 const router = express.Router({ mergeParams: true });
 
 // Require valid JWT authentication for all carrier routes
