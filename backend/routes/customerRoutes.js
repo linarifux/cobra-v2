@@ -8,7 +8,7 @@ import {
   deleteCustomer
 } from '../controllers/customerController.js';
 
-import { getCarriersForCustomer } from '../controllers/carrierController.js'; 
+// import { getCarriersForCustomer } from '../controllers/carrierController.js'; 
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
 import divisionRouter from './divisionRoutes.js';
@@ -34,8 +34,8 @@ router.use('/:customerId/users', userRouter);
 // ---------------------------------------------------------
 
 // GET: Fetch the flattened list of allowed active services for a customer
-router.route('/:customerId/carriers')
-  .get(getCarriersForCustomer);
+// router.route('/:customerId/carriers')
+//   .get(getCarriersForCustomer);
 
 // PUT: Update the assigned carriers/services array on the Customer document
 router.route('/:id/carriers')

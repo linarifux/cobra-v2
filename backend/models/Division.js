@@ -48,6 +48,7 @@ const divisionSchema = new mongoose.Schema(
       default: 'Active'
     }
   },
+  
   { 
     timestamps: true,
     // CRITICAL: You must enable virtuals so they are included when sending JSON to the frontend

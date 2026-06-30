@@ -20,7 +20,7 @@ const carrierServiceSchema = new mongoose.Schema({
 
 const carrierSchema = new mongoose.Schema(
   {
-    // NEW: Scope this carrier configuration to a specific division
+    // Scope this carrier configuration to a specific division
     division: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Division',
@@ -65,7 +65,9 @@ const carrierSchema = new mongoose.Schema(
     enabledServices: [carrierServiceSchema]
   },
   { 
-    timestamps: true 
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
   }
 );
 
@@ -74,4 +76,16 @@ const carrierSchema = new mongoose.Schema(
 // while allowing other Divisions to have their own distinct FedEx/UPS accounts.
 carrierSchema.index({ division: 1, carrierType: 1 }, { unique: true });
 
-export default mongoose.model('Carrier', carrierSchema);
+const Carrier = mongoose.model('Carrier', carrierSchema);
+
+// ==========================================
+// CRITICAL FIX FOR E11000 DUPLICATE KEY ERROR
+// ==========================================
+// This tells MongoDB to look at the current schema indexes defined above, 
+// and automatically drop any legacy indexes (like the old `carrierType_1`) 
+// that are causing the "dup key" crash shown in your console.
+Carrier.syncIndexes()
+  .then(() => console.log('✅ Carrier indexes synced successfully! Old global unique constraints removed.'))
+  .catch((err) => console.error('❌ Carrier index sync error:', err));
+
+export default Carrier;

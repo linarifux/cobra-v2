@@ -8,26 +8,45 @@ import {
 } from '../controllers/divisionController.js';
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
-import carrierRouter from './carrierRoutes.js'
+// Nested Route Imports
+import carrierRouter from './carrierRoutes.js';
+import typePieceRouter from './typePieceRoutes.js'; // Ensure you have this file created
 
-
-// mergeParams: true allows access to parent router params (like customerId)
+// mergeParams: true allows access to parent router params (like customerId from customerRoutes)
 const router = express.Router({ mergeParams: true });
 
-router.use('/:divisionId/carriers', carrierRouter)
+// ==========================================
+// 1. NESTED ROUTE DELEGATION
+// ==========================================
+// Re-route requests to specific sub-resources to their respective routers.
+// E.g., GET /api/v1/divisions/123/carriers --> handled by carrierRoutes.js
+router.use('/:divisionId/carriers', carrierRouter);
+router.use('/:divisionId/type-pieces', typePieceRouter);
 
+// ==========================================
+// 2. AUTHENTICATION & AUTHORIZATION
+// ==========================================
 // Require a valid login token for ALL division routes
+// UNCOMMENT IN PRODUCTION
 // router.use(protect);
 
-router.route('/')
+// ==========================================
+// 3. CORE DIVISION ROUTES
+// ==========================================
+router
+  .route('/')
   .get(getAllDivisions)
+  // UNCOMMENT IN PRODUCTION
   // .post(restrictTo('admin', 'staff'), createDivision);
   .post(createDivision);
 
-router.route('/:id')
+router
+  .route('/:id')
   .get(getDivision)
+  // UNCOMMENT IN PRODUCTION
   // .put(restrictTo('admin', 'staff'), updateDivision)
   .put(updateDivision)
+  // UNCOMMENT IN PRODUCTION
   // .delete(restrictTo('admin', 'staff'), deleteDivision);
   .delete(deleteDivision);
 

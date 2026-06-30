@@ -1,48 +1,91 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import api from '../../utils/api'; 
-export const fetchCarriers = createAsyncThunk('carriers/fetchCarriers', async (_, { rejectWithValue }) => {
-  try {
-    const res = await api.get('/carriers');
-    return res.data.data.carriers;
-  } catch (err) {
-    return rejectWithValue(err.response?.data?.message || err.message);
-  }
-});
+import api from '../../utils/api'; // Ensure this points to your authorized Axios instance
 
-export const addCarrier = createAsyncThunk('carriers/addCarrier', async (carrierData, { rejectWithValue }) => {
-  try {
-    const res = await api.post('/carriers', carrierData);
-    return res.data.data.carrier;
-  } catch (err) {
-    return rejectWithValue(err.response?.data?.message || err.message);
-  }
-});
+// --- Thunks ---
 
-export const updateCarrierConfig = createAsyncThunk('carriers/updateCarrierConfig', async ({ id, updatedData }, { rejectWithValue }) => {
-  try {
-    const res = await api.put(`/carriers/${id}`, updatedData);
-    return res.data.data.carrier;
-  } catch (err) {
-    return rejectWithValue(err.response?.data?.message || err.message);
+// 1. Fetch Carriers (Supports fetching globally OR scoped to a specific division)
+export const fetchCarriers = createAsyncThunk(
+  'carriers/fetchCarriers',
+  async (divisionId = '', { rejectWithValue }) => {
+    try {
+      // If a divisionId is passed, hit the nested route. Otherwise, fetch all.
+      const url = divisionId ? `/divisions/${divisionId}/carriers` : `/carriers`;
+      const response = await api.get(url);
+      
+      // Defensive fallback against API wrapping changes
+      return response.data.data.carriers || response.data.data || [];
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch shipping integrations');
+    }
   }
-});
+);
 
-export const removeCarrierProfile = createAsyncThunk('carriers/removeCarrierProfile', async (id, { rejectWithValue }) => {
-  try {
-    await api.delete(`/carriers/${id}`);
-    return id;
-  } catch (err) {
-    return rejectWithValue(err.response?.data?.message || err.message);
+// 2. Add/Configure a New Carrier
+export const addCarrier = createAsyncThunk(
+  'carriers/addCarrier',
+  async (carrierData, { rejectWithValue }) => {
+    try {
+      // Route through the division-specific endpoint if division is provided in the payload
+      const url = carrierData.division ? `/divisions/${carrierData.division}/carriers` : `/carriers`;
+      const response = await api.post(url, carrierData);
+      
+      return response.data.data.carrier || response.data.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to deploy integration');
+    }
   }
-});
+);
 
+// 3. Update Carrier Configuration (Credentials or Allowed Services)
+export const updateCarrierConfig = createAsyncThunk(
+  'carriers/updateCarrierConfig',
+  async ({ id, updatedData }, { rejectWithValue }) => {
+    try {
+      const response = await api.put(`/carriers/${id}`, updatedData);
+      return response.data.data.carrier || response.data.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to update integration');
+    }
+  }
+);
+
+// 4. Delete/Remove a Carrier Integration
+export const removeCarrierProfile = createAsyncThunk(
+  'carriers/removeCarrierProfile',
+  async (id, { rejectWithValue }) => {
+    try {
+      await api.delete(`/carriers/${id}`);
+      return id; // Return ID to filter out of the Redux state array
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to remove integration');
+    }
+  }
+);
+
+
+// --- Slice Definition ---
 const carrierSlice = createSlice({
   name: 'carriers',
-  initialState: { items: [], status: 'idle', error: null },
-  reducers: {},
+  initialState: {
+    items: [],
+    status: 'idle', // 'idle' | 'loading' | 'succeeded' | 'failed'
+    error: null
+  },
+  reducers: {
+    // Utility to wipe state (e.g., on user logout or unmounting)
+    clearCarriers: (state) => {
+      state.items = [];
+      state.status = 'idle';
+      state.error = null;
+    }
+  },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchCarriers.pending, (state) => { state.status = 'loading'; })
+      // --- Fetch ---
+      .addCase(fetchCarriers.pending, (state) => {
+        state.status = 'loading';
+        state.error = null;
+      })
       .addCase(fetchCarriers.fulfilled, (state, action) => {
         state.status = 'succeeded';
         state.items = action.payload;
@@ -51,17 +94,26 @@ const carrierSlice = createSlice({
         state.status = 'failed';
         state.error = action.payload;
       })
+      
+      // --- Add ---
       .addCase(addCarrier.fulfilled, (state, action) => {
         state.items.push(action.payload);
       })
+      
+      // --- Update ---
       .addCase(updateCarrierConfig.fulfilled, (state, action) => {
-        const index = state.items.findIndex(c => c._id === action.payload._id);
-        if (index !== -1) state.items[index] = action.payload;
+        const index = state.items.findIndex(c => String(c._id) === String(action.payload._id));
+        if (index !== -1) {
+          state.items[index] = action.payload;
+        }
       })
+      
+      // --- Remove ---
       .addCase(removeCarrierProfile.fulfilled, (state, action) => {
-        state.items = state.items.filter(c => c._id !== action.payload);
+        state.items = state.items.filter(c => String(c._id) !== String(action.payload));
       });
   }
 });
 
+export const { clearCarriers } = carrierSlice.actions;
 export default carrierSlice.reducer;
