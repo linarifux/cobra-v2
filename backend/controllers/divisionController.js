@@ -33,7 +33,17 @@ export const getAllDivisions = catchAsync(async (req, res, next) => {
   
   // Support fetching exclusively for one customer
   if (req.params.customerId) {
-    filter = { customer: req.params.customerId };
+    filter.customer = req.params.customerId;
+  }
+
+  // ==========================================
+  // SECURITY: TENANT ISOLATION
+  // ==========================================
+  // If the requester is a standard user/client, automatically restrict the database 
+  // query to only return the division IDs they are explicitly assigned to.
+  // Admins bypass this filter to manage the whole system.
+  if (req.user && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+    filter._id = { $in: req.user.divisions };
   }
 
   const divisions = await Division.find(filter)
@@ -65,6 +75,21 @@ export const getDivision = catchAsync(async (req, res, next) => {
     return next(new AppError('No division found with that ID', 404));
   }
 
+  // ==========================================
+  // SECURITY: ID GUESSING PREVENTION
+  // ==========================================
+  // Prevent users from manually typing a division ID into the URL to view it 
+  // if they aren't authorized for it.
+  if (req.user && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+    const isAuthorized = req.user.divisions.some(
+      (assignedId) => assignedId.toString() === division._id.toString()
+    );
+    
+    if (!isAuthorized) {
+      return next(new AppError('You do not have permission to access this division workspace.', 403));
+    }
+  }
+
   res.status(200).json({
     status: 'success',
     data: { division }
@@ -74,6 +99,16 @@ export const getDivision = catchAsync(async (req, res, next) => {
 // @desc    Update a division
 // @route   PUT /api/v1/divisions/:id
 export const updateDivision = catchAsync(async (req, res, next) => {
+  // Check authorization before allowing update
+  if (req.user && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+    const isAuthorized = req.user.divisions.some(
+      (assignedId) => assignedId.toString() === req.params.id
+    );
+    if (!isAuthorized) {
+      return next(new AppError('You do not have permission to modify this division.', 403));
+    }
+  }
+
   const division = await Division.findByIdAndUpdate(
     req.params.id, 
     req.body, 
@@ -101,6 +136,11 @@ export const updateDivision = catchAsync(async (req, res, next) => {
 // @desc    Delete a division and cascade delete its scoped assets
 // @route   DELETE /api/v1/divisions/:id
 export const deleteDivision = catchAsync(async (req, res, next) => {
+  // Restrict destructive actions to system administrators
+  if (req.user && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+    return next(new AppError('Only system administrators can delete divisions.', 403));
+  }
+
   // Use findById instead of findByIdAndDelete so we can trigger cleanup logic
   const division = await Division.findById(req.params.id);
 

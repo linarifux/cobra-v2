@@ -1,68 +1,222 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Search, CheckSquare, MapPin, Package, 
-  Loader2, Plus
+  Search, MapPin, Package, Loader2, Filter, X, 
+  Calendar, Building2, User, Plus, FileText, Truck,
+  Layers, Edit2, Trash2, Save
 } from 'lucide-react';
+import { toast } from 'sonner';
+
 import PageHeader from '../components/PageHeader';
-import { fetchOrders } from '../store/slices/orderSlice';
+import { useConfirm } from '../providers/ConfirmProvider';
+import { fetchOrders, updateOrder, deleteOrder } from '../store/slices/orderSlice';
+import { fetchCustomers } from '../store/slices/customerSlice';
+import { fetchDivisions } from '../store/slices/divisionSlice';
+
+const INITIAL_FILTERS = {
+  status: 'All',
+  customer: 'All',
+  division: 'All',
+  dateStart: '',
+  dateEnd: ''
+};
 
 export default function OrdersPage() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const confirm = useConfirm();
   
-  // Safely access Orders from Redux
-  const { items: ordersData = [], status, error } = useSelector((state) => state.orders || {});
+  // Safely access data from Redux
+  const { items: ordersData = [], status: ordersStatus, error: ordersError } = useSelector((state) => state.orders || {});
+  const { items: customersData = [] } = useSelector((state) => state.customers || {});
+  const { items: divisionsData = [] } = useSelector((state) => state.divisions || {});
 
-  // States
+  // General States
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrders, setSelectedOrders] = useState([]);
-  const [filters, setFilters] = useState({
-    status: 'All',
-    dateStart: '',
-    dateEnd: ''
-  });
+  const [filters, setFilters] = useState(INITIAL_FILTERS);
 
-  // Fetch orders on mount
+  // Edit Modal States
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Fetch all required contextual data on mount
   useEffect(() => {
     dispatch(fetchOrders());
+    dispatch(fetchCustomers());
+    dispatch(fetchDivisions());
   }, [dispatch]);
 
+  // --- Cascading Filter Logic ---
+  const availableDivisions = useMemo(() => {
+    if (filters.customer === 'All') return divisionsData;
+    return divisionsData.filter(d => (d.customer?._id || d.customer) === filters.customer);
+  }, [divisionsData, filters.customer]);
+
+  const handleCustomerChange = (e) => {
+    const newCustomer = e.target.value;
+    setFilters(prev => ({ 
+      ...prev, 
+      customer: newCustomer, 
+      division: 'All' // Reset division to prevent orphaned selections
+    }));
+  };
+
+  const clearAllFilters = () => {
+    setSearchQuery('');
+    setFilters(INITIAL_FILTERS);
+  };
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (searchQuery) count++;
+    if (filters.status !== 'All') count++;
+    if (filters.customer !== 'All') count++;
+    if (filters.division !== 'All') count++;
+    if (filters.dateStart || filters.dateEnd) count++;
+    return count;
+  }, [searchQuery, filters]);
+
+  // --- Data Processing ---
   const filteredOrders = useMemo(() => {
     if (!Array.isArray(ordersData)) return [];
 
     return ordersData.filter(order => {
+      const orderCustomerId = order.customer?._id || order.customer;
+      const orderDivisionId = order.division?._id || order.division; 
+
       const customerName = order.customer?.customerName || '';
       const orderNumber = order.orderNumber || '';
-      // Safely parse date for filtering
-      const orderDate = order.createdAt ? new Date(order.createdAt).toISOString().split('T')[0] : ''; 
+      
+      let orderDate = '';
+      try {
+        if (order.createdAt) orderDate = new Date(order.createdAt).toISOString().split('T')[0];
+      } catch (e) {}
 
       const matchSearch = customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           orderNumber.toLowerCase().includes(searchQuery.toLowerCase());
       const matchStatus = filters.status === 'All' || order.status === filters.status;
-      const matchDate = (!filters.dateStart || orderDate >= filters.dateStart) && 
-                        (!filters.dateEnd || orderDate <= filters.dateEnd);
+      const matchCustomer = filters.customer === 'All' || orderCustomerId === filters.customer;
+      const matchDivision = filters.division === 'All' || orderDivisionId === filters.division;
       
-      return matchSearch && matchStatus && matchDate;
+      const matchDateStart = !filters.dateStart || orderDate >= filters.dateStart;
+      const matchDateEnd = !filters.dateEnd || orderDate <= filters.dateEnd;
+      
+      return matchSearch && matchStatus && matchCustomer && matchDivision && matchDateStart && matchDateEnd;
     });
   }, [searchQuery, filters, ordersData]);
 
+  // --- Selection Handlers ---
   const toggleSelect = (id) => {
     setSelectedOrders(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
 
+  const handleSelectAll = () => {
+    if (selectedOrders.length === filteredOrders.length) {
+      setSelectedOrders([]); 
+    } else {
+      setSelectedOrders(filteredOrders.map(o => o._id)); 
+    }
+  };
+
+  const handleBulkExport = () => {
+    toast.success('Exporting Data', { description: `Generating CSV for ${selectedOrders.length} orders...` });
+  };
+
+  // --- Inline Action Handlers ---
+  const openQuickEdit = (order) => {
+    setEditingOrder({
+      _id: order._id,
+      orderNumber: order.orderNumber,
+      status: order.status || 'Pending',
+      notes: order.notes || ''
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const submitQuickEdit = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    try {
+      const actionPromise = dispatch(updateOrder({ 
+        id: editingOrder._id, 
+        updateData: { status: editingOrder.status, notes: editingOrder.notes } 
+      })).unwrap();
+      
+      toast.promise(actionPromise, {
+        loading: 'Updating order...',
+        success: 'Order status updated successfully.',
+        error: 'Failed to update order.'
+      });
+      
+      await actionPromise;
+      setIsEditModalOpen(false);
+      setEditingOrder(null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteOrder = async (id, orderNumber) => {
+    const isConfirmed = await confirm({
+      title: 'Delete Order?',
+      message: `Are you sure you want to permanently delete order ${orderNumber}? This action cannot be undone and will permanently remove this record from the fulfillment queue.`,
+      confirmText: 'Delete Order',
+      cancelText: 'Cancel',
+      variant: 'danger'
+    });
+
+    if (isConfirmed) {
+      try {
+        const actionPromise = dispatch(deleteOrder(id)).unwrap();
+        toast.promise(actionPromise, {
+          loading: 'Deleting order...',
+          success: 'Order successfully deleted.',
+          error: 'Failed to delete order.'
+        });
+        await actionPromise;
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
+  // Prevent background scrolling when modal is open
+  useEffect(() => {
+    document.body.style.overflow = isEditModalOpen ? 'hidden' : 'unset';
+    return () => { document.body.style.overflow = 'unset'; };
+  }, [isEditModalOpen]);
+
+
+  // --- UI Components ---
+  const selectClass = "w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white/50 text-xs font-bold outline-none cursor-pointer focus:border-brand-gold/50 focus:ring-2 focus:ring-brand-gold/20 transition-all appearance-none";
+
   return (
-    <div className="relative h-full p-6 space-y-6 animate-fade-in">
-      <PageHeader title="Fulfillment Queue" subtitle="Real-time dispatch and logistics overview." />
+    <div className="relative h-full p-6 space-y-6 animate-fade-in max-w-[1600px] mx-auto pb-32">
+      
+      {/* Top Header with Create Button */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <PageHeader title="Fulfillment Queue" subtitle="Real-time dispatch and logistics overview." />
+        <button 
+          onClick={() => navigate('/orders/new')}
+          className="flex items-center justify-center gap-2 bg-slate-900 text-brand-gold px-6 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl active:scale-95 shrink-0"
+        >
+          <Plus size={16} /> Deploy Order
+        </button>
+      </div>
 
       {/* KPI Stats Bar */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'Total Orders', val: ordersData.length, color: 'text-slate-900' },
-          { label: 'Awaiting Shipment', val: ordersData.filter(o => o.status === 'Pending' || o.status === 'Processing').length, color: 'text-rose-600' },
-          { label: 'Ready to Ship', val: ordersData.filter(o => o.status === 'Ready to Ship').length, color: 'text-amber-600' },
-          { label: 'Shipped', val: ordersData.filter(o => o.status === 'Shipped' || o.status === 'Delivered').length, color: 'text-emerald-600' },
+          { label: 'Awaiting Shipment', val: ordersData.filter(o => ['Pending', 'Processing'].includes(o.status)).length, color: 'text-rose-600' },
+          { label: 'Ready to Ship', val: ordersData.filter(o => o.status === 'Ready to Ship').length, color: 'text-indigo-600' },
+          { label: 'Shipped / Complete', val: ordersData.filter(o => ['Shipped', 'Delivered'].includes(o.status)).length, color: 'text-emerald-600' },
         ].map((stat, i) => (
           <div key={i} className="bg-white/50 border border-white/60 p-4 rounded-2xl backdrop-blur-md shadow-sm transition-all hover:bg-white/70">
             <p className="text-[10px] uppercase font-black text-slate-400">{stat.label}</p>
@@ -71,24 +225,53 @@ export default function OrdersPage() {
         ))}
       </div>
 
-      {/* Control Panel */}
-      <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-4 rounded-3xl space-y-4 shadow-sm">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
+      {/* Advanced Control Panel */}
+      <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl space-y-4 shadow-sm">
+        
+        {/* Top Row: Search & Clear */}
+        <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+          <div className="relative flex-1 w-full max-w-2xl">
+            <Search className="absolute left-4 top-3 text-slate-400" size={16} />
             <input 
-              className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 bg-white/50 text-xs font-medium outline-none focus:ring-2 focus:ring-brand-gold/50 transition-all"
-              placeholder="Search customers or order numbers..."
+              className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white/70 text-sm font-bold outline-none focus:ring-2 focus:ring-brand-gold/50 transition-all shadow-sm"
+              placeholder="Search by Customer Name or Order Number (e.g. ORD-2026-12345)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <div className="flex flex-wrap gap-2">
-            <select 
-              className="px-4 py-2 rounded-xl border border-slate-200 bg-white/50 text-xs font-bold outline-none cursor-pointer focus:border-brand-gold/50" 
-              value={filters.status}
-              onChange={(e) => setFilters({...filters, status: e.target.value})}
+          
+          {activeFilterCount > 0 && (
+            <button 
+              onClick={clearAllFilters}
+              className="flex items-center gap-2 px-4 py-2.5 text-[11px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-900 hover:bg-white/60 rounded-xl transition-all border border-transparent hover:border-slate-200"
             >
+              <X size={14} /> Clear {activeFilterCount} Filters
+            </button>
+          )}
+        </div>
+
+        {/* Bottom Row: Dynamic Filters */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 border-t border-slate-200/60 pt-4">
+          
+          <div className="relative">
+            <User className="absolute left-3 top-2.5 text-brand-gold" size={14} />
+            <select className={selectClass} value={filters.customer} onChange={handleCustomerChange}>
+              <option value="All">All Customers</option>
+              {customersData.map(c => <option key={c._id} value={c._id}>{c.customerName}</option>)}
+            </select>
+          </div>
+
+          <div className="relative">
+            <Building2 className="absolute left-3 top-2.5 text-brand-gold" size={14} />
+            <select className={selectClass} value={filters.division} onChange={(e) => setFilters({...filters, division: e.target.value})}>
+              <option value="All">All Divisions</option>
+              {availableDivisions.map(d => <option key={d._id} value={d._id}>{d.divisionName}</option>)}
+            </select>
+          </div>
+
+          <div className="relative">
+            <Filter className="absolute left-3 top-2.5 text-brand-gold" size={14} />
+            <select className={selectClass} value={filters.status} onChange={(e) => setFilters({...filters, status: e.target.value})}>
               <option value="All">All Statuses</option>
               <option value="Pending">Pending</option>
               <option value="Processing">Processing</option>
@@ -98,50 +281,66 @@ export default function OrdersPage() {
               <option value="On Hold">On Hold</option>
               <option value="Cancelled">Cancelled</option>
             </select>
+          </div>
+
+          <div className="relative">
+            <Calendar className="absolute left-3 top-2.5 text-brand-gold" size={14} />
             <input 
               type="date" 
-              className="px-4 py-2 rounded-xl border border-slate-200 bg-white/50 text-xs font-bold outline-none cursor-pointer focus:border-brand-gold/50" 
+              className={selectClass} 
               value={filters.dateStart}
               onChange={(e) => setFilters({...filters, dateStart: e.target.value})} 
+              title="Start Date"
             />
-            
-            {/* Create Order Button */}
-            {/* <button 
-              onClick={() => navigate('/orders/new')}
-              className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors shadow-md ml-auto"
-            >
-              <Plus size={14} /> Create Order
-            </button> */}
           </div>
+
+          <div className="relative">
+            <Calendar className="absolute left-3 top-2.5 text-brand-gold" size={14} />
+            <input 
+              type="date" 
+              className={selectClass} 
+              value={filters.dateEnd}
+              onChange={(e) => setFilters({...filters, dateEnd: e.target.value})} 
+              title="End Date"
+            />
+          </div>
+
         </div>
       </div>
 
       {/* State Handling */}
-      {status === 'loading' && ordersData.length === 0 ? (
+      {ordersStatus === 'loading' && ordersData.length === 0 ? (
         <div className="flex justify-center items-center py-20 text-slate-400">
           <Loader2 className="animate-spin text-brand-gold" size={32} />
         </div>
-      ) : status === 'failed' ? (
+      ) : ordersStatus === 'failed' ? (
         <div className="bg-red-50 text-red-600 p-6 rounded-3xl text-center text-sm font-bold border border-red-200 shadow-sm">
-          Failed to load orders: {error}
+          Failed to load orders: {ordersError}
         </div>
       ) : (
-        <div className="bg-white/40 backdrop-blur-2xl border border-white/60 rounded-3xl overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
+        <div className="bg-white/60 backdrop-blur-2xl border border-white/80 rounded-[2rem] overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
+          <div className="overflow-x-auto w-full">
             <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
               <thead>
-                <tr className="bg-slate-100/50 text-[10px] uppercase font-black text-slate-500">
-                  <th className="p-4 w-12"><CheckSquare size={14} /></th>
-                  <th className="p-4">Order Details</th>
-                  <th className="p-4">Date</th>
-                  <th className="p-4">Customer</th>
-                  <th className="p-4">Location</th>
-                  <th className="p-4">Items</th>
-                  <th className="p-4">Status</th>
-                  <th className="p-4 text-right">Actions</th>
+                <tr className="bg-slate-50/50 border-b border-slate-200/80 text-[10px] uppercase font-black text-slate-400 tracking-widest">
+                  <th className="p-5 w-12">
+                    <input 
+                      type="checkbox" 
+                      className="rounded border-slate-300 text-brand-gold focus:ring-brand-gold cursor-pointer"
+                      checked={filteredOrders.length > 0 && selectedOrders.length === filteredOrders.length}
+                      onChange={handleSelectAll} 
+                    />
+                  </th>
+                  <th className="p-5">Order Reference</th>
+                  <th className="p-5">Date Logged</th>
+                  <th className="p-5">Customer & Origin</th>
+                  <th className="p-5">Destination</th>
+                  <th className="p-5">Assets</th>
+                  <th className="p-5">Status</th>
+                  <th className="p-5 text-right pr-6">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/40">
+              <tbody className="divide-y divide-slate-100/80">
                 {filteredOrders.length > 0 ? (
                   filteredOrders.map((order) => {
                     const displayDate = order.createdAt 
@@ -152,12 +351,16 @@ export default function OrdersPage() {
                       .filter(Boolean)
                       .join(', ') || 'N/A';
                     
-                    // Grand total includes items + shipping
                     const grandTotal = (order.totalAmount || 0) + (order.shippingDetails?.shippingCost || 0);
 
+                    // Resolve Division Name for Display
+                    const divRef = order.division;
+                    const divisionObj = divisionsData.find(d => d._id === (divRef?._id || divRef));
+                    const displayDivision = divisionObj ? divisionObj.divisionName : 'Unassigned Branch';
+
                     return (
-                      <tr key={order._id} className="hover:bg-white/50 transition-colors">
-                        <td className="p-4">
+                      <tr key={order._id} className="hover:bg-white/80 transition-colors group cursor-pointer" onClick={() => navigate(`/orders/${order._id}`)}>
+                        <td className="p-5" onClick={e => e.stopPropagation()}>
                           <input 
                             type="checkbox" 
                             className="rounded border-slate-300 text-brand-gold focus:ring-brand-gold cursor-pointer"
@@ -165,18 +368,23 @@ export default function OrdersPage() {
                             onChange={() => toggleSelect(order._id)} 
                           />
                         </td>
-                        <td className="p-4">
-                          <div className="font-black text-slate-800">{order.orderNumber}</div>
-                          <div className="text-[10px] text-slate-500 font-mono mt-0.5">${grandTotal.toFixed(2)}</div>
+                        <td className="p-5">
+                          <div className="font-black text-slate-800 text-sm group-hover:text-brand-gold transition-colors">{order.orderNumber}</div>
+                          <div className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 w-max mt-1 tracking-widest">${grandTotal.toFixed(2)}</div>
                         </td>
-                        <td className="p-4 text-slate-500 font-medium">{displayDate}</td>
-                        <td className="p-4 font-bold text-slate-700">{order.customer?.customerName || 'Unknown Customer'}</td>
-                        <td className="p-4 text-slate-600 flex items-center gap-1.5 mt-2"><MapPin size={12}/>{location}</td>
-                        <td className="p-4">
-                          <span className="bg-slate-100 px-2 py-1 rounded text-slate-600 font-bold">{order.items?.length || 0}</span>
+                        <td className="p-5 text-slate-500 font-bold">{displayDate}</td>
+                        <td className="p-5">
+                          <div className="font-black text-slate-700">{order.customer?.customerName || 'Unknown Customer'}</div>
+                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 flex items-center gap-1">
+                             <Layers size={10}/> {displayDivision}
+                          </div>
                         </td>
-                        <td className="p-4">
-                          <span className={`px-2.5 py-1 text-[10px] uppercase tracking-wider rounded border font-black ${
+                        <td className="p-5 text-slate-600 font-medium flex items-center gap-1.5 mt-2.5"><MapPin size={12} className="text-brand-gold"/>{location}</td>
+                        <td className="p-5">
+                          <span className="bg-slate-100 border border-slate-200 px-2 py-1 rounded text-slate-600 font-black">{order.items?.length || 0}</span>
+                        </td>
+                        <td className="p-5">
+                          <span className={`px-2.5 py-1 text-[9px] uppercase tracking-wider rounded border shadow-sm font-black ${
                             order.status === 'Shipped' || order.status === 'Delivered' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
                             order.status === 'On Hold' || order.status === 'Cancelled' ? 'bg-rose-50 text-rose-600 border-rose-200' :
                             order.status === 'Ready to Ship' ? 'bg-indigo-50 text-indigo-600 border-indigo-200' :
@@ -185,21 +393,40 @@ export default function OrdersPage() {
                             {order.status || 'Pending'}
                           </span>
                         </td>
-                        <td className="p-4 text-right">
-                          <button 
-                            onClick={() => navigate(`/orders/${order._id}`)} 
-                            className="text-brand-gold font-bold hover:text-amber-500 transition-colors"
-                          >
-                            Manage
-                          </button>
+                        <td className="p-5 text-right pr-6" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button 
+                              onClick={() => openQuickEdit(order)}
+                              className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 shadow-sm transition-all" 
+                              title="Update Status"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button 
+                              onClick={() => navigate(`/orders/${order._id}`)}
+                              className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-brand-gold hover:border-brand-gold/50 shadow-sm transition-all" 
+                              title="Full Details"
+                            >
+                              <FileText size={14} />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteOrder(order._id, order.orderNumber)}
+                              className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-red-600 hover:border-red-200 hover:bg-red-50 shadow-sm transition-all" 
+                              title="Delete Order"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
                   })
                 ) : (
                   <tr>
-                    <td colSpan={8} className="p-10 text-center text-slate-500 font-bold bg-white/20">
-                      No orders found matching your criteria.
+                    <td colSpan={8} className="py-20 text-center text-slate-400">
+                      <Package className="mx-auto mb-3 opacity-20" size={48} />
+                      <p className="text-sm font-black uppercase tracking-widest mb-1">No Orders Found</p>
+                      <p className="text-xs font-bold">Try clearing your filters to see more results.</p>
                     </td>
                   </tr>
                 )}
@@ -208,6 +435,103 @@ export default function OrdersPage() {
           </div>
         </div>
       )}
+
+      {/* Floating Bulk Actions Bar */}
+      <AnimatePresence>
+        {selectedOrders.length > 0 && (
+          <motion.div 
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 50, scale: 0.95 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-6 py-4 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-6"
+          >
+            <div className="flex items-center gap-3">
+              <div className="bg-brand-gold text-slate-900 w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shadow-inner">
+                {selectedOrders.length}
+              </div>
+              <span className="text-[10px] font-black tracking-widest uppercase text-slate-300">
+                Orders Selected
+              </span>
+            </div>
+            
+            <div className="w-px h-8 bg-slate-700"></div>
+            
+            <div className="flex gap-2">
+              <button 
+                className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+              >
+                <Truck size={14} /> Update Status
+              </button>
+              <button 
+                onClick={handleBulkExport}
+                className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+              >
+                <FileText size={14} /> Export CSV
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Quick Edit Modal */}
+      <AnimatePresence>
+        {isEditModalOpen && editingOrder && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => !isSubmitting && setIsEditModalOpen(false)} />
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative w-full max-w-md bg-white/95 backdrop-blur-xl border border-white/50 p-6 rounded-3xl shadow-2xl">
+              
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h2 className="text-lg font-black text-slate-900 tracking-tight">Quick Update</h2>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Order {editingOrder.orderNumber}</p>
+                </div>
+                <button onClick={() => !isSubmitting && setIsEditModalOpen(false)} className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition-colors"><X size={16} /></button>
+              </div>
+
+              <form onSubmit={submitQuickEdit} className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5 block">Pipeline Status</label>
+                  <select 
+                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/50 transition-all cursor-pointer"
+                    value={editingOrder.status}
+                    onChange={(e) => setEditingOrder({...editingOrder, status: e.target.value})}
+                    disabled={isSubmitting}
+                  >
+                    <option value="Pending">Pending</option>
+                    <option value="Processing">Processing</option>
+                    <option value="Ready to Ship">Ready to Ship</option>
+                    <option value="Shipped">Shipped</option>
+                    <option value="Delivered">Delivered</option>
+                    <option value="On Hold">On Hold</option>
+                    <option value="Cancelled">Cancelled</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5 block">Fulfillment Notes</label>
+                  <textarea 
+                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/50 transition-all resize-none"
+                    rows="3"
+                    placeholder="Internal logistics notes..."
+                    value={editingOrder.notes}
+                    onChange={(e) => setEditingOrder({...editingOrder, notes: e.target.value})}
+                    disabled={isSubmitting}
+                  />
+                </div>
+
+                <div className="pt-4 flex gap-3">
+                  <button type="button" onClick={() => setIsEditModalOpen(false)} disabled={isSubmitting} className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50">Cancel</button>
+                  <button type="submit" disabled={isSubmitting} className="flex-[2] flex justify-center items-center gap-2 px-4 py-3 bg-brand-gold hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-brand-gold/20 transition-all disabled:opacity-70">
+                    {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <><Save size={16} /> Save Status</>}
+                  </button>
+                </div>
+              </form>
+
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }

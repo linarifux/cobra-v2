@@ -10,7 +10,8 @@ import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
 // Nested Route Imports
 import carrierRouter from './carrierRoutes.js';
-import typePieceRouter from './typePieceRoutes.js'; // Ensure you have this file created
+import typePieceRouter from './typePieceRoutes.js';
+import inventoryRouter from './inventoryRoutes.js'; // <-- NEW: Import inventory router
 
 // mergeParams: true allows access to parent router params (like customerId from customerRoutes)
 const router = express.Router({ mergeParams: true });
@@ -22,6 +23,8 @@ const router = express.Router({ mergeParams: true });
 // E.g., GET /api/v1/divisions/123/carriers --> handled by carrierRoutes.js
 router.use('/:divisionId/carriers', carrierRouter);
 router.use('/:divisionId/type-pieces', typePieceRouter);
+router.use('/:divisionId/inventories', inventoryRouter); 
+
 
 // ==========================================
 // 2. AUTHENTICATION & AUTHORIZATION
@@ -35,7 +38,7 @@ router.use(protect);
 // ==========================================
 router
   .route('/')
-  .get(restrictTo('admin', 'super_admin'), getAllDivisions)
+  .get(restrictTo('admin', 'super_admin', 'standard', 'super_user', 'manager'), getAllDivisions)
   // .get(getAllDivisions)
   // UNCOMMENT IN PRODUCTION
   .post(restrictTo('admin', 'super_admin'), createDivision);
@@ -43,7 +46,7 @@ router
 
 router
   .route('/:id')
-  .get(restrictTo('admin', 'super_admin'), getDivision)
+  .get(restrictTo('admin', 'super_admin', 'standard', 'super_user', 'manager'), getDivision)
   // .get(getDivision)
   // UNCOMMENT IN PRODUCTION
   .put(restrictTo('admin', 'super_admin'), updateDivision)

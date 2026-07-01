@@ -1,14 +1,26 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '../../utils/api'; // Adjust the import path if necessary based on your folder structure
 
-// 1. Fetch All Orders (Supports global or customer-specific fetching)
+// --- Thunks ---
+
+// 1. Fetch All Orders (Supports global, customer-scoped, or division-scoped fetching)
 export const fetchOrders = createAsyncThunk(
   'orders/fetchOrders',
-  async (customerId = null, { rejectWithValue }) => {
+  async ({ customerId, divisionId } = {}, { rejectWithValue }) => {
     try {
-      const endpoint = customerId ? `/customers/${customerId}/orders` : `/orders`;
+      let endpoint = '/orders';
+      
+      // Utilize the nested Express routes we configured in the backend
+      if (divisionId) {
+        endpoint = `/divisions/${divisionId}/orders`;
+      } else if (customerId) {
+        endpoint = `/customers/${customerId}/orders`;
+      }
+
       const response = await api.get(endpoint);
-      return response.data.data.orders; 
+      
+      // Defensive fallback against API wrapping changes
+      return response.data.data.orders || response.data.data || []; 
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch orders');
     }
@@ -21,7 +33,7 @@ export const fetchOrderById = createAsyncThunk(
   async (id, { rejectWithValue }) => {
     try {
       const response = await api.get(`/orders/${id}`);
-      return response.data.data.order;
+      return response.data.data.order || response.data.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch order details');
     }
@@ -33,8 +45,16 @@ export const createOrder = createAsyncThunk(
   'orders/createOrder',
   async (orderData, { rejectWithValue }) => {
     try {
-      const response = await api.post('/orders', orderData);
-      return response.data.data.order;
+      // Intelligently route through nested endpoints if relationships are provided
+      let endpoint = '/orders';
+      if (orderData.division) {
+        endpoint = `/divisions/${orderData.division}/orders`;
+      } else if (orderData.customer) {
+        endpoint = `/customers/${orderData.customer}/orders`;
+      }
+
+      const response = await api.post(endpoint, orderData);
+      return response.data.data.order || response.data.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to create order');
     }
@@ -47,7 +67,7 @@ export const updateOrder = createAsyncThunk(
   async ({ id, updateData }, { rejectWithValue }) => {
     try {
       const response = await api.put(`/orders/${id}`, updateData);
-      return response.data.data.order;
+      return response.data.data.order || response.data.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to update order');
     }
@@ -67,6 +87,7 @@ export const deleteOrder = createAsyncThunk(
   }
 );
 
+// --- Slice Definition ---
 const orderSlice = createSlice({
   name: 'orders',
   initialState: {
@@ -78,6 +99,12 @@ const orderSlice = createSlice({
   reducers: {
     clearCurrentOrder: (state) => {
       state.currentOrder = null;
+    },
+    // Utility to wipe state (e.g., on user logout or when hard-switching context)
+    clearOrders: (state) => {
+      state.items = [];
+      state.status = 'idle';
+      state.error = null;
     }
   },
   extraReducers: (builder) => {
@@ -85,6 +112,7 @@ const orderSlice = createSlice({
       // --- Fetch All ---
       .addCase(fetchOrders.pending, (state) => {
         state.status = 'loading';
+        state.error = null;
       })
       .addCase(fetchOrders.fulfilled, (state, action) => {
         state.status = 'succeeded';
@@ -98,6 +126,7 @@ const orderSlice = createSlice({
       // --- Fetch Single ---
       .addCase(fetchOrderById.pending, (state) => {
         state.status = 'loading';
+        state.error = null;
       })
       .addCase(fetchOrderById.fulfilled, (state, action) => {
         state.status = 'succeeded';
@@ -115,24 +144,28 @@ const orderSlice = createSlice({
 
       // --- Update ---
       .addCase(updateOrder.fulfilled, (state, action) => {
-        const index = state.items.findIndex(o => o._id === action.payload._id);
+        // Safe string casting prevents Mongoose ObjectId strict equality mismatches
+        const index = state.items.findIndex(o => String(o._id) === String(action.payload._id));
         if (index !== -1) {
           state.items[index] = action.payload;
         }
-        if (state.currentOrder && state.currentOrder._id === action.payload._id) {
+        
+        if (state.currentOrder && String(state.currentOrder._id) === String(action.payload._id)) {
           state.currentOrder = action.payload;
         }
       })
 
       // --- Delete ---
       .addCase(deleteOrder.fulfilled, (state, action) => {
-        state.items = state.items.filter(o => o._id !== action.payload);
-        if (state.currentOrder && state.currentOrder._id === action.payload) {
+        // Safe string casting
+        state.items = state.items.filter(o => String(o._id) !== String(action.payload));
+        
+        if (state.currentOrder && String(state.currentOrder._id) === String(action.payload)) {
           state.currentOrder = null;
         }
       });
   }
 });
 
-export const { clearCurrentOrder } = orderSlice.actions;
+export const { clearCurrentOrder, clearOrders } = orderSlice.actions;
 export default orderSlice.reducer;

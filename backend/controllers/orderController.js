@@ -6,11 +6,19 @@ import AppError from '../utils/AppError.js';
 // @desc    Create a new order
 // @route   POST /api/v1/orders
 // @route   POST /api/v1/customers/:customerId/orders
+// @route   POST /api/v1/divisions/:divisionId/orders
 export const createOrder = catchAsync(async (req, res, next) => {
-  // If hitting the nested route, ensure the customer ID is attached to the body
-  if (!req.body.customer) req.body.customer = req.params.customerId;
+  // Support nested routing for both customer and division boundaries
+  if (!req.body.customer && req.params.customerId) req.body.customer = req.params.customerId;
+  if (!req.body.division && req.params.divisionId) req.body.division = req.params.divisionId;
 
   const order = await Order.create(req.body);
+
+  // Populate relational data before returning the new document
+  await order.populate([
+    { path: 'customer', select: 'customerName contactEmail' },
+    { path: 'division', select: 'divisionName divisionCode' }
+  ]);
 
   res.status(201).json({
     status: 'success',
@@ -18,16 +26,20 @@ export const createOrder = catchAsync(async (req, res, next) => {
   });
 });
 
-// @desc    Get all orders (with optional customer filter)
+// @desc    Get all orders (with optional customer or division filter)
 // @route   GET /api/v1/orders
 // @route   GET /api/v1/customers/:customerId/orders
+// @route   GET /api/v1/divisions/:divisionId/orders
 export const getAllOrders = catchAsync(async (req, res, next) => {
   let filter = {};
-  // Support nested routing to get only one customer's orders
-  if (req.params.customerId) filter = { customer: req.params.customerId };
+  
+  // Support nested routing to scope orders to specific relational boundaries
+  if (req.params.customerId) filter.customer = req.params.customerId;
+  if (req.params.divisionId) filter.division = req.params.divisionId;
 
   const orders = await Order.find(filter)
     .populate('customer', 'customerName contactEmail')
+    .populate('division', 'divisionName divisionCode') //  Supply division details to the frontend
     .populate('shippingDetails.carrierId', 'carrierType accountName')
     .sort('-createdAt');
 
@@ -43,6 +55,7 @@ export const getAllOrders = catchAsync(async (req, res, next) => {
 export const getOrder = catchAsync(async (req, res, next) => {
   const order = await Order.findById(req.params.id)
     .populate('customer', 'customerName contactEmail contactNumber address')
+    .populate('division', 'divisionName divisionCode address') // Include full division context
     .populate('shippingDetails.carrierId', 'carrierType accountName');
 
   if (!order) {
@@ -65,7 +78,10 @@ export const updateOrder = catchAsync(async (req, res, next) => {
       new: true,
       runValidators: true
     }
-  ).populate('customer', 'customerName').populate('shippingDetails.carrierId', 'carrierType accountName');
+  )
+  .populate('customer', 'customerName')
+  .populate('division', 'divisionName divisionCode') // Ensure populated on return
+  .populate('shippingDetails.carrierId', 'carrierType accountName');
 
   if (!order) {
     return next(new AppError('No order found with that ID', 404));

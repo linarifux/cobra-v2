@@ -21,6 +21,12 @@ const orderSchema = new mongoose.Schema(
       ref: 'Customer',
       required: [true, 'Order must belong to a customer']
     },
+    // Scope this order to a specific division for strict routing and access control
+    division: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Division',
+      required: [true, 'Order must be assigned to a division']
+    },
     status: {
       type: String,
       enum: ['Pending', 'Processing', 'Ready to Ship', 'Shipped', 'Delivered', 'Cancelled', 'On Hold'],
@@ -69,5 +75,9 @@ orderSchema.pre('save', function() {
     this.totalAmount = this.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0);
   }
 });
+
+// INDEXING FOR PERFORMANCE
+// Creates a compound index so queries filtering by Customer -> Division -> Status are highly optimized
+orderSchema.index({ customer: 1, division: 1, status: 1 });
 
 export default mongoose.model('Order', orderSchema);

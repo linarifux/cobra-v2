@@ -21,6 +21,6 @@ router.route('/')
 router.route('/:id')
   .get(getOrder)
   .put(updateOrder)
-  .delete(restrictTo('admin', 'staff'), deleteOrder);
+  .delete(restrictTo('admin', 'super_admin', 'staff'), deleteOrder);
 
 export default router;
