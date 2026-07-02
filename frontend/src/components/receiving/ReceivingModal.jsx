@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, Plus, Trash2, X, Loader2, DollarSign, Filter } from 'lucide-react';
+import { Package, Plus, Trash2, X, Loader2, DollarSign, Filter, AlertCircle } from 'lucide-react';
 
 // Redux Thunks
 import { createReceivingLog, updateReceivingLog } from '../../store/slices/receivingSlice';
-import { fetchInventory } from '../../store/slices/inventorySlice'; // NEW: Imported to sync stock levels
+import { fetchInventory } from '../../store/slices/inventorySlice'; 
 
 const INITIAL_FORM_STATE = {
   dateReceived: new Date().toISOString().split('T')[0],
@@ -104,14 +104,10 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
 
   const availableInventory = useMemo(() => {
     if (!formData.customer || !formData.division) return [];
-    
-    // Filter by customer and division
     const filtered = inventory.filter(inv => 
       (inv.customer?._id || inv.customer) === formData.customer && 
       (inv.division?._id || inv.division) === formData.division
     );
-    
-    // SORT ALPHANUMERICALLY BY ITEM CODE / NAME
     return filtered.sort((a, b) => {
       const nameA = a.productCode || a.sku || a.itemName || a.description || '';
       const nameB = b.productCode || b.sku || b.itemName || b.description || '';
@@ -135,21 +131,41 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
   // Handlers
   const handleCustomerChange = (e) => setFormData({ ...formData, customer: e.target.value, division: '', inventoryItem: '', description: '', description2: ''});
   const handleDivisionChange = (e) => setFormData({ ...formData, division: e.target.value, inventoryItem: '', description: '', description2: ''});
-  
   const handleInventoryChange = (e) => {
     const invId = e.target.value;
     if (!invId) return setFormData({ ...formData, inventoryItem: '', description: '', description2: ''});
     const inv = availableInventory.find(i => i._id === invId);
-    if (inv) {
-      setFormData({ ...formData, inventoryItem: inv._id, description: inv.description || inv.itemName || '', description2: inv.description2 || ''});
-    }
+    if (inv) setFormData({ ...formData, inventoryItem: inv._id, description: inv.description || inv.itemName || '', description2: inv.description2 || ''});
   };
 
+  // ==========================================
+  // ROBUST STORAGE LIMIT VALIDATION
+  // ==========================================
   const handleAddLocation = (loc) => {
-    if (!formData.locations.includes(loc._id)) setFormData(prev => ({ ...prev, locations: [...prev.locations, loc._id] }));
+    const incomingSkids = Number(formData.skids) || 0;
+    
+    // Support generic field names depending on your Location schema (e.g. capacity vs maxSkids)
+    const maxLimit = loc.capacity || loc.maxSkids || loc.maxPallets; 
+    const currentUsage = loc.utilized || loc.currentSkids || loc.currentPallets || 0;
+
+    if (maxLimit !== undefined) {
+      if (currentUsage >= maxLimit || loc.status === 'Full') {
+        alert(`Storage Limit Reached: Location ${loc.designation} is completely full.`);
+        return;
+      }
+      if (incomingSkids > 0 && (currentUsage + incomingSkids > maxLimit)) {
+        alert(`Capacity Overload: Adding ${incomingSkids} skids exceeds the limit for ${loc.designation}. Only ${maxLimit - currentUsage} spots remaining.`);
+        return;
+      }
+    }
+
+    if (!formData.locations.includes(loc._id)) {
+      setFormData(prev => ({ ...prev, locations: [...prev.locations, loc._id] }));
+    }
     setLocSearchTerm('');
     setIsLocDropdownOpen(false);
   };
+
   const handleRemoveLocation = (locId) => setFormData(prev => ({ ...prev, locations: prev.locations.filter(id => id !== locId) }));
 
   const handleBreakdownChange = (id, field, value) => {
@@ -195,9 +211,7 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
         await dispatch(createReceivingLog(payload)).unwrap();
       }
       
-      // CRITICAL NEW LINE: Fetch inventory to instantly update the stock level
       dispatch(fetchInventory());
-
       onClose();
     } catch (err) {
       alert(`Error saving receiving log: ${err}`);
@@ -211,7 +225,7 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={onClose} />
-      <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="relative w-full max-w-lg h-full bg-white shadow-2xl border-l border-slate-200 p-6 md:p-8 overflow-y-auto flex flex-col">
+      <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="relative w-full max-w-lg h-full bg-white shadow-2xl border-l border-slate-200 p-5 sm:p-6 md:p-8 overflow-y-auto flex flex-col">
         <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100">
           <h2 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
             <Package className="text-brand-gold" size={20} />
@@ -222,7 +236,8 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
         
         <form onSubmit={handleSaveShipment} className="flex-1 flex flex-col gap-y-5">
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Date Received <span className="text-red-400">*</span></label>
                 <input required type="date" value={formData.dateReceived} onChange={(e) => setFormData({...formData, dateReceived: e.target.value})} disabled={isSubmitting} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer" />
@@ -233,9 +248,10 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
               </div>
             </div>
 
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3 sm:space-y-4">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-2">Vendor Information</h3>
-              <div className="grid grid-cols-2 gap-4">
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Vendor Name <span className="text-red-400">*</span></label>
                   <input required type="text" value={formData.vendor} onChange={(e) => setFormData({...formData, vendor: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:border-brand-gold transition-all" />
@@ -245,7 +261,8 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
                   <input type="text" value={formData.vendorPhone} onChange={(e) => setFormData({...formData, vendorPhone: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:border-brand-gold transition-all" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Address</label>
                   <input type="text" value={formData.vendorAddress} onChange={(e) => setFormData({...formData, vendorAddress: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:border-brand-gold transition-all" />
@@ -272,7 +289,7 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
               <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Asset Selection & Info</h3>
             </div>
             
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="col-span-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Division Segment</label>
                 <select value={formData.division} onChange={handleDivisionChange} disabled={!formData.customer || isSubmitting || availableDivisions.length === 0} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer disabled:opacity-50">
@@ -280,7 +297,7 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
                   {availableDivisions.map(d => <option key={d._id} value={d._id}>{d.divisionName}</option>)}
                 </select>
               </div>
-              <div className="col-span-2 relative">
+              <div className="col-span-1 sm:col-span-2 relative">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Select Inventory Asset <span className="text-red-400">*</span></label>
                 <select required value={formData.inventoryItem} onChange={handleInventoryChange} disabled={!formData.division || isSubmitting || availableInventory.length === 0} className={`w-full px-4 py-2.5 border rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer disabled:opacity-50 ${formData.inventoryItem ? 'bg-brand-gold/5 border-brand-gold/30 text-slate-900' : 'bg-slate-50 border-slate-200 text-slate-900'}`}>
                   <option value="">{availableInventory.length > 0 ? "Select Asset..." : "No assets found for this division"}</option>
@@ -292,7 +309,7 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
             <AnimatePresence>
               {selectedInvDetails && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="bg-slate-950 text-white rounded-xl p-4 shadow-inner overflow-hidden border border-slate-900">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest block mb-1">Current Stock Level</span>
                       <span className="text-xl font-black text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 inline-block">{selectedInvDetails.available || selectedInvDetails.unitsOnHand || 0}</span>
@@ -310,6 +327,7 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
               )}
             </AnimatePresence>
 
+            {/* LOT & STORAGE LOCATION */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 items-start">
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Lot / Batch ID</label>
@@ -340,16 +358,49 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
                     disabled={isSubmitting}
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all"
                   />
+                  
+                  {/* UPDATED LOCATION DROPDOWN UI WITH CAPACITY BADGES */}
                   <AnimatePresence>
                     {isLocDropdownOpen && (
                       <motion.ul initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto custom-scrollbar">
                         {availableLocations.length > 0 ? (
-                          availableLocations.map(loc => (
-                            <li key={loc._id} onClick={() => handleAddLocation(loc)} className="px-4 py-2.5 hover:bg-brand-gold/10 hover:text-brand-gold cursor-pointer border-b last:border-b-0 border-slate-100 transition-colors flex items-center justify-between">
-                              <span className="text-xs font-black">{loc.designation}</span>
-                              <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded">{loc.storageCategory}</span>
-                            </li>
-                          ))
+                          availableLocations.map(loc => {
+                            const maxLimit = loc.capacity || loc.maxSkids || loc.maxPallets;
+                            const currentUsage = loc.utilized || loc.currentSkids || loc.currentPallets || 0;
+                            const isFull = maxLimit !== undefined && currentUsage >= maxLimit || loc.status === 'Full';
+
+                            return (
+                              <li 
+                                key={loc._id} 
+                                onClick={() => !isFull && handleAddLocation(loc)} 
+                                className={`px-4 py-2.5 border-b last:border-b-0 border-slate-100 flex items-center justify-between transition-colors ${
+                                  isFull 
+                                    ? 'bg-slate-50 cursor-not-allowed opacity-60' 
+                                    : 'hover:bg-brand-gold/10 hover:text-brand-gold cursor-pointer'
+                                }`}
+                              >
+                                <div className="flex flex-col">
+                                  <span className="text-xs font-black flex items-center gap-1.5">
+                                    {loc.designation} 
+                                    {isFull && <AlertCircle size={12} className="text-red-500"/>}
+                                  </span>
+                                  <span className="text-[9px] font-bold text-slate-400">{loc.storageCategory || 'Standard Storage'}</span>
+                                </div>
+                                
+                                <div className="flex items-center gap-2">
+                                  {isFull ? (
+                                    <span className="text-[8px] font-black uppercase text-red-500 bg-red-50 px-1.5 py-0.5 rounded border border-red-100">Full</span>
+                                  ) : (
+                                    maxLimit !== undefined && (
+                                      <span className="text-[10px] font-bold text-slate-500">
+                                        <span className="text-slate-700">{currentUsage}</span> / {maxLimit}
+                                      </span>
+                                    )
+                                  )}
+                                </div>
+                              </li>
+                            );
+                          })
                         ) : (
                           <li className="px-4 py-3 text-xs font-bold text-slate-400 text-center italic">No matching locations</li>
                         )}
@@ -361,7 +412,7 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
             </div>
           </div>
 
-          <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200 space-y-5 mt-2">
+          <div className="bg-slate-50/80 p-4 sm:p-5 rounded-2xl border border-slate-200 space-y-5 mt-2">
             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-2">Quantitative Metrics</h3>
             <div className="space-y-3">
               <div className="flex justify-between items-center mb-1">
@@ -372,25 +423,30 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
               </div>
 
               {formData.cartonBreakdown.map((row) => (
-                <div key={row.id} className="flex items-center gap-2 sm:gap-3 bg-white p-2 sm:p-3 border border-slate-200 rounded-xl shadow-sm">
-                  <div className="flex-1">
+                <div key={row.id} className="grid grid-cols-3 sm:flex sm:items-center gap-2 sm:gap-3 bg-white p-3 border border-slate-200 rounded-xl shadow-sm relative">
+                  <div className="col-span-1 sm:flex-1">
                     <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block text-center">Cartons</label>
                     <input type="number" min="0" value={row.cartons} onChange={(e) => handleBreakdownChange(row.id, 'cartons', e.target.value)} disabled={isSubmitting} className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-black text-slate-900 text-center outline-none focus:border-brand-gold" />
                   </div>
-                  <span className="text-slate-300 font-black text-xs pt-4">×</span>
-                  <div className="flex-1">
+                  
+                  <span className="hidden sm:inline text-slate-300 font-black text-xs pt-4">×</span>
+                  
+                  <div className="col-span-1 sm:flex-1">
                     <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block text-center">Units/Ctn</label>
                     <input type="number" min="0" value={row.unitsPerCarton} onChange={(e) => handleBreakdownChange(row.id, 'unitsPerCarton', e.target.value)} disabled={isSubmitting} className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-black text-slate-900 text-center outline-none focus:border-brand-gold" />
                   </div>
-                  <span className="text-slate-300 font-black text-xs pt-4">&</span>
-                  <div className="flex-1">
+                  
+                  <span className="hidden sm:inline text-slate-300 font-black text-xs pt-4">&</span>
+                  
+                  <div className="col-span-1 sm:flex-1">
                     <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block text-center">Lbs/Ctn</label>
                     <input type="number" step="0.01" min="0" value={row.weightPerCarton} onChange={(e) => handleBreakdownChange(row.id, 'weightPerCarton', e.target.value)} disabled={isSubmitting} className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-black text-slate-900 text-center outline-none focus:border-brand-gold" />
                   </div>
-                  <div className="w-12 flex flex-col items-center justify-center pt-2 gap-1 border-l border-slate-100 pl-2">
-                    <span className="text-sm font-black text-brand-gold leading-none">{((Number(row.cartons) || 0) * (Number(row.unitsPerCarton) || 0)).toLocaleString()} <span className="text-[9px]">U</span></span>
-                  </div>
-                  <div className="pt-4 pl-1">
+
+                  <div className="col-span-3 sm:w-16 flex flex-row sm:flex-col items-center justify-between sm:justify-center pt-2 sm:pt-4 gap-2 sm:gap-1 border-t sm:border-t-0 sm:border-l border-slate-100 sm:pl-2 mt-2 sm:mt-0">
+                    <span className="text-sm font-black text-brand-gold leading-none">
+                      {((Number(row.cartons) || 0) * (Number(row.unitsPerCarton) || 0)).toLocaleString()} <span className="text-[9px]">U</span>
+                    </span>
                     <button type="button" onClick={() => removeBreakdownRow(row.id)} disabled={formData.cartonBreakdown.length === 1} className="text-slate-300 hover:text-red-500 transition-colors disabled:opacity-30">
                       <Trash2 size={16} />
                     </button>
@@ -399,22 +455,22 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
               ))}
             </div>
 
-            <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-200/60">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 pt-4 border-t border-slate-200/60">
               <div>
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 block pl-1">Total Qty</label>
-                <input type="text" readOnly value={formData.quantity.toLocaleString()} className="w-full px-4 py-3 bg-brand-gold/5 border border-brand-gold/30 rounded-xl text-lg font-black text-brand-gold cursor-not-allowed shadow-inner outline-none text-center" />
+                <input type="text" readOnly value={formData.quantity.toLocaleString()} className="w-full px-4 py-2.5 sm:py-3 bg-brand-gold/5 border border-brand-gold/30 rounded-xl text-lg font-black text-brand-gold cursor-not-allowed shadow-inner outline-none text-center" />
               </div>
               <div>
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 block pl-1">Total Cartons</label>
-                <input type="text" readOnly value={formData.numberOfCartons.toLocaleString()} className="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-lg font-black text-slate-500 cursor-not-allowed shadow-inner outline-none text-center" />
+                <input type="text" readOnly value={formData.numberOfCartons.toLocaleString()} className="w-full px-4 py-2.5 sm:py-3 bg-slate-100 border border-slate-200 rounded-xl text-lg font-black text-slate-500 cursor-not-allowed shadow-inner outline-none text-center" />
               </div>
               <div>
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 block pl-1">Total Wgt (lbs)</label>
-                <input type="text" readOnly value={formData.totalWeight.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} className="w-full px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl text-lg font-black text-emerald-700 cursor-not-allowed shadow-inner outline-none text-center" />
+                <input type="text" readOnly value={formData.totalWeight.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} className="w-full px-4 py-2.5 sm:py-3 bg-emerald-50 border border-emerald-200 rounded-xl text-lg font-black text-emerald-700 cursor-not-allowed shadow-inner outline-none text-center" />
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
               <div>
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Total Skids</label>
                 <input type="number" min="0" value={formData.skids} onChange={(e) => setFormData({...formData, skids: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
@@ -424,14 +480,14 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
                 <input type="number" step="0.01" min="0" value={formData.unitWeight} onChange={(e) => setFormData({...formData, unitWeight: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
               </div>
               <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1 flex items-center gap-1"><DollarSign size={10}/> Applied Charge</label>
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1 pl-1"><DollarSign size={10}/> Applied Charge</label>
                 <input type="number" step="0.01" min="0" value={formData.charge} onChange={(e) => setFormData({...formData, charge: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-emerald-700 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
               </div>
             </div>
           </div>
 
-          <div className="mt-auto pt-6 border-t border-slate-100 flex gap-3">
-            <button type="button" onClick={onClose} disabled={isSubmitting} className="px-6 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black rounded-2xl transition-all disabled:opacity-50 text-[11px] uppercase tracking-widest">
+          <div className="mt-auto pt-6 border-t border-slate-100 flex flex-col-reverse sm:flex-row gap-3">
+            <button type="button" onClick={onClose} disabled={isSubmitting} className="w-full sm:w-auto px-6 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black rounded-2xl transition-all disabled:opacity-50 text-[11px] uppercase tracking-widest text-center">
               Cancel
             </button>
             <button type="submit" disabled={isSubmitting} className="flex-1 flex justify-center items-center py-3.5 bg-slate-900 hover:bg-slate-800 text-brand-gold font-black rounded-2xl shadow-xl shadow-slate-900/20 transition-all active:scale-95 disabled:opacity-70 text-[11px] uppercase tracking-widest">

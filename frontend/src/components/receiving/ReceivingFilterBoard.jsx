@@ -25,17 +25,19 @@ export default function ReceivingFilterBoard({
     divisionFilter !== 'All' || 
     itemFilter !== 'All';
 
-  const inputClass = "w-full px-4 py-2.5 bg-white/60 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-brand-gold/50 outline-none transition-all";
+  // Increased padding on mobile (py-3) for better touch targets, scales down on desktop (sm:py-2.5)
+  const inputClass = "w-full px-4 py-3 sm:py-2.5 bg-white/60 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-brand-gold/50 outline-none transition-all";
 
   return (
-    <div className="bg-white/40 backdrop-blur-xl border border-white/60 p-5 rounded-[2rem] shadow-sm space-y-4">
+    <div className="bg-white/40 backdrop-blur-xl border border-white/60 p-4 sm:p-5 rounded-[2rem] shadow-sm space-y-4">
       
       {/* --- ROW 1: Search & Date Ranges --- */}
-      <div className="flex flex-wrap gap-4 items-end">
-        <div className="flex-[2] min-w-[250px] relative">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+        
+        <div className="col-span-1 sm:col-span-2 relative">
           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block ml-1">Search Database</label>
           <div className="relative">
-            <Search className="absolute left-4 top-3 w-4 h-4 text-slate-400" />
+            <Search className="absolute left-4 top-3.5 sm:top-3 w-4 h-4 text-slate-400" />
             <input 
               type="text" 
               placeholder="Search by ID, Vendor, PO, or Description..." 
@@ -46,7 +48,7 @@ export default function ReceivingFilterBoard({
           </div>
         </div>
         
-        <div className="flex-1 min-w-[140px]">
+        <div className="col-span-1">
           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block ml-1">Received From</label>
           <input 
             type="date" 
@@ -56,7 +58,7 @@ export default function ReceivingFilterBoard({
           />
         </div>
         
-        <div className="flex-1 min-w-[140px]">
+        <div className="col-span-1">
           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block ml-1">Received To</label>
           <input 
             type="date" 
@@ -68,9 +70,9 @@ export default function ReceivingFilterBoard({
       </div>
 
       {/* --- ROW 2: Relational Dropdowns --- */}
-      <div className="flex flex-wrap gap-4 items-end pt-1">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end pt-1 sm:pt-2">
         
-        <div className="flex-1 min-w-[180px]">
+        <div className="col-span-1">
           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block ml-1 flex items-center gap-1.5">
             <Filter size={10} className="text-brand-gold" /> Customer Filter
           </label>
@@ -86,14 +88,14 @@ export default function ReceivingFilterBoard({
           </select>
         </div>
 
-        <div className="flex-1 min-w-[180px]">
+        <div className="col-span-1">
           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block ml-1 flex items-center gap-1.5">
             <Filter size={10} className="text-brand-gold" /> Division Filter
           </label>
           <select 
             value={divisionFilter} 
             onChange={(e) => setDivisionFilter(e.target.value)} 
-            className={`${inputClass} cursor-pointer`}
+            className={`${inputClass} cursor-pointer disabled:opacity-50`}
             disabled={customerFilter === 'All' && divisionsList.length === 0}
           >
             <option value="All">All Divisions</option>
@@ -103,7 +105,8 @@ export default function ReceivingFilterBoard({
           </select>
         </div>
 
-        <div className="flex-[1.5] min-w-[200px]">
+        {/* Expands to fill available space dynamically based on the Clear button's presence */}
+        <div className={`col-span-1 sm:col-span-2 ${hasActiveFilters ? 'lg:col-span-1' : 'lg:col-span-2'}`}>
           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block ml-1 flex items-center gap-1.5">
             <Filter size={10} className="text-brand-gold" /> Asset / Item Code
           </label>
@@ -123,12 +126,14 @@ export default function ReceivingFilterBoard({
 
         {/* Clear Button */}
         {hasActiveFilters && (
-          <button 
-            onClick={clearFilters} 
-            className="flex items-center justify-center gap-2 px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-[11px] font-black uppercase tracking-wider transition-colors shadow-sm h-[42px] shrink-0"
-          >
-            <X size={14} /> Clear
-          </button>
+          <div className="col-span-1 sm:col-span-2 lg:col-span-1">
+            <button 
+              onClick={clearFilters} 
+              className="w-full flex items-center justify-center gap-2 px-6 py-3 sm:py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs sm:text-[11px] font-black uppercase tracking-wider transition-colors shadow-sm h-[48px] sm:h-[42px]"
+            >
+              <X size={14} /> Clear Filters
+            </button>
+          </div>
         )}
 
       </div>

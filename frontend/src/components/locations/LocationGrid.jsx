@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Layers, Edit2, Trash2 } from 'lucide-react';
+import { Layers, Edit2, Trash2, Box } from 'lucide-react';
 
 export default function LocationGrid({ filteredLocations, openEditModal, handleDelete }) {
   
@@ -22,7 +22,13 @@ export default function LocationGrid({ filteredLocations, openEditModal, handleD
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
       {filteredLocations.map((loc) => {
         const totalUsed = getLocationTotals(loc.assignedMaterials);
-        const capacityPercentage = Math.min(Math.round((totalUsed / (loc.maxStorageUnits || 1)) * 100), 100);
+        const maxUnits = loc.maxStorageUnits || 0;
+        
+        // Calculate remaining availability (preventing negative numbers if over-allocated)
+        const availableSpace = Math.max(0, maxUnits - totalUsed);
+        
+        // Calculate percentage for the progress bar
+        const capacityPercentage = maxUnits > 0 ? Math.min(Math.round((totalUsed / maxUnits) * 100), 100) : 100;
         
         return (
           <motion.div 
@@ -39,15 +45,21 @@ export default function LocationGrid({ filteredLocations, openEditModal, handleD
 
               <div className="mb-5">
                 <h3 className="font-black text-slate-900 text-xl tracking-tight pr-16 truncate">{loc.designation}</h3>
-                <div className="flex gap-2 mt-2">
-                  <span className="inline-block text-[9px] bg-slate-900 text-brand-gold border border-slate-800 px-2.5 py-1 rounded-md font-black uppercase tracking-widest shadow-sm">{loc.storageCategory}</span>
-                  <span className="inline-block text-[9px] bg-white border border-slate-200/80 text-slate-500 px-2.5 py-1 rounded-md font-black uppercase tracking-widest shadow-sm">Lvl: {loc.level || 'N/A'}</span>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  <span className="inline-block text-[9px] bg-slate-900 text-brand-gold border border-slate-800 px-2.5 py-1 rounded-md font-black uppercase tracking-widest shadow-sm">
+                    {loc.storageCategory}
+                  </span>
+                  <span className="inline-block text-[9px] bg-white border border-slate-200/80 text-slate-500 px-2.5 py-1 rounded-md font-black uppercase tracking-widest shadow-sm">
+                    Lvl: {loc.level || 'N/A'}
+                  </span>
                 </div>
               </div>
 
               {/* Sub-Inventory List Breakdown */}
               <div className="border-t border-slate-200/60 pt-4 mb-4 space-y-3">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Layers size={14} className="text-brand-gold"/> Stored Assets</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                  <Layers size={14} className="text-brand-gold"/> Stored Assets
+                </p>
                 
                 {!loc.assignedMaterials || loc.assignedMaterials.length === 0 ? (
                   <div className="py-4 bg-white/40 rounded-2xl text-center border border-dashed border-slate-200">
@@ -74,18 +86,46 @@ export default function LocationGrid({ filteredLocations, openEditModal, handleD
               </div>
             </div>
             
-            {/* Progress Utilization Tracker */}
-            <div className="space-y-2 pt-4 border-t border-slate-200/60 mt-auto">
-              <div className="flex justify-between text-[11px] font-black text-slate-500 uppercase tracking-wider">
-                <span>Usage: {totalUsed} / {loc.maxStorageUnits}</span>
-                <span className={capacityPercentage >= 90 ? 'text-red-500' : 'text-slate-900'}>{capacityPercentage}%</span>
+            {/* Progress Utilization Tracker & Availability */}
+            <div className="pt-4 border-t border-slate-200/60 mt-auto flex flex-col gap-3">
+              
+              <div className="space-y-2">
+                <div className="flex justify-between items-end text-[11px] font-black text-slate-500 uppercase tracking-wider">
+                  <span>Usage: {totalUsed} / {maxUnits}</span>
+                  <span className={capacityPercentage >= 90 ? 'text-red-500' : capacityPercentage >= 75 ? 'text-amber-500' : 'text-slate-900'}>
+                    {capacityPercentage}%
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-white border border-slate-100 rounded-full overflow-hidden shadow-inner">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      capacityPercentage >= 90 
+                        ? 'bg-red-500' 
+                        : capacityPercentage >= 75 
+                          ? 'bg-amber-400' 
+                          : 'bg-brand-gold'
+                    }`} 
+                    style={{ width: `${capacityPercentage}%` }} 
+                  />
+                </div>
               </div>
-              <div className="w-full h-2 bg-white border border-slate-100 rounded-full overflow-hidden shadow-inner">
-                <div 
-                  className={`h-full rounded-full transition-all duration-500 ${capacityPercentage >= 90 ? 'bg-red-500' : 'bg-brand-gold'}`} 
-                  style={{ width: `${capacityPercentage}%` }} 
-                />
+
+              {/* Dynamic Availability Indicator */}
+              <div className="flex justify-between items-center bg-slate-50/50 p-2.5 rounded-xl border border-slate-100">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                  <Box size={12} /> Available Space
+                </span>
+                <span className={`text-[11px] font-black px-2 py-1 rounded-lg border uppercase tracking-wider shadow-sm ${
+                  availableSpace === 0
+                    ? 'bg-red-50 text-red-600 border-red-200'
+                    : capacityPercentage >= 75
+                      ? 'bg-amber-50 text-amber-600 border-amber-200'
+                      : 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                }`}>
+                  {availableSpace} {availableSpace === 1 ? 'Unit' : 'Units'}
+                </span>
               </div>
+
             </div>
           </motion.div>
         );

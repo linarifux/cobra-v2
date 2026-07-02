@@ -89,7 +89,7 @@ export default function ReceivingOrders() {
       filtered = filtered.filter(inv => (inv.division?._id || inv.division) === divisionFilter);
     }
     
-    // FIX: Spread the filtered array into a new array [...filtered] before applying .sort() 
+    // Spread the filtered array into a new array [...filtered] before applying .sort() 
     // This prevents the "read-only" Redux strict-mode error!
     return [...filtered].sort((a, b) => {
       const nameA = a.productCode || a.sku || a.itemName || '';
@@ -131,7 +131,7 @@ export default function ReceivingOrders() {
   const openEditModal = (row) => { setSelectedRecord(row); setIsModalOpen(true); };
   
   const handleDelete = async (id) => {
-    if (await confirm({ title: 'Delete Record?', message: 'Are you sure?', confirmText: 'Delete', variant: 'danger' })) {
+    if (await confirm({ title: 'Delete Record?', message: 'Are you sure you want to delete this receiving log?', confirmText: 'Delete', variant: 'danger' })) {
       dispatch(deleteReceivingLog(id));
     }
   };
@@ -148,13 +148,13 @@ export default function ReceivingOrders() {
 
   if (hasGlobalError && !isGlobalLoading) {
     return (
-      <div className="h-full flex items-center justify-center min-h-[60vh]">
-        <div className="bg-red-50 p-8 rounded-3xl text-center shadow-lg border border-red-200">
+      <div className="h-full flex items-center justify-center min-h-[60vh] px-4">
+        <div className="bg-red-50 p-6 sm:p-8 rounded-3xl text-center shadow-lg border border-red-200 w-full max-w-md">
           <AlertTriangle className="text-red-500 mb-4 mx-auto" size={40} />
           <h2 className="text-red-800 text-lg font-black mb-2">Sync Failed</h2>
-          <p className="text-red-600/80 text-xs font-medium mb-6">{recError || 'Check connection.'}</p>
-          <button onClick={loadAllData} className="flex mx-auto items-center gap-2 px-6 py-2.5 bg-red-600 text-white rounded-xl text-xs font-black uppercase">
-            <RefreshCw size={14} /> Retry
+          <p className="text-red-600/80 text-xs font-medium mb-6">{recError || 'Please check your connection and try again.'}</p>
+          <button onClick={loadAllData} className="flex mx-auto items-center justify-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black uppercase transition-colors w-full sm:w-auto">
+            <RefreshCw size={14} /> Retry Connection
           </button>
         </div>
       </div>
@@ -163,16 +163,20 @@ export default function ReceivingOrders() {
 
   if (isGlobalLoading) {
     return (
-      <div className="h-full flex flex-col justify-center items-center min-h-[60vh] gap-4">
+      <div className="h-full flex flex-col justify-center items-center min-h-[60vh] gap-4 px-4">
         <Loader2 className="animate-spin text-brand-gold" size={36} />
-        <p className="text-sm font-black text-slate-700 uppercase">Compiling Database...</p>
+        <p className="text-xs sm:text-sm font-black text-slate-700 uppercase tracking-widest text-center">Compiling Database...</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 animate-slide-in-right relative max-w-[1500px] mx-auto p-6 pb-20">
-      <ReceivingHeader exportToCSV={exportToCSV} openNewModal={openNewModal} />
+    <div className="w-full relative max-w-[1500px] mx-auto animate-slide-in-right space-y-4 sm:space-y-6 px-4 sm:px-6 lg:px-8 py-4 sm:py-6 pb-24 sm:pb-20">
+      
+      <ReceivingHeader 
+        exportToCSV={exportToCSV} 
+        openNewModal={openNewModal} 
+      />
       
       <ReceivingFilterBoard 
         searchTerm={searchTerm} setSearchTerm={setSearchTerm} 
@@ -189,9 +193,18 @@ export default function ReceivingOrders() {
         }} 
       />
 
-      <ReceivingTable filteredData={filteredData} openEditModal={openEditModal} handleDelete={handleDelete} />
+      <ReceivingTable 
+        filteredData={filteredData} 
+        openEditModal={openEditModal} 
+        handleDelete={handleDelete} 
+      />
 
-      <ReceivingModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} record={selectedRecord} />
+      <ReceivingModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        record={selectedRecord} 
+      />
+      
     </div>
   );
 }
