@@ -6,9 +6,12 @@ import {
   deleteUser
 } from '../controllers/userController.js';
 import { protect, requirePortal, restrictTo } from '../middlewares/authMiddleware.js';
+import addressRouter from './addressRoutes.js';
 
 const router = express.Router({ mergeParams: true }); // Merge params to access :customerId in nested routes
 
+
+router.use('/:userId/addresses', addressRouter); // Nested route for user addresses
 // ALL user management requires the user to be logged in
 router.use(protect);
 

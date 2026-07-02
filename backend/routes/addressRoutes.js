@@ -12,7 +12,7 @@ import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 const router = express.Router({ mergeParams: true });
 
 // Require valid authentication
-// router.use(protect);
+router.use(protect);
 
 router.route('/')
   .get(getAllAddresses)

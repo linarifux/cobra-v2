@@ -2,10 +2,24 @@ import mongoose from 'mongoose';
 
 const addressSchema = new mongoose.Schema(
   {
-    customer: {
+    user: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Customer',
-      required: [true, 'An address must belong to a customer']
+      ref: 'User',
+      required: [true, 'An address must belong to a user'],
+      validate: {
+        // Asynchronously validates that the referenced user belongs to the 'order' portal
+        validator: async function (userId) {
+          // Skip the DB check if the user reference hasn't changed during an update
+          if (!this.isModified('user')) return true;
+          
+          const User = mongoose.model('User');
+          const userDoc = await User.findById(userId).select('portal');
+          
+          if (!userDoc) return false;
+          return userDoc.portal === 'order';
+        },
+        message: 'Invalid assignment: The associated user must belong to the "order" portal'
+      }
     },
     firstName: {
       type: String,
@@ -71,8 +85,8 @@ const addressSchema = new mongoose.Schema(
   }
 );
 
-// Add an index to speed up querying a customer's address book
-addressSchema.index({ customer: 1 });
+// Add an index to speed up querying a user's address book
+addressSchema.index({ user: 1 });
 
 // PRE-SAVE HOOK FIX: 
 // Removed 'next' parameter. When using an async function, Mongoose automatically 
@@ -80,7 +94,7 @@ addressSchema.index({ customer: 1 });
 addressSchema.pre('save', async function () {
   if (this.isModified('isDefault') && this.isDefault === true) {
     await this.constructor.updateMany(
-      { customer: this.customer, _id: { $ne: this._id }, addressType: this.addressType },
+      { user: this.user, _id: { $ne: this._id }, addressType: this.addressType },
       { isDefault: false }
     );
   }
