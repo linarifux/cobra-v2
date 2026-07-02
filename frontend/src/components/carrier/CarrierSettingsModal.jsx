@@ -26,6 +26,7 @@ export default function CarrierSettingsModal({ carrier, onClose }) {
     }
   });
 
+  
   const handleInputChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };

@@ -7,6 +7,7 @@ const carrierServiceSchema = new mongoose.Schema({
     required: [true, 'Service code is required'], 
     trim: true 
   },
+  
   serviceName: { 
     type: String, 
     required: [true, 'Service name is required'], 
