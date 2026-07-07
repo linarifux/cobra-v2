@@ -48,7 +48,8 @@ app.use(cors({
     "https://cobra-v2.netlify.app", 
     "https://dsm-mi-orders.netlify.app",
     "d1ymwhyqj02a47.cloudfront.net",
-    "http://98.83.145.156:5000"
+    "http://98.83.145.156:5000",
+    "d3s3grz6mr9lfw.cloudfront.net"
   ],
   credentials: true 
 }));
