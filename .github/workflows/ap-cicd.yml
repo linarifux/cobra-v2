@@ -4,8 +4,8 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'frontend/**' # Only triggers when the frontend code changes
+    # paths:
+    #   - 'frontend/**' 
 
 jobs:
   deploy:
@@ -21,6 +21,8 @@ jobs:
 
       - name: Install dependencies and build
         working-directory: ./frontend
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
         run: |
           npm install
           npm run build
@@ -34,7 +36,6 @@ jobs:
 
       - name: Sync to S3 Bucket
         working-directory: ./frontend
-        # Note: If you are using Vite, change "build/" to "dist/"
         run: aws s3 sync dist/ s3://${{ secrets.AWS_S3_AP_BUCKET }} --delete
 
       - name: Invalidate CloudFront Cache
