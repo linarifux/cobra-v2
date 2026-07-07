@@ -35,7 +35,7 @@ jobs:
       - name: Sync to S3 Bucket
         working-directory: ./frontend
         # Note: If you are using Vite, change "build/" to "dist/"
-        run: aws s3 sync dist/ s3://${{ vars.AWS_S3_AP_BUCKET }} --delete
+        run: aws s3 sync dist/ s3://${{ secrets.AWS_S3_AP_BUCKET }} --delete
 
       - name: Invalidate CloudFront Cache
         run: aws cloudfront create-invalidation --distribution-id ${{ secrets.CLOUDFRONT_DIST_ID }} --paths "/*"
