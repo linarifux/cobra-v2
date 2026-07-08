@@ -53,9 +53,11 @@ app.use(cors({
     "https://dsm.mi-orders.com",
     "https://api.mi-orders.com",
     "https://mi-orders.com",
+    "https://mind.mi-orders.com",
   ],
   credentials: true 
 }));
+
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
