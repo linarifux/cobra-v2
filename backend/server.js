@@ -54,6 +54,7 @@ app.use(cors({
     "https://api.mi-orders.com",
     "https://mi-orders.com",
     "https://mind.mi-orders.com",
+    "https://cobra-2-assets.s3.us-east-1.amazonaws.com"
   ],
   credentials: true 
 }));
