@@ -5,14 +5,29 @@ import { toast } from 'sonner';
 import { 
   ArrowLeft, Package, Tag, User, MapPin, 
   DollarSign, TrendingUp, History, ShieldAlert, Layers, ExternalLink, Loader2, 
-  Info, Trash2, Box // Added Box icon for Type Piece
+  Info, Trash2, Box, Edit2 
 } from 'lucide-react';
 
 // Redux Actions
-import { fetchInventoryById, deleteInventory, clearCurrentInventoryItem } from '../store/slices/inventorySlice';
+import { 
+  fetchInventoryById, 
+  deleteInventory, 
+  clearCurrentInventoryItem,
+  updateInventory // Added update action
+} from '../store/slices/inventorySlice';
+
+// Relational Fetch Actions for the Edit Form
+import { fetchCustomers } from '../store/slices/customerSlice';
+import { fetchDivisions } from '../store/slices/divisionSlice';
+import { fetchCategories } from '../store/slices/categorySlice';
+import { fetchLocations } from '../store/slices/locationSlice';
+import { fetchTypePieces } from '../store/slices/typePieceSlice';
 
 // Import Confirm Hook
 import { useConfirm } from '../providers/ConfirmProvider';
+
+// Import the Form Panel
+import InventoryFormPanel from '../components/inventory/InventoryFormPanel';
 
 // Utility to sanitize S3 URLs and bypass SSL wildcard dot errors
 const sanitizeS3Url = (url) => {
@@ -43,19 +58,45 @@ export default function InventoryDetail() {
   const confirm = useConfirm();
 
   const [imageError, setImageError] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false); // Modal state
 
   // Safely access Redux state
   const { currentItem: item, status, error } = useSelector(state => state.inventory || {});
 
-  // Fetch data on mount using the correct parameter
+  // Relational data for the Edit Form Dropdowns
+  const { items: apiCustomers = [], status: custStatus } = useSelector(state => state.customers || {});
+  const { items: apiDivisions = [], status: divStatus } = useSelector(state => state.divisions || {});
+  const { items: apiCategories = [], status: catStatus } = useSelector(state => state.categories || {});
+  const { items: apiLocations = [], status: locStatus } = useSelector(state => state.locations || {});
+  const { items: apiTypePieces = [], status: tpStatus } = useSelector(state => state.typePieces || {});
+
+  // Fetch contextual data on mount
   useEffect(() => {
     if (inventoryId) {
       dispatch(fetchInventoryById(inventoryId));
-      setImageError(false); // Reset error state when fetching a new item
+      setImageError(false); 
     }
+    
+    // Load relational data if it hasn't been fetched yet
+    if (custStatus === 'idle') dispatch(fetchCustomers());
+    if (divStatus === 'idle') dispatch(fetchDivisions());
+    if (catStatus === 'idle') dispatch(fetchCategories());
+    if (locStatus === 'idle') dispatch(fetchLocations());
+    if (tpStatus === 'idle') dispatch(fetchTypePieces());
+
     // Cleanup function to clear stale data when unmounting
     return () => dispatch(clearCurrentInventoryItem());
-  }, [inventoryId, dispatch]);
+  }, [inventoryId, dispatch, custStatus, divStatus, catStatus, locStatus, tpStatus]);
+
+  // --- HANDLERS ---
+  const handleEditSubmit = async (payload, isEditMode, id) => {
+    // Dispatch the update action
+    await dispatch(updateInventory({ id, inventoryData: payload })).unwrap();
+    setIsEditModalOpen(false);
+    
+    // Re-fetch the item so the Detail page reflects the newly populated relational changes
+    dispatch(fetchInventoryById(id));
+  };
 
   const handleDelete = async () => {
     const isConfirmed = await confirm({
@@ -130,8 +171,6 @@ export default function InventoryDetail() {
   const divisionName = item.division?.divisionName || 'Unassigned';
   const categoryName = item.category1?.categoryName || 'Unassigned';
   
-  console.log(item);
-  
   const safeImageUrl = sanitizeS3Url(item.productImage || item.image || item.imageUrl);
   const formatCurrency = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
 
@@ -139,21 +178,32 @@ export default function InventoryDetail() {
     <div className="h-full max-w-[1500px] mx-auto p-6 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
       
       {/* 1. Header Navigation */}
-      <div className="flex items-center justify-between pb-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
         <button 
           onClick={() => navigate('/inventory')}
-          className="flex items-center gap-2 px-4 py-2 bg-white/60 hover:bg-white backdrop-blur-xl border border-slate-200/60 rounded-xl text-[11px] font-black text-slate-600 hover:text-slate-900 uppercase tracking-widest shadow-sm transition-all"
+          className="flex items-center justify-center sm:justify-start gap-2 px-4 py-2 bg-white/60 hover:bg-white backdrop-blur-xl border border-slate-200/60 rounded-xl text-[11px] font-black text-slate-600 hover:text-slate-900 uppercase tracking-widest shadow-sm transition-all w-full sm:w-auto"
         >
           <ArrowLeft size={16} /> Registry
         </button>
         
-        {/* Action Buttons (Delete) */}
-        <button 
-          onClick={handleDelete}
-          className="flex items-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 border border-red-100 hover:border-red-200 rounded-xl text-[11px] font-black text-red-600 uppercase tracking-widest shadow-sm transition-all"
-        >
-          <Trash2 size={14} /> Purge Asset
-        </button>
+        {/* Action Buttons Container */}
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          {/* Edit Button - OPENS MODAL */}
+          <button 
+            onClick={() => setIsEditModalOpen(true)}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-xl text-[11px] font-black text-slate-700 hover:text-brand-gold uppercase tracking-widest shadow-sm transition-all"
+          >
+            <Edit2 size={14} /> Edit Asset
+          </button>
+          
+          {/* Delete Button */}
+          <button 
+            onClick={handleDelete}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 border border-red-100 hover:border-red-200 rounded-xl text-[11px] font-black text-red-600 uppercase tracking-widest shadow-sm transition-all"
+          >
+            <Trash2 size={14} /> Purge Asset
+          </button>
+        </div>
       </div>
 
       {/* 2. Core Identity Hero Block */}
@@ -197,8 +247,6 @@ export default function InventoryDetail() {
                 </span>
                 
                 {/* PROMINENT TYPE PIECE BADGE */}
-                {console.log(item)
-                }
                 {item.typePiece && (
                   <span className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-black rounded-lg tracking-widest uppercase border border-slate-700 bg-slate-800/80 text-slate-300 shadow-sm backdrop-blur-sm">
                     <Box size={12} className="text-brand-gold" /> {item.typePiece}
@@ -319,7 +367,6 @@ export default function InventoryDetail() {
                       <Tag size={12} className="text-slate-400" /> {item.category2.categoryName}
                     </span>
                   )}
-                  {/* Kept here as well for thoroughness in the hierarchy view */}
                   {item.typePiece && (
                     <span className="inline-flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase px-3 py-1.5 rounded-lg shadow-sm bg-brand-gold/10 text-brand-gold border border-brand-gold/20">
                       <Package size={12} /> {item.typePiece}
@@ -361,7 +408,6 @@ export default function InventoryDetail() {
             <div>
               <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest mb-2">Active Coordinates</span>
               
-              {/* Maps over multiple locations, with legacy fallback */}
               {item.locations?.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
                   {item.locations.map((loc, idx) => (
@@ -458,8 +504,22 @@ export default function InventoryDetail() {
             </p>
           </div>
         </div>
-
       </div>
+
+      {/* 5. Inventory Form Modal Portal */}
+      {isEditModalOpen && (
+        <InventoryFormPanel
+          itemToEdit={item}
+          apiCustomers={apiCustomers}
+          apiDivisions={apiDivisions}
+          apiCategories={apiCategories}
+          apiLocations={apiLocations}
+          apiTypePieces={apiTypePieces}
+          onSubmit={handleEditSubmit}
+          onClose={() => setIsEditModalOpen(false)}
+        />
+      )}
+
     </div>
   );
 }
