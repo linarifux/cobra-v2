@@ -4,7 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { 
   ArrowLeft, Truck, MapPin, User, CreditCard, 
   Trash2, Edit2, Check, Plus, Minus,
-  MessageSquare, Mail, Phone, X, Weight, Loader2, Save
+  MessageSquare, Mail, Phone, X, Weight, Loader2, Save, ExternalLink
 } from 'lucide-react';
 
 // Redux Actions
@@ -352,18 +352,42 @@ export default function OrderDetailsPage() {
                     {editing.logistics ? <Check size={14} className="text-emerald-600"/> : <Edit2 size={14}/>}
                 </button>
                </div>
+               
                {editing.logistics ? (
-                   <div className="space-y-1.5">
+                   <div className="space-y-1.5 mt-2">
                        <input className="w-full bg-white p-1.5 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none" value={shipping.carrierType} onChange={(e) => setShipping({...shipping, carrierType: e.target.value})} placeholder="Carrier (e.g. FedEx)" />
                        <input className="w-full bg-white p-1.5 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none" value={shipping.serviceCode} onChange={(e) => setShipping({...shipping, serviceCode: e.target.value})} placeholder="Service Code" />
                        <input className="w-full bg-white p-1.5 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none" value={shipping.trackingNumber} onChange={(e) => setShipping({...shipping, trackingNumber: e.target.value})} placeholder="Tracking Number" />
                        <input type="number" className="w-full bg-white p-1.5 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none" value={shipping.shippingCost} onChange={(e) => setShipping({...shipping, shippingCost: e.target.value})} placeholder="Shipping Cost ($)" />
                    </div>
                ) : (
-                   <div className="text-xs font-bold text-slate-900 min-w-0">
-                       <p className="truncate text-slate-800">{shipping.carrierType || 'No Carrier'} {shipping.serviceCode && `- ${shipping.serviceCode}`}</p>
-                       <p className="text-slate-500 font-medium mt-1">Cost: ${Number(shipping.shippingCost).toFixed(2)}</p>
-                       {shipping.trackingNumber && <p className="text-emerald-600 text-[10px] break-all font-mono mt-1 pt-1 border-t border-slate-200">{shipping.trackingNumber}</p>}
+                   <div className="text-xs font-bold text-slate-900 min-w-0 flex flex-col justify-between h-full">
+                       <div>
+                         <p className="truncate text-slate-800">{shipping.carrierType || 'No Carrier'} {shipping.serviceCode && `- ${shipping.serviceCode}`}</p>
+                         <p className="text-slate-500 font-medium mt-1">Cost: ${Number(shipping.shippingCost).toFixed(2)}</p>
+                       </div>
+                       
+                       {/* Tracking Number Logic */}
+                       {orderStatus === 'Shipped' && shipping.trackingNumber ? (
+                          <div className="mt-2 pt-2 border-t border-slate-200">
+                             <span className="text-[9px] font-black uppercase text-slate-400 block mb-1">Tracking Link</span>
+                             <a 
+                               href={`https://www.google.com/search?q=${shipping.trackingNumber}`}
+                               target="_blank" 
+                               rel="noopener noreferrer"
+                               className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-[11px] font-mono bg-blue-50/50 hover:bg-blue-50 px-2 py-1 rounded transition-colors w-fit border border-blue-100"
+                             >
+                               {shipping.trackingNumber}
+                               <ExternalLink size={10} />
+                             </a>
+                          </div>
+                       ) : (
+                          shipping.trackingNumber && orderStatus !== 'Shipped' && (
+                             <p className="text-slate-400 text-[10px] break-all font-mono mt-2 pt-2 border-t border-slate-200">
+                               Tracking: {shipping.trackingNumber}
+                             </p>
+                          )
+                       )}
                    </div>
                )}
             </div>
