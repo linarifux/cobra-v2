@@ -17,6 +17,31 @@ import NotFoundPage from './NotFoundPage';
 // Helper to generate safe local IDs for new items mapped in UI
 const generateLocalId = () => `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
+// Helper to construct accurate tracking URLs based on carrier name
+const generateTrackingLink = (carrier, trackingNumber) => {
+  if (!trackingNumber) return '#';
+  const c = (carrier || '').toLowerCase().replace(/\s+/g, '');
+  
+  if (c.includes('ups')) {
+    return `https://www.ups.com/track?tracknum=${trackingNumber}`;
+  } else if (c.includes('fedex')) {
+    return `https://www.fedex.com/fedextrack/?trknbr=${trackingNumber}`;
+  } else if (c.includes('usps')) {
+    return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`;
+  } else if (c.includes('dhl')) {
+    return `https://www.dhl.com/global-en/home/tracking/tracking-express.html?submit=1&tracking-id=${trackingNumber}`;
+  } else if (c.includes('canadapost')) {
+    return `https://www.canadapost-postescanada.ca/track-reperage/en#/search?searchFor=${trackingNumber}`;
+  } else if (c.includes('australiapost') || c === 'auspost') {
+    return `https://auspost.com.au/mypost/track/#/details/${trackingNumber}`;
+  } else if (c.includes('royalmail')) {
+    return `https://www.royalmail.com/track-your-item#/${trackingNumber}`;
+  }
+  
+  // Fallback if carrier is unknown or blank
+  return `https://www.google.com/search?q=track+package+${trackingNumber}`;
+};
+
 export default function OrderDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -367,12 +392,12 @@ export default function OrderDetailsPage() {
                          <p className="text-slate-500 font-medium mt-1">Cost: ${Number(shipping.shippingCost).toFixed(2)}</p>
                        </div>
                        
-                       {/* Tracking Number Logic */}
+                       {/* Tracking Number Logic - NOW WITH CARRIER AWARENESS */}
                        {orderStatus === 'Shipped' && shipping.trackingNumber ? (
                           <div className="mt-2 pt-2 border-t border-slate-200">
                              <span className="text-[9px] font-black uppercase text-slate-400 block mb-1">Tracking Link</span>
                              <a 
-                               href={`https://www.google.com/search?q=${shipping.trackingNumber}`}
+                               href={generateTrackingLink(shipping.carrierType, shipping.trackingNumber)}
                                target="_blank" 
                                rel="noopener noreferrer"
                                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-[11px] font-mono bg-blue-50/50 hover:bg-blue-50 px-2 py-1 rounded transition-colors w-fit border border-blue-100"

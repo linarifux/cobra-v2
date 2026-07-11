@@ -317,6 +317,8 @@ export const saveAndSendPdf = catchAsync(async (req, res, next) => {
   receiving.pdfUrl = s3Url; 
   await receiving.save();
 
+  
+
   // 6. FIRE AND FORGET: Send Email via Webmail SMTP
   // Removed 'await' so the server can respond instantly to the frontend while the email sends in the background
   sendReceivingConfirmationEmail(

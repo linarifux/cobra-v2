@@ -19,6 +19,8 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+
+
 export const sendReceivingConfirmationEmail = async (customerEmail, receivingId, pdfBuffer) => {
   
   // 2. Safeguard: Hard crash with a clear message if the password is missing

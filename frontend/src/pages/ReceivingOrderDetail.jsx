@@ -7,26 +7,38 @@ import { toast } from 'sonner';
 import { 
   ArrowLeft, FileText, CheckCircle2, 
   MapPin, Weight, Truck, Loader2,
-  Package, ChevronDown, UserCircle, Printer, Save
+  Package, ChevronDown, UserCircle, Printer, Save, Check, Send, UploadCloud, X
 } from 'lucide-react';
 
 import { fetchReceivingById, clearCurrentReceivingLog, sendReceivingEmail } from '../store/slices/receivingSlice';
+import { fetchUsers } from '../store/slices/userSlice'; 
 
 export default function ReceivingOrderDetail() {
   const { id } = useParams();
   const dispatch = useDispatch();
 
   const { currentLog, currentLogStatus, error } = useSelector(state => state.receiving || {});
+  const { items: allUsers = [], status: usersStatus } = useSelector(state => state.users || {}); 
 
+  // --- Print & PDF States ---
+  const printRef = useRef(null);
   const [showPrintMenu, setShowPrintMenu] = useState(false);
   const [printMode, setPrintMode] = useState('admin'); 
-  const [isEmailing, setIsEmailing] = useState(false);
-  const printRef = useRef(null);
+  
+  // --- 3-Step Modal States ---
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [step, setStep] = useState(1);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [generatedPdfBlob, setGeneratedPdfBlob] = useState(null);
+  const [selectedEmail, setSelectedEmail] = useState('');
 
+  // Fetch receiving log and users on mount
   useEffect(() => {
     if (id) dispatch(fetchReceivingById(id));
+    if (usersStatus === 'idle') dispatch(fetchUsers());
+    
     return () => dispatch(clearCurrentReceivingLog());
-  }, [id, dispatch]);
+  }, [id, dispatch, usersStatus]);
 
   const enrichedItems = useMemo(() => {
     if (!currentLog) return [];
@@ -84,6 +96,49 @@ export default function ReceivingOrderDetail() {
     return logs;
   }, [currentLog]);
 
+  // --- DYNAMIC PORTAL USERS ---
+  const portalUsers = useMemo(() => {
+    const options = [];
+    
+    if (!currentLog?.customer) return options;
+
+    const currentCustomerId = currentLog.customer._id || currentLog.customer;
+
+    // // 1. Always ensure the primary company contact email is an option first
+    // if (currentLog.customer.contactEmail) {
+    //   options.push({
+    //     id: 'primary',
+    //     name: currentLog.customer.customerName || 'Primary Contact',
+    //     email: currentLog.customer.contactEmail,
+    //     role: 'Primary File'
+    //   });
+    // }
+
+    // 2. Find all order portal users that specifically belong to this customer
+    if (allUsers && allUsers.length > 0) {
+      const associatedUsers = allUsers.filter(user => {
+        const userCustomerId = user.customer?._id || user.customer;
+        // Strictly target order portal users for this customer
+        return user.portal === 'order' && userCustomerId === currentCustomerId;
+      });
+
+      // 3. Append them to options, preventing duplicates if the email is the same as the primary
+      associatedUsers.forEach(user => {
+        if (!options.find(opt => opt.email === user.email)) {
+          options.push({
+            id: user._id,
+            name: user.name,
+            email: user.email,
+            role: 'Order Portal User'
+          });
+        }
+      });
+    }
+
+    return options;
+  }, [currentLog, allUsers]);
+
+  // --- Print Handling (react-to-print) ---
   const handlePrintAction = useReactToPrint({
     contentRef: printRef,
     documentTitle: `Receiving-Receipt-${currentLog?.receivingId || id}`,
@@ -96,37 +151,62 @@ export default function ReceivingOrderDetail() {
     setTimeout(() => { handlePrintAction(); }, 150);
   };
 
-  const handleSaveAndSend = async () => {
-    setIsEmailing(true);
-    const toastId = toast.loading('Compiling Customer PDF...');
+  // --- 3-STEP MODAL ACTIONS ---
+  const openShareModal = () => {
+    setStep(1);
+    setGeneratedPdfBlob(null);
+    // Safely default to the first email if available to prevent crashes
+    setSelectedEmail(portalUsers.length > 0 ? portalUsers[0].email : ''); 
+    setIsModalOpen(true);
+  };
 
+  const handleGeneratePdf = async () => {
+    setIsProcessing(true);
     try {
-      setPrintMode('customer');
-      await new Promise(resolve => setTimeout(resolve, 250));
+      setPrintMode('customer'); // Ensure customer view for email
+      await new Promise(resolve => setTimeout(resolve, 300)); // Allow DOM to re-render
 
       const element = printRef.current;
       const opt = {
-        margin:       0.5,
-        filename:     `Receiving_Receipt_${currentLog.receivingId}.pdf`,
-        image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2, useCORS: true, logging: false }, // Disabled logging for cleaner console
-        jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+        margin: 0.5,
+        filename: `Receiving_Receipt_${currentLog.receivingId}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
       };
 
       const pdfBlob = await html2pdf().set(opt).from(element).output('blob');
+      setGeneratedPdfBlob(pdfBlob);
+      setStep(2); 
+    } catch (err) {
+      toast.error('Failed to generate PDF document.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
+  const handleDispatchEmail = async () => {
+    if (!selectedEmail) {
+      toast.error('Please select an email recipient.');
+      return;
+    }
+
+    setIsProcessing(true);
+    const toastId = toast.loading('Uploading to S3 and dispatching email...');
+
+    try {
       const formData = new FormData();
-      formData.append('pdfDocument', pdfBlob, `Receiving_Receipt_${currentLog.receivingId}.pdf`);
-
-      toast.loading('Uploading to S3 and sending email...', { id: toastId });
+      formData.append('pdfDocument', generatedPdfBlob, `Receiving_Receipt_${currentLog.receivingId}.pdf`);
+      formData.append('recipientEmail', selectedEmail); 
 
       await dispatch(sendReceivingEmail({ id, formData })).unwrap();
 
-      toast.success('PDF saved to S3 and emailed to customer!', { id: toastId });
+      toast.success('Success! PDF saved to S3 and email dispatched.', { id: toastId });
+      setIsModalOpen(false);
     } catch (err) {
-      toast.error(`Failed to process: ${err}`, { id: toastId });
+      toast.error(`Dispatch failed: ${err}`, { id: toastId });
     } finally {
-      setIsEmailing(false);
+      setIsProcessing(false);
     }
   };
 
@@ -156,6 +236,7 @@ export default function ReceivingOrderDetail() {
     <>
       <div className="space-y-6 animate-in slide-in-from-right-4 duration-500 max-w-[1500px] mx-auto p-6 pb-20">
         
+        {/* HEADER & ACTION BUTTONS */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <Link to="/receiving" className="p-2.5 bg-white/50 hover:bg-white/80 border border-white/60 rounded-xl transition-all shadow-sm">
@@ -176,12 +257,10 @@ export default function ReceivingOrderDetail() {
           
           <div className="flex gap-3">
             <button 
-              onClick={handleSaveAndSend} 
-              disabled={isEmailing}
-              className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-black shadow-sm transition-all active:scale-95 disabled:opacity-50"
+              onClick={openShareModal} 
+              className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-black shadow-sm transition-all active:scale-95"
             >
-              {isEmailing ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-              Save & Send PDF
+              <Save size={16} /> Save & Send PDF
             </button>
 
             <div className="relative">
@@ -368,6 +447,134 @@ export default function ReceivingOrderDetail() {
           </div>
         </div>
       </div>
+
+      {/* ========================================================================= */}
+      {/* 3-STEP UPLOAD & EMAIL MODAL */}
+      {/* ========================================================================= */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => !isProcessing && setIsModalOpen(false)} />
+          <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+            
+            <div className="flex items-center justify-between p-6 border-b border-slate-100">
+              <h2 className="text-lg font-black text-slate-900">Dispatch Document</h2>
+              <button onClick={() => !isProcessing && setIsModalOpen(false)} className="text-slate-400 hover:text-slate-700 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Stepper Header */}
+            <div className="flex items-center justify-between px-10 py-5 bg-slate-50/50 border-b border-slate-100">
+              {[1, 2, 3].map((num) => (
+                <div key={num} className="flex flex-col items-center gap-2 relative z-10">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs transition-colors ${step >= num ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                    {step > num ? <Check size={14} /> : num}
+                  </div>
+                </div>
+              ))}
+              <div className="absolute left-16 right-16 top-[66px] h-0.5 bg-slate-200 z-0">
+                <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${(step - 1) * 50}%` }} />
+              </div>
+            </div>
+
+            <div className="p-8">
+              {/* STEP 1: Generate PDF */}
+              {step === 1 && (
+                <div className="text-center space-y-6">
+                  <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-400">
+                    <FileText size={32} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900">Generate Customer PDF</h3>
+                    <p className="text-sm text-slate-500 mt-1">We need to compile the clean, vendor-safe version of this receipt before sending.</p>
+                  </div>
+                  <button 
+                    onClick={handleGeneratePdf}
+                    disabled={isProcessing}
+                    className="w-full bg-slate-900 text-white font-bold py-3.5 rounded-xl shadow-lg hover:bg-slate-800 flex items-center justify-center gap-2 transition-all disabled:opacity-70"
+                  >
+                    {isProcessing ? <Loader2 className="animate-spin" size={18} /> : <Printer size={18} />}
+                    {isProcessing ? 'Compiling Document...' : 'Compile Document'}
+                  </button>
+                </div>
+              )}
+
+              {/* STEP 2: Select Recipient */}
+              {step === 2 && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900">Select Recipient</h3>
+                    <p className="text-sm text-slate-500 mt-1">Choose an order portal user to receive this document.</p>
+                  </div>
+                  
+                  {portalUsers.length === 0 ? (
+                    <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-xl text-sm font-bold text-center">
+                      No portal users found for this customer. Please set a contact email in the customer settings.
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                      {portalUsers.map((user, idx) => (
+                        <label key={user.id || idx} className={`flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition-all ${selectedEmail === user.email ? 'border-emerald-500 bg-emerald-50/30' : 'border-slate-100 hover:border-slate-200'}`}>
+                          <div className="flex items-center gap-3">
+                            <input 
+                              type="radio" 
+                              name="recipient" 
+                              value={user.email} 
+                              checked={selectedEmail === user.email}
+                              onChange={(e) => setSelectedEmail(e.target.value)}
+                              className="w-4 h-4 text-emerald-600 focus:ring-emerald-500"
+                            />
+                            <div>
+                              <p className="text-sm font-bold text-slate-900">{user.name}</p>
+                              <p className="text-xs text-slate-500">{user.email}</p>
+                            </div>
+                          </div>
+                          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 bg-white px-2 py-1 rounded-md border border-slate-100">{user.role}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex gap-3 pt-2">
+                    <button onClick={() => setStep(1)} className="flex-1 py-3.5 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">Back</button>
+                    <button onClick={() => setStep(3)} disabled={!selectedEmail} className="flex-[2] py-3.5 rounded-xl font-bold text-white bg-slate-900 hover:bg-slate-800 shadow-md transition-colors disabled:opacity-50">Continue to Dispatch</button>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 3: Confirm & Dispatch */}
+              {step === 3 && (
+                <div className="text-center space-y-6 animate-in fade-in slide-in-from-right-4">
+                  <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto text-emerald-600 relative">
+                    <UploadCloud size={32} />
+                    <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-1 shadow-sm">
+                      <div className="bg-emerald-500 text-white rounded-full p-1"><Check size={12} /></div>
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900">Ready to Send</h3>
+                    <p className="text-sm text-slate-500 mt-1 max-w-[250px] mx-auto">
+                      The PDF is ready to be uploaded to AWS S3 and emailed to <strong className="text-slate-900">{selectedEmail}</strong>.
+                    </p>
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button onClick={() => setStep(2)} disabled={isProcessing} className="flex-1 py-3.5 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors disabled:opacity-50">Back</button>
+                    <button 
+                      onClick={handleDispatchEmail}
+                      disabled={isProcessing}
+                      className="flex-[2] py-3.5 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 flex items-center justify-center gap-2 shadow-md transition-colors disabled:opacity-70"
+                    >
+                      {isProcessing ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
+                      {isProcessing ? 'Processing...' : 'Upload & Send Email'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* ISOLATED PDF COMPONENT - PURE INLINE CSS ONLY TO PREVENT HTML2CANVAS CRASH */}
