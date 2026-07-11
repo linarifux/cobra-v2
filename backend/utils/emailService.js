@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+
 // 1. Extract and AGGRESSIVELY CLEAN variables
 const smtpUser = process.env.SMTP_USER?.replace(/['"]/g, '').trim() || 'orders@mi-kro.com';
 const smtpPass = process.env.SMTP_PASS?.replace(/['"]/g, '').trim();
