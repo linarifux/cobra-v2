@@ -127,6 +127,6 @@ inventorySchema.virtual('storageLocations', {
 
 // Indexes for fast lookup
 inventorySchema.index({ customer: 1 });
-inventorySchema.index({ productCode: 1 });
+// inventorySchema.index({ productCode: 1 });
 
 export default mongoose.model('Inventory', inventorySchema);

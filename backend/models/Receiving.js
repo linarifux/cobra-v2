@@ -173,6 +173,6 @@ receivingSchema.pre('save', function () {
 // Indexes
 receivingSchema.index({ customer: 1 });
 receivingSchema.index({ inventoryItem: 1 });
-receivingSchema.index({ receivingId: 1 });
+// receivingSchema.index({ receivingId: 1 });
 
 export default mongoose.model('Receiving', receivingSchema);
