@@ -8,7 +8,6 @@ dotenv.config();
 const smtpUser = process.env.SMTP_USER?.replace(/['"]/g, '').trim() || 'orders@mi-kro.com';
 const smtpPass = process.env.SMTP_PASS?.replace(/['"]/g, '').trim();
 
-console.log(smtpPass, "SMTP_PASS loaded from .env file");
 
 const transporter = nodemailer.createTransport({
   host: 'netsol-smtp-oxcs.hostingplatform.com',
