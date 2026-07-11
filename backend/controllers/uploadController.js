@@ -60,7 +60,6 @@ export const getPresignedUrl = catchAsync(async (req, res, next) => {
     // The final public URL where the image will be accessible after upload
     const finalImageUrl = `https://${bucketName}.s3.${region}.amazonaws.com/${s3Key}`;
 
-    console.log(finalImageUrl);
     
     res.status(200).json({
       status: 'success',

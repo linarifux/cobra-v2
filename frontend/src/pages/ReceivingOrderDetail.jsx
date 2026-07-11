@@ -2,13 +2,15 @@ import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { useReactToPrint } from 'react-to-print';
+import html2pdf from 'html2pdf.js';
+import { toast } from 'sonner';
 import { 
   ArrowLeft, FileText, CheckCircle2, 
-  Info, Building2, MapPin, Weight, Calendar, Truck, Loader2,
-  Package, ChevronDown, UserCircle, Printer
+  MapPin, Weight, Truck, Loader2,
+  Package, ChevronDown, UserCircle, Printer, Save
 } from 'lucide-react';
 
-import { fetchReceivingById, clearCurrentReceivingLog } from '../store/slices/receivingSlice';
+import { fetchReceivingById, clearCurrentReceivingLog, sendReceivingEmail } from '../store/slices/receivingSlice';
 
 export default function ReceivingOrderDetail() {
   const { id } = useParams();
@@ -16,10 +18,10 @@ export default function ReceivingOrderDetail() {
 
   const { currentLog, currentLogStatus, error } = useSelector(state => state.receiving || {});
 
-  // --- Print State & Refs ---
-  const printRef = useRef(null);
   const [showPrintMenu, setShowPrintMenu] = useState(false);
-  const [printMode, setPrintMode] = useState('admin'); // 'admin' | 'customer'
+  const [printMode, setPrintMode] = useState('admin'); 
+  const [isEmailing, setIsEmailing] = useState(false);
+  const printRef = useRef(null);
 
   useEffect(() => {
     if (id) dispatch(fetchReceivingById(id));
@@ -30,17 +32,13 @@ export default function ReceivingOrderDetail() {
     if (!currentLog) return [];
     const qty = Number(currentLog.quantity) || 0;
     
-    // Check if we have the new breakdown array, otherwise fallback to legacy fields
     const breakdown = currentLog.cartonBreakdown?.length > 0 
       ? currentLog.cartonBreakdown 
       : [{ cartons: currentLog.numberOfCartons || 0, unitsPerCarton: currentLog.unitsPerCarton || 0, weightPerCarton: 0 }];
     
-    // Use the backend's totalWeight if available, otherwise calculate it as a fallback
     const totalWgt = Number(currentLog.totalWeight) || breakdown.reduce((sum, b) => sum + ((Number(b.cartons)||0) * (Number(b.weightPerCarton)||0)), 0) || (qty * Number(currentLog.unitWeight || 0));
 
     const inv = currentLog.inventoryItem || {};
-
-    // Safely extract category names whether they are populated objects or just strings
     const getCatName = (cat) => typeof cat === 'object' && cat !== null ? cat.categoryName : (cat || '');
 
     return [{
@@ -48,17 +46,12 @@ export default function ReceivingOrderDetail() {
       name: inv.itemName || inv.description || 'Unknown Item',
       sku: inv.sku || inv.productCode || 'N/A',
       division: inv.division?.divisionName || inv.division || 'Unassigned Division',
-      
-      // Core Categories
       category1: getCatName(inv.category1),
       category2: getCatName(inv.category2),
       category3: getCatName(inv.category3),
-      category: getCatName(inv.category1) || 'Unassigned Category', // UI Fallback
-      
-      // Descriptions from Inventory Table
+      category: getCatName(inv.category1) || 'Unassigned Category', 
       description1: inv.description || inv.itemName || '—',
       description2: inv.description2 || '—',
-
       cartonBreakdown: breakdown,
       totalCartons: currentLog.numberOfCartons || 0,
       qty: qty,
@@ -91,23 +84,50 @@ export default function ReceivingOrderDetail() {
     return logs;
   }, [currentLog]);
 
-  // --- react-to-print Configuration ---
-  const handlePrint = useReactToPrint({
+  const handlePrintAction = useReactToPrint({
     contentRef: printRef,
-    content: () => printRef.current, 
-    documentTitle: `Receiving-Notification-${currentLog?.receivingId || id}`,
-    pageStyle: `
-      @page { size: letter; margin: 0.5in; }
-      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    `,
+    documentTitle: `Receiving-Receipt-${currentLog?.receivingId || id}`,
+    pageStyle: `@page { size: letter; margin: 0.5in; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }`,
   });
 
   const handlePrintTrigger = (mode) => {
     setPrintMode(mode);
     setShowPrintMenu(false);
-    setTimeout(() => {
-      handlePrint();
-    }, 150);
+    setTimeout(() => { handlePrintAction(); }, 150);
+  };
+
+  const handleSaveAndSend = async () => {
+    setIsEmailing(true);
+    const toastId = toast.loading('Compiling Customer PDF...');
+
+    try {
+      setPrintMode('customer');
+      await new Promise(resolve => setTimeout(resolve, 250));
+
+      const element = printRef.current;
+      const opt = {
+        margin:       0.5,
+        filename:     `Receiving_Receipt_${currentLog.receivingId}.pdf`,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2, useCORS: true, logging: false }, // Disabled logging for cleaner console
+        jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(element).output('blob');
+
+      const formData = new FormData();
+      formData.append('pdfDocument', pdfBlob, `Receiving_Receipt_${currentLog.receivingId}.pdf`);
+
+      toast.loading('Uploading to S3 and sending email...', { id: toastId });
+
+      await dispatch(sendReceivingEmail({ id, formData })).unwrap();
+
+      toast.success('PDF saved to S3 and emailed to customer!', { id: toastId });
+    } catch (err) {
+      toast.error(`Failed to process: ${err}`, { id: toastId });
+    } finally {
+      setIsEmailing(false);
+    }
   };
 
   if (currentLogStatus === 'loading' || !currentLog) {
@@ -130,13 +150,10 @@ export default function ReceivingOrderDetail() {
     );
   }
 
-  const primaryItem = enrichedItems[0];
+  const primaryItem = enrichedItems[0] || {};
 
   return (
     <>
-      {/* ========================================================================= */}
-      {/* MAIN SCREEN UI                                                            */}
-      {/* ========================================================================= */}
       <div className="space-y-6 animate-in slide-in-from-right-4 duration-500 max-w-[1500px] mx-auto p-6 pb-20">
         
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -156,10 +173,23 @@ export default function ReceivingOrderDetail() {
               </p>
             </div>
           </div>
+          
           <div className="flex gap-3">
+            <button 
+              onClick={handleSaveAndSend} 
+              disabled={isEmailing}
+              className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-black shadow-sm transition-all active:scale-95 disabled:opacity-50"
+            >
+              {isEmailing ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+              Save & Send PDF
+            </button>
+
             <div className="relative">
-              <button onClick={() => setShowPrintMenu(!showPrintMenu)} className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-brand-gold rounded-xl text-sm font-black shadow-xl shadow-slate-900/20 transition-all active:scale-95 uppercase tracking-wider">
-                <FileText size={16} /> Print PDF <ChevronDown size={14} className="ml-1" />
+              <button 
+                onClick={() => setShowPrintMenu(!showPrintMenu)} 
+                className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-brand-gold rounded-xl text-sm font-black shadow-xl shadow-slate-900/20 transition-all active:scale-95 uppercase tracking-wider"
+              >
+                <Printer size={16} /> Print <ChevronDown size={14} className="ml-1" />
               </button>
               {showPrintMenu && (
                 <div className="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden">
@@ -175,10 +205,10 @@ export default function ReceivingOrderDetail() {
           </div>
         </div>
 
-        {/* Quick Stats Grid (Removed Storage Location, shifted to 5 columns on large screens) */}
+        {/* Quick Stats Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           {[
-            { label: 'Customer', val: currentLog.customer?.customerName || '—', icon: Building2 },
+            { label: 'Customer', val: currentLog.customer?.customerName || '—', icon: FileText },
             { label: 'Carrier', val: currentLog.carrier || '—', icon: Truck },
             { label: 'Vendor', val: currentLog.vendor || '—', icon: UserCircle },
             { label: 'Total Weight', val: `${calculatedTotalWeight} lbs`, icon: Weight }, 
@@ -194,9 +224,8 @@ export default function ReceivingOrderDetail() {
           ))}
         </div>
 
-        {/* NEW: Robust Storage Locations Banner */}
+        {/* Storage Locations Banner */}
         <div className="bg-white/80 backdrop-blur-2xl border border-emerald-100 p-5 sm:p-6 rounded-[2rem] shadow-sm flex flex-col md:flex-row md:items-center gap-4 sm:gap-6 relative overflow-hidden">
-          {/* Decorative background element */}
           <div className="absolute top-1/2 -translate-y-1/2 right-0 p-8 opacity-5 pointer-events-none">
             <MapPin size={120} />
           </div>
@@ -299,25 +328,23 @@ export default function ReceivingOrderDetail() {
               </div>
             </div>
 
-            {printMode === 'admin' && currentLog.vendorAddress && (
-              <div className="bg-white/60 backdrop-blur-2xl border border-white/80 rounded-[2rem] p-6 shadow-sm">
-                <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
-                  <UserCircle className="text-brand-gold" size={18} />
-                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest">Vendor Contact Profile</h3>
+            <div className="bg-white/60 backdrop-blur-2xl border border-white/80 rounded-[2rem] p-6 shadow-sm">
+              <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
+                <UserCircle className="text-brand-gold" size={18} />
+                <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest">Vendor Contact Profile</h3>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest block mb-1">Address</span>
+                  <p className="text-sm font-bold text-slate-700">{currentLog.vendorAddress || 'Unspecified'}</p>
+                  <p className="text-sm font-bold text-slate-700 mt-1">{currentLog.vendorCityStateZip || 'Unspecified'}</p>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest block mb-1">Address</span>
-                    <p className="text-sm font-bold text-slate-700">{currentLog.vendorAddress}</p>
-                    <p className="text-sm font-bold text-slate-700 mt-1">{currentLog.vendorCityStateZip}</p>
-                  </div>
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest block mb-1">Phone Number</span>
-                    <p className="text-sm font-bold text-slate-700">{currentLog.vendorPhone}</p>
-                  </div>
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest block mb-1">Phone Number</span>
+                  <p className="text-sm font-bold text-slate-700">{currentLog.vendorPhone || 'Unspecified'}</p>
                 </div>
               </div>
-            )}
+            </div>
           </div>
 
           <div className="bg-white/60 backdrop-blur-2xl border border-white/80 rounded-[2rem] p-6 shadow-sm h-fit">
@@ -343,142 +370,147 @@ export default function ReceivingOrderDetail() {
       </div>
 
       {/* ========================================================================= */}
-      {/* ISOLATED PDF COMPONENT - Cloned by react-to-print, safely hidden off-screen */}
+      {/* ISOLATED PDF COMPONENT - PURE INLINE CSS ONLY TO PREVENT HTML2CANVAS CRASH */}
       {/* ========================================================================= */}
       <div style={{ position: 'absolute', top: '-9999px', left: '-9999px', zIndex: -9999 }}>
         <div 
           ref={printRef} 
-          className="bg-white text-black font-sans w-[8.5in] p-[0.5in] leading-tight"
+          style={{ 
+            backgroundColor: '#ffffff', 
+            color: '#000000', 
+            fontFamily: 'Helvetica Neue, Arial, sans-serif', 
+            width: '8.5in', 
+            padding: '0.5in', 
+            boxSizing: 'border-box' 
+          }}
         >
-          {/* Header Block: Division Only */}
-          <div className="mb-6 pb-4 border-b-2 border-black text-center relative">
-            <h1 className="font-black text-[24pt] tracking-tight uppercase text-black m-0">
-              {primaryItem.division}
+          {/* Header Block */}
+          <div style={{ marginBottom: '24px', paddingBottom: '16px', borderBottom: '2px solid #000000', textAlign: 'center', position: 'relative' }}>
+            <h1 style={{ fontSize: '24pt', fontWeight: '900', textTransform: 'uppercase', margin: '0', letterSpacing: '-0.5px' }}>
+              {primaryItem?.division || 'UNASSIGNED DIVISION'}
             </h1>
             
             {/* Vendor strictly on Admin print */}
-            {printMode === 'admin' && (
-              <div className="absolute right-0 top-0 text-[10pt] font-black uppercase text-black">
+            {printMode === 'admin' && currentLog?.vendor && (
+              <div style={{ position: 'absolute', right: '0', top: '0', fontSize: '10pt', fontWeight: 'bold', textTransform: 'uppercase' }}>
                 {currentLog.vendor}
               </div>
             )}
           </div>
 
           {/* 2-Column Professional Layout */}
-          <div className="flex flex-row justify-between gap-x-12 text-[11pt]">
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11pt' }}>
             
             {/* LEFT COLUMN */}
-            <div className="w-1/2 flex flex-col gap-y-4">
-              <div className="flex items-start">
-                <span className="w-36 font-bold text-black shrink-0">Item Code:</span>
-                <div className="flex-1">
-                  <span className="font-bold block text-[13pt] text-black leading-none mb-1">{primaryItem.sku}</span>
-                  {currentLog.lot !== 'N/A' && <span className="font-bold block text-black mt-1">Lot: {currentLog.lot}</span>}
+            <div style={{ width: '48%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              
+              <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                <span style={{ width: '130px', fontWeight: 'bold', flexShrink: 0 }}>Item Code:</span>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontWeight: 'bold', fontSize: '13pt', display: 'block', marginBottom: '4px' }}>{primaryItem?.sku || 'N/A'}</span>
+                  {currentLog?.lot && currentLog.lot !== 'N/A' && <span style={{ display: 'block', fontWeight: 'bold' }}>Lot: {currentLog.lot}</span>}
                 </div>
               </div>
 
-              {/* Added Categories 1, 2, 3 */}
-              <div className="flex items-start mt-2">
-                <span className="w-36 font-bold text-black shrink-0">Categories:</span>
-                <span className="flex-1 text-black">
-                  {[primaryItem.category1, primaryItem.category2, primaryItem.category3].filter(Boolean).join(', ') || 'None'}
+              <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                <span style={{ width: '130px', fontWeight: 'bold', flexShrink: 0 }}>Categories:</span>
+                <span style={{ flex: 1 }}>
+                  {[primaryItem?.category1, primaryItem?.category2, primaryItem?.category3].filter(Boolean).join(', ') || 'None'}
                 </span>
               </div>
 
-              <div className="flex items-start mt-2">
-                <span className="w-36 font-bold text-black shrink-0">Receiver Type:</span>
-                <span className="flex-1 uppercase text-black">REGULAR</span>
+              <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                <span style={{ width: '130px', fontWeight: 'bold', flexShrink: 0 }}>Receiver Type:</span>
+                <span style={{ flex: 1, textTransform: 'uppercase' }}>REGULAR</span>
               </div>
 
-              <div className="flex items-start mt-4">
-                <span className="w-36 font-bold text-black shrink-0">Qty. Received:</span>
-                <span className="flex-1 font-black text-[14pt] text-black leading-none">{currentLog.quantity?.toLocaleString() || 0}</span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: '16px' }}>
+                <span style={{ width: '130px', fontWeight: 'bold', flexShrink: 0 }}>Qty. Received:</span>
+                <span style={{ flex: 1, fontWeight: '900', fontSize: '14pt' }}>{currentLog?.quantity?.toLocaleString() || 0}</span>
               </div>
 
-              <div className="flex items-start mt-2 border-b border-dashed border-gray-300 pb-3">
-                <span className="w-36 font-bold text-black shrink-0">Number of<br/>Cartons:</span>
-                <span className="flex-1 text-black font-bold text-[12pt]">{currentLog.numberOfCartons?.toLocaleString() || 0}</span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: '8px', borderBottom: '1px dashed #d1d5db', paddingBottom: '12px' }}>
+                <span style={{ width: '130px', fontWeight: 'bold', flexShrink: 0 }}>Number of<br/>Cartons:</span>
+                <span style={{ flex: 1, fontWeight: 'bold', fontSize: '12pt' }}>{currentLog?.numberOfCartons?.toLocaleString() || 0}</span>
               </div>
 
-              {/* Dynamic Carton Breakdown Render for PDF */}
-              {primaryItem.cartonBreakdown.map((row, idx) => (
-                <div key={idx} className="flex items-start py-0.5">
-                  <span className="w-36 text-[10pt] text-gray-700 italic shrink-0">Breakdown {idx + 1}:</span>
-                  <span className="flex-1 text-[10pt] text-black">
-                    {row.cartons} Cartons @ {row.unitsPerCarton} units <span className="text-gray-500 italic ml-1">({row.weightPerCarton || 0} lbs/ctn)</span>
+              {primaryItem?.cartonBreakdown?.map((row, idx) => (
+                <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', padding: '4px 0' }}>
+                  <span style={{ width: '130px', fontSize: '10pt', color: '#6b7280', fontStyle: 'italic', flexShrink: 0 }}>Breakdown {idx + 1}:</span>
+                  <span style={{ flex: 1, fontSize: '10pt' }}>
+                    {row.cartons} Cartons @ {row.unitsPerCarton} units <span style={{ color: '#6b7280', fontStyle: 'italic', marginLeft: '4px' }}>({row.weightPerCarton || 0} lbs/ctn)</span>
                   </span>
                 </div>
               ))}
 
-              <div className="flex items-start mt-4 border-t border-gray-300 pt-3">
-                <span className="w-36 font-bold text-black shrink-0">Total Weight:</span>
-                <span className="flex-1 font-bold text-[12pt] text-black">{calculatedTotalWeight} lbs</span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: '12px', borderTop: '1px solid #d1d5db', paddingTop: '12px' }}>
+                <span style={{ width: '130px', fontWeight: 'bold', flexShrink: 0 }}>Total Weight:</span>
+                <span style={{ flex: 1, fontWeight: 'bold', fontSize: '13pt' }}>{calculatedTotalWeight} lbs</span>
               </div>
 
-              <div className="flex items-start mt-2">
-                <span className="w-36 font-bold text-black shrink-0">Comments:</span>
-                <span className="flex-1 whitespace-pre-wrap text-black">{currentLog.description || ''}</span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: '8px' }}>
+                <span style={{ width: '130px', fontWeight: 'bold', flexShrink: 0 }}>Comments:</span>
+                <span style={{ flex: 1, whiteSpace: 'pre-wrap' }}>{currentLog?.description || ''}</span>
               </div>
 
               {/* ADMIN ONLY LEFT COLUMN */}
               {printMode === 'admin' && (
-                <div className="mt-4 flex flex-col gap-y-4 border-t border-gray-300 pt-4">
-                  <div className="flex items-start">
-                    <span className="w-36 font-bold text-black shrink-0">Vendor Name:</span>
-                    <span className="flex-1 uppercase text-black">{currentLog.vendor}</span>
+                <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px', borderTop: '1px solid #d1d5db', paddingTop: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                    <span style={{ width: '130px', fontWeight: 'bold', flexShrink: 0 }}>Vendor Name:</span>
+                    <span style={{ flex: 1, textTransform: 'uppercase' }}>{currentLog?.vendor || ''}</span>
                   </div>
-                  <div className="flex items-start">
-                    <span className="w-36 font-bold text-black shrink-0">Address:</span>
-                    <span className="flex-1 uppercase text-black">{currentLog.vendorAddress || 'ON FILE'}</span>
+                  <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                    <span style={{ width: '130px', fontWeight: 'bold', flexShrink: 0 }}>Address:</span>
+                    <span style={{ flex: 1, textTransform: 'uppercase' }}>{currentLog?.vendorAddress || 'ON FILE'}</span>
                   </div>
-                  <div className="flex items-start">
-                    <span className="w-36 font-bold text-black shrink-0">City, State, ZIP:</span>
-                    <span className="flex-1 uppercase text-black">{currentLog.vendorCityStateZip || 'ON FILE'}</span>
+                  <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                    <span style={{ width: '130px', fontWeight: 'bold', flexShrink: 0 }}>City, State, ZIP:</span>
+                    <span style={{ flex: 1, textTransform: 'uppercase' }}>{currentLog?.vendorCityStateZip || 'ON FILE'}</span>
                   </div>
                 </div>
               )}
             </div>
 
             {/* RIGHT COLUMN */}
-            <div className="w-1/2 flex flex-col gap-y-4">
-              <div className="flex items-start">
-                <span className="w-40 font-bold text-black shrink-0">Date Received:</span>
-                <span className="flex-1 font-bold text-[11pt] text-black leading-none">
-                  {new Date(currentLog.dateReceived).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })}
+            <div style={{ width: '48%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                <span style={{ width: '140px', fontWeight: 'bold', flexShrink: 0 }}>Date Received:</span>
+                <span style={{ flex: 1, fontWeight: 'bold', fontSize: '11pt' }}>
+                  {currentLog?.dateReceived ? new Date(currentLog.dateReceived).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : 'N/A'}
                 </span>
               </div>
 
-              {/* Descriptions 1 & 2 directly from inventory */}
-              <div className="flex items-start mt-2">
-                <span className="w-40 font-bold text-black shrink-0">Description 1:</span>
-                <span className="flex-1 text-black">{primaryItem.description1}</span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: '8px' }}>
+                <span style={{ width: '140px', fontWeight: 'bold', flexShrink: 0 }}>Description 1:</span>
+                <span style={{ flex: 1 }}>{primaryItem?.description1}</span>
               </div>
 
-              <div className="flex items-start mt-2">
-                <span className="w-40 font-bold text-black shrink-0">Description 2:</span>
-                <span className="flex-1 text-black">{primaryItem.description2}</span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: '8px' }}>
+                <span style={{ width: '140px', fontWeight: 'bold', flexShrink: 0 }}>Description 2:</span>
+                <span style={{ flex: 1 }}>{primaryItem?.description2}</span>
               </div>
 
-              <div className="flex items-start mt-[28px]">
-                <span className="w-40 font-bold text-black shrink-0">Number Of Skids:</span>
-                <span className="flex-1 text-black">{currentLog.skids || 0}</span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: '30px' }}>
+                <span style={{ width: '140px', fontWeight: 'bold', flexShrink: 0 }}>Number Of Skids:</span>
+                <span style={{ flex: 1 }}>{currentLog?.skids || 0}</span>
               </div>
 
-              <div className="flex items-start mt-[10px]">
-                <span className="w-40 font-bold text-black shrink-0">Carrier:</span>
-                <span className="flex-1 uppercase text-black">{currentLog.carrier || ''}</span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: '8px' }}>
+                <span style={{ width: '140px', fontWeight: 'bold', flexShrink: 0 }}>Carrier:</span>
+                <span style={{ flex: 1, textTransform: 'uppercase' }}>{currentLog?.carrier || ''}</span>
               </div>
 
               {/* ADMIN ONLY RIGHT COLUMN */}
               {printMode === 'admin' && (
-                <div className="mt-[42px] flex flex-col gap-y-4 border-t border-gray-300 pt-4">
-                  <div className="flex items-start">
-                    <span className="w-40 font-bold text-black shrink-0">Address cont'd:</span>
-                    <span className="flex-1 uppercase text-black">ON FILE</span>
+                <div style={{ marginTop: '80px', display: 'flex', flexDirection: 'column', gap: '12px', borderTop: '1px solid #d1d5db', paddingTop: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                    <span style={{ width: '140px', fontWeight: 'bold', flexShrink: 0 }}>Address cont'd:</span>
+                    <span style={{ flex: 1, textTransform: 'uppercase' }}>ON FILE</span>
                   </div>
-                  <div className="flex items-start mt-[2px]">
-                    <span className="w-40 font-bold text-black shrink-0">Phone:</span>
-                    <span className="flex-1 uppercase text-black">{currentLog.vendorPhone || 'ON FILE'}</span>
+                  <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                    <span style={{ width: '140px', fontWeight: 'bold', flexShrink: 0 }}>Phone:</span>
+                    <span style={{ flex: 1 }}>{currentLog?.vendorPhone || ''}</span>
                   </div>
                 </div>
               )}

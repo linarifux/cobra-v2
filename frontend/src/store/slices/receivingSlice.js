@@ -1,92 +1,69 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import api from '../../utils/api'; // Adjust the import path if necessary based on your file structure
+import api from '../../utils/api'; 
 
 // -------------------------------------------------------------
 // ASYNC THUNKS
 // -------------------------------------------------------------
 
-// 1. Fetch All Receiving Records
-export const fetchReceivingLogs = createAsyncThunk(
-  'receiving/fetchReceivingLogs',
-  async (_, { rejectWithValue }) => {
-    try {
-      const response = await api.get('/receiving');
-      return response.data.data.receiving; 
-    } catch (error) {
-      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch receiving logs');
-    }
-  }
-);
+export const fetchReceivingLogs = createAsyncThunk('receiving/fetchReceivingLogs', async (_, { rejectWithValue }) => {
+  try {
+    const response = await api.get('/receiving');
+    return response.data.data.receiving; 
+  } catch (error) { return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch receiving logs'); }
+});
 
-// 2. Fetch Single Receiving Record by ID
-export const fetchReceivingById = createAsyncThunk(
-  'receiving/fetchReceivingById',
-  async (id, { rejectWithValue }) => {
-    try {
-      const response = await api.get(`/receiving/${id}`);
-      return response.data.data.receiving;
-    } catch (error) {
-      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch receiving details');
-    }
-  }
-);
+export const fetchReceivingById = createAsyncThunk('receiving/fetchReceivingById', async (id, { rejectWithValue }) => {
+  try {
+    const response = await api.get(`/receiving/${id}`);
+    return response.data.data.receiving;
+  } catch (error) { return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch receiving details'); }
+});
 
-// 3. Create New Receiving Record (Inbound Shipment)
-export const createReceivingLog = createAsyncThunk(
-  'receiving/createReceivingLog',
-  async (receivingData, { rejectWithValue }) => {
-    try {
-      const response = await api.post('/receiving', receivingData);
-      return response.data.data.receiving;
-    } catch (error) {
-      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to create receiving log');
-    }
-  }
-);
+export const createReceivingLog = createAsyncThunk('receiving/createReceivingLog', async (receivingData, { rejectWithValue }) => {
+  try {
+    const response = await api.post('/receiving', receivingData);
+    return response.data.data.receiving;
+  } catch (error) { return rejectWithValue(error.response?.data?.message || error.message || 'Failed to create receiving log'); }
+});
 
-// 4. Update Receiving Record
-export const updateReceivingLog = createAsyncThunk(
-  'receiving/updateReceivingLog',
-  async ({ id, updateData }, { rejectWithValue }) => {
-    try {
-      const response = await api.put(`/receiving/${id}`, updateData);
-      return response.data.data.receiving;
-    } catch (error) {
-      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to update receiving log');
-    }
-  }
-);
+export const updateReceivingLog = createAsyncThunk('receiving/updateReceivingLog', async ({ id, updateData }, { rejectWithValue }) => {
+  try {
+    const response = await api.put(`/receiving/${id}`, updateData);
+    return response.data.data.receiving;
+  } catch (error) { return rejectWithValue(error.response?.data?.message || error.message || 'Failed to update receiving log'); }
+});
 
-// 5. Delete Receiving Record
-export const deleteReceivingLog = createAsyncThunk(
-  'receiving/deleteReceivingLog',
-  async (id, { rejectWithValue }) => {
-    try {
-      await api.delete(`/receiving/${id}`);
-      // Return the ID so the reducer knows which item to remove from the UI state
-      return id; 
-    } catch (error) {
-      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to delete receiving log');
-    }
-  }
-);
+export const deleteReceivingLog = createAsyncThunk('receiving/deleteReceivingLog', async (id, { rejectWithValue }) => {
+  try {
+    await api.delete(`/receiving/${id}`);
+    return id; 
+  } catch (error) { return rejectWithValue(error.response?.data?.message || error.message || 'Failed to delete receiving log'); }
+});
 
+// UPDATED: Now accepts { id, formData } to upload the PDF file to the backend
+export const sendReceivingEmail = createAsyncThunk('receiving/sendReceivingEmail', async ({ id, formData }, { rejectWithValue }) => {
+  try {
+    const response = await api.post(`/receiving/${id}/save-and-send`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 30000 // 30 seconds timeout for email dispatch
+    });
+    return response.data;
+  } catch (error) {
+    // Check if the error is specifically a timeout
+      if (error.code === 'ECONNABORTED') {
+        return rejectWithValue('The file upload took too long. Please check your internet connection.');
+      }
+    return rejectWithValue(error.response?.data?.message || error.message || 'Failed to dispatch email confirmation');
+  }
+});
 
 // -------------------------------------------------------------
 // REDUX SLICE
 // -------------------------------------------------------------
-
 const receivingSlice = createSlice({
   name: 'receiving',
-  initialState: {
-    items: [],           // Array of all receiving logs
-    currentLog: null,    // The specific log being viewed/edited
-    status: 'idle',      // 'idle' | 'loading' | 'succeeded' | 'failed'
-    currentLogStatus: 'idle', // Separate status for fetching a single log
-    error: null
-  },
+  initialState: { items: [], currentLog: null, status: 'idle', currentLogStatus: 'idle', error: null },
   reducers: {
-    // Utility to clear the currently viewed log when navigating away from the details page
     clearCurrentReceivingLog: (state) => {
       state.currentLog = null;
       state.currentLogStatus = 'idle';
@@ -94,59 +71,25 @@ const receivingSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // --- Fetch All ---
-      .addCase(fetchReceivingLogs.pending, (state) => { 
-        state.status = 'loading'; 
-      })
-      .addCase(fetchReceivingLogs.fulfilled, (state, action) => {
-        state.status = 'succeeded';
-        state.items = action.payload;
-      })
-      .addCase(fetchReceivingLogs.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.payload;
-      })
+      .addCase(fetchReceivingLogs.pending, (state) => { state.status = 'loading'; })
+      .addCase(fetchReceivingLogs.fulfilled, (state, action) => { state.status = 'succeeded'; state.items = action.payload; })
+      .addCase(fetchReceivingLogs.rejected, (state, action) => { state.status = 'failed'; state.error = action.payload; })
       
-      // --- Fetch Single ---
-      .addCase(fetchReceivingById.pending, (state) => { 
-        state.currentLogStatus = 'loading'; 
-      })
-      .addCase(fetchReceivingById.fulfilled, (state, action) => {
-        state.currentLogStatus = 'succeeded';
-        state.currentLog = action.payload;
-      })
-      .addCase(fetchReceivingById.rejected, (state, action) => {
-        state.currentLogStatus = 'failed';
-        state.error = action.payload;
-      })
+      .addCase(fetchReceivingById.pending, (state) => { state.currentLogStatus = 'loading'; })
+      .addCase(fetchReceivingById.fulfilled, (state, action) => { state.currentLogStatus = 'succeeded'; state.currentLog = action.payload; })
+      .addCase(fetchReceivingById.rejected, (state, action) => { state.currentLogStatus = 'failed'; state.error = action.payload; })
       
-      // --- Create ---
-      .addCase(createReceivingLog.fulfilled, (state, action) => {
-        // Automatically add the new receipt to the top of the list
-        state.items.unshift(action.payload);
-      })
+      .addCase(createReceivingLog.fulfilled, (state, action) => { state.items.unshift(action.payload); })
       
-      // --- Update ---
       .addCase(updateReceivingLog.fulfilled, (state, action) => {
-        // Update the item in the array if it exists
         const index = state.items.findIndex(log => log._id === action.payload._id);
-        if (index !== -1) {
-          state.items[index] = action.payload;
-        }
-        // Also update the current log if it's the one being edited
-        if (state.currentLog && state.currentLog._id === action.payload._id) {
-          state.currentLog = action.payload;
-        }
+        if (index !== -1) state.items[index] = action.payload;
+        if (state.currentLog && state.currentLog._id === action.payload._id) state.currentLog = action.payload;
       })
       
-      // --- Delete ---
       .addCase(deleteReceivingLog.fulfilled, (state, action) => {
-        // Remove the deleted log from the array
         state.items = state.items.filter(log => log._id !== action.payload);
-        // Clear current log if it was the one deleted
-        if (state.currentLog && state.currentLog._id === action.payload) {
-          state.currentLog = null;
-        }
+        if (state.currentLog && state.currentLog._id === action.payload) state.currentLog = null;
       });
   }
 });

@@ -1,7 +1,30 @@
 import Receiving from '../models/Receiving.js';
-import Inventory from '../models/Inventory.js'; // MUST IMPORT INVENTORY MODEL
+import Inventory from '../models/Inventory.js';
 import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
+import { sendReceivingConfirmationEmail } from '../utils/emailService.js';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+
+// 1. Extract and AGGRESSIVELY CLEAN variables
+// This removes any accidental quotes (' or ") and trims hidden trailing spaces
+const region = process.env.AWS_REGION?.replace(/['"]/g, '').trim();
+const accessKeyId = process.env.AWS_ACCESS_KEY_ID?.replace(/['"]/g, '').trim();
+const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY?.replace(/['"]/g, '').trim();
+const bucketName = process.env.AWS_S3_BUCKET_NAME?.replace(/['"]/g, '').trim();
+
+// Safely Initialize AWS S3 Client using CLEANED variables
+let s3Client;
+if (accessKeyId && secretAccessKey) {
+  s3Client = new S3Client({
+    region: region || 'us-east-1',
+    credentials: {
+      accessKeyId: accessKeyId,
+      secretAccessKey: secretAccessKey,
+    },
+  });
+}
+
+console.log('S3 Client Initialized:', !!s3Client);
 
 // @desc    Create a new receiving record
 // @route   POST /api/v1/receiving
@@ -114,7 +137,7 @@ export const updateReceiving = catchAsync(async (req, res, next) => {
   const oldQuantity = receiving.quantity;
   const oldInventoryId = receiving.inventoryItem.toString();
 
-  // 2. Apply updates and save (Using .save() instead of findByIdAndUpdate ensures the Receiving model's pre-save math hooks execute correctly)
+  // 2. Apply updates and save
   Object.keys(req.body).forEach(key => {
     receiving[key] = req.body[key];
   });
@@ -125,9 +148,7 @@ export const updateReceiving = catchAsync(async (req, res, next) => {
 
   // 3. INVENTORY SYNC LOGIC
   if (oldInventoryId === newInventoryId) {
-    // SCENARIO A: The quantity changed, but the item is the same
     const delta = newQuantity - oldQuantity;
-    
     if (delta !== 0) {
       const inventoryItem = await Inventory.findById(newInventoryId);
       if (inventoryItem) {
@@ -142,7 +163,6 @@ export const updateReceiving = catchAsync(async (req, res, next) => {
       }
     }
   } else {
-    // SCENARIO B: The user changed which item was received entirely
     // Remove quantity from the old item
     const oldInv = await Inventory.findById(oldInventoryId);
     if (oldInv) {
@@ -171,7 +191,7 @@ export const updateReceiving = catchAsync(async (req, res, next) => {
     }
   }
 
-  // 4. Repopulate before sending the response to keep the UI in sync
+  // 4. Repopulate before sending the response
   receiving = await receiving.populate([
     { path: 'customer', select: 'customerName' },
     { 
@@ -221,5 +241,96 @@ export const deleteReceiving = catchAsync(async (req, res, next) => {
   res.status(204).json({
     status: 'success',
     data: null
+  });
+});
+
+// @desc    Receive PDF from Frontend -> Save to S3 -> Email Customer
+// @route   POST /api/v1/receiving/:id/save-and-send
+export const saveAndSendPdf = catchAsync(async (req, res, next) => {
+  console.log(`Attempting to save and send PDF for receiving ID: ${req.params.id}`);
+
+  // 1. Check if S3 is configured properly
+  if (!s3Client) {
+    return next(new AppError('AWS S3 credentials missing from server config (.env). Cannot upload PDF.', 500));
+  }
+
+  const { id } = req.params;
+  const file = req.file; 
+
+  if (!file) {
+    return next(new AppError('No PDF document was received from the client.', 400));
+  }
+
+  // 2. Fetch Receiving Record to get Customer Email
+  const receiving = await Receiving.findById(id).populate('customer', 'contactEmail');
+  
+  if (!receiving) {
+    return next(new AppError('No receiving record found.', 404));
+  }
+
+  if (!receiving.customer?.contactEmail) {
+    return next(new AppError('Customer does not have an email address configured.', 400));
+  }
+
+  // 3. Extract and AGGRESSIVELY CLEAN AWS variables inside the function
+  const region = process.env.AWS_REGION?.replace(/['"]/g, '').trim();
+  const accessKeyId = process.env.AWS_ACCESS_KEY_ID?.replace(/['"]/g, '').trim();
+  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY?.replace(/['"]/g, '').trim();
+  const bucketName = process.env.AWS_S3_BUCKET_NAME?.replace(/['"]/g, '').trim();
+
+  if (!accessKeyId || !secretAccessKey || !bucketName) {
+    return next(new AppError('AWS S3 credentials (Access Key, Secret Key, or Bucket Name) are missing from server configuration.', 500));
+  }
+
+  let s3Url;
+
+  // 4. Initialize S3 Client & Upload using try/catch
+  try {
+    const s3Client = new S3Client({
+      region: region || 'us-east-1',
+      credentials: {
+        accessKeyId: accessKeyId,
+        secretAccessKey: secretAccessKey,
+      },
+    });
+
+    const s3FileName = `receiving-receipts/${receiving.receivingId}_${Date.now()}.pdf`;
+    
+    const uploadParams = {
+      Bucket: bucketName,
+      Key: s3FileName,
+      Body: file.buffer,
+      ContentType: 'application/pdf'
+    };
+
+    console.log(`Sending object to S3 bucket [${bucketName}]...`);
+    await s3Client.send(new PutObjectCommand(uploadParams));
+
+    s3Url = `https://${bucketName}.s3.${region || 'us-east-1'}.amazonaws.com/${s3FileName}`;
+
+  } catch (s3Error) {
+    console.error("AWS S3 Upload Error:", s3Error);
+    return next(new AppError(`AWS S3 Error: ${s3Error.message}`, 500));
+  }
+
+  // 5. Save S3 URL to database (Optional tracking)
+  receiving.pdfUrl = s3Url; 
+  await receiving.save();
+
+  // 6. FIRE AND FORGET: Send Email via Webmail SMTP
+  // Removed 'await' so the server can respond instantly to the frontend while the email sends in the background
+  sendReceivingConfirmationEmail(
+    receiving.customer.contactEmail, 
+    receiving.receivingId, 
+    file.buffer
+  ).catch(emailError => {
+    console.error(`Background Email Sending Error for ${receiving.receivingId}:`, emailError);
+  });
+
+  // 7. Respond immediately
+  res.status(200).json({
+    status: 'success',
+    message: 'PDF successfully saved to S3. Email is being dispatched in the background.',
+    s3Url
   });
 });
