@@ -18,6 +18,7 @@ router.route('/carriers')
 
 // Rate Fetching
 // POST route to accept live frontend data
-router.post('/rates/live', restrictTo('admin', 'staff'), fetchLiveRates);
+// Customer-Facing Checkout Rates (Protected but NOT restricted to admin/staff)
+router.post('/checkout/rates', fetchLiveRates);
 
 export default router;

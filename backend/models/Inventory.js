@@ -45,6 +45,13 @@ const inventorySchema = new mongoose.Schema(
     hssCode: { type: String, trim: true },
     typePiece: { type: String, trim: true },
     
+    // --- Physical Attributes ---
+    weight: { 
+      type: Number, 
+      default: 0, 
+      min: 0 
+    }, // Stored in ounces for ShipStation compatibility
+
     //--------Relational Multiple Locations ---
     locations: [{
       type: mongoose.Schema.Types.ObjectId,

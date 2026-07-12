@@ -15,7 +15,7 @@ export const shipStationAPI = axios.create({
     // Standardized to use the api-key header for V2 authentication
     'api-key': apiKey,
   },
-  timeout: 15000 // 15-second timeout for external API reliability
+  timeout: 30000 // 30-second timeout for external API reliability
 });
 
 // 3. Centralized Error Handler

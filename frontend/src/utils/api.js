@@ -12,7 +12,7 @@ const api = axios.create({
   },
   
   // Optional: Set a timeout (in milliseconds) so requests don't hang indefinitely
-  timeout: 10000, 
+  timeout: 30000, 
 });
 
 // ----------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { createPortal } from 'react-dom'; // <-- Imported createPortal
+import { createPortal } from 'react-dom'; 
 import { useDispatch } from 'react-redux';
 import { X, Loader2, UploadCloud, MapPin } from 'lucide-react';
 import { uploadImageToS3 } from '../../store/slices/uploadSlice'; 
@@ -11,6 +11,7 @@ const INITIAL_FORM_STATE = {
   category1: '', category2: '', category3: '', typePiece: '', 
   locations: [], 
   admin: false, offWeb: false, status: 'Active', price: 0, price2: 0,
+  weight: 0, // <-- Added weight initialization
   min: 0, max: 0, lowPoint: 0, lowPoint2: 0, openOrders: 0, available: 0,
   qtyLastReceived: 0, dateLastReceived: '', productImage: '', customer: ''
 };
@@ -94,6 +95,7 @@ export default function InventoryFormPanel({
         status: itemToEdit.status || 'Active',
         price: itemToEdit.price || 0,
         price2: itemToEdit.price2 || 0,
+        weight: itemToEdit.weight || 0, // <-- Mapped Weight
         min: itemToEdit.min || 0,
         max: itemToEdit.max || 0,
         lowPoint: itemToEdit.lowPoint || 0,
@@ -208,6 +210,7 @@ export default function InventoryFormPanel({
       itemName: formData.description,
       price: Number(formData.price) || 0,
       price2: Number(formData.price2) || 0,
+      weight: Number(formData.weight) || 0, // <-- Inject Weight Payload
       min: Number(formData.min) || 0,
       max: Number(formData.max) || 0,
       lowPoint: Number(formData.lowPoint) || 0,
@@ -253,11 +256,10 @@ export default function InventoryFormPanel({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
-        // max-h-full forces the form to never exceed the screen bounds 
         className="relative w-full max-w-5xl flex flex-col bg-white rounded-xl shadow-2xl overflow-hidden max-h-full"
         onClick={(e) => e.stopPropagation()} 
       >
-        {/* HEADER (Fixed height, cannot shrink) */}
+        {/* HEADER */}
         <div className="shrink-0 flex justify-between items-center px-6 sm:px-8 py-5 border-b border-slate-200 bg-white z-10">
           <div className="flex flex-col sm:flex-row sm:items-center gap-4">
             <h3 className="text-xl font-black text-slate-800 tracking-tight">
@@ -304,9 +306,10 @@ export default function InventoryFormPanel({
           </button>
         </div>
 
-        {/* BODY (flex-1 and min-h-0 makes it securely scrollable inside the modal) */}
+        {/* BODY */}
         <div className="flex-1 min-h-0 overflow-y-auto px-6 sm:px-8 py-8 custom-scrollbar bg-slate-50/50">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4">
+            
             {/* LEFT COLUMN */}
             <div className="space-y-4">
               <div className="flex items-center">
@@ -454,6 +457,13 @@ export default function InventoryFormPanel({
                 <label className="w-1/3 text-sm font-semibold text-slate-600">Price 2</label>
                 <input type="number" step="0.01" value={formData.price2} onChange={e => setFormData({...formData, price2: e.target.value})} className={`w-2/3 ${inputClass}`} disabled={isSubmitting} />
               </div>
+              
+              {/* NEW WEIGHT INPUT */}
+              <div className="flex items-center">
+                <label className="w-1/3 text-sm font-semibold text-slate-600">Weight (oz)</label>
+                <input type="number" step="0.01" value={formData.weight} onChange={e => setFormData({...formData, weight: e.target.value})} className={`w-2/3 ${inputClass}`} disabled={isSubmitting} />
+              </div>
+
               <div className="flex items-center">
                 <label className="w-1/3 text-sm font-semibold text-slate-600">Min</label>
                 <input type="number" value={formData.min} onChange={e => setFormData({...formData, min: e.target.value})} className={`w-2/3 ${inputClass}`} disabled={isSubmitting} />
@@ -533,7 +543,7 @@ export default function InventoryFormPanel({
           </div>
         </div>
 
-        {/* FOOTER (Fixed height, cannot shrink) */}
+        {/* FOOTER */}
         <div className="shrink-0 flex items-center justify-end gap-3 px-6 sm:px-8 py-4 border-t border-slate-200 bg-slate-50 z-10">
           <button type="button" disabled={isSubmitting} onClick={onClose} className="px-6 py-2.5 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-bold rounded-lg shadow-sm transition-colors disabled:opacity-50">Cancel</button>
           <button type="submit" disabled={isSubmitting || isUploadingImage} className="flex justify-center items-center min-w-40 px-8 py-2.5 bg-brand-gold hover:bg-brand-gold-hover text-white font-bold rounded-lg shadow-md transition-all disabled:opacity-70">
@@ -544,6 +554,5 @@ export default function InventoryFormPanel({
     </div>
   );
 
-  // Instruct React to render this DOM node entirely outside of the parent layout flow
   return createPortal(modalContent, document.body);
 }

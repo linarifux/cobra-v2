@@ -31,7 +31,7 @@ import StaffOfDivision from '../components/division/StaffOfDivision';
 
 const TabComponents = { 
   'Overview': OverviewTab, 
-  'Inventory': InventoriesOfDivision, // <--- UPDATED MAPPING
+  'Inventory': InventoriesOfDivision,
   'Processing': ProcessingTab, 
   'Carrier': CarrierTab, 
   'Rates': RatesTab, 

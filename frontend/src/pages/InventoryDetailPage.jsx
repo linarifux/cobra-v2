@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { 
   ArrowLeft, Package, Tag, User, MapPin, 
   DollarSign, TrendingUp, History, ShieldAlert, Layers, ExternalLink, Loader2, 
-  Info, Trash2, Box, Edit2 
+  Info, Trash2, Box, Edit2, Weight // <-- Added Weight icon
 } from 'lucide-react';
 
 // Redux Actions
@@ -13,7 +13,7 @@ import {
   fetchInventoryById, 
   deleteInventory, 
   clearCurrentInventoryItem,
-  updateInventory // Added update action
+  updateInventory 
 } from '../store/slices/inventorySlice';
 
 // Relational Fetch Actions for the Edit Form
@@ -58,7 +58,7 @@ export default function InventoryDetail() {
   const confirm = useConfirm();
 
   const [imageError, setImageError] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false); // Modal state
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false); 
 
   // Safely access Redux state
   const { currentItem: item, status, error } = useSelector(state => state.inventory || {});
@@ -252,6 +252,11 @@ export default function InventoryDetail() {
                     <Box size={12} className="text-brand-gold" /> {item.typePiece}
                   </span>
                 )}
+
+                {/* NEW WEIGHT BADGE */}
+                <span className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-black rounded-lg tracking-widest uppercase border border-slate-700 bg-slate-800/80 text-slate-300 shadow-sm backdrop-blur-sm">
+                  <Weight size={12} className="text-brand-gold" /> {item.weight || 0} oz
+                </span>
 
                 <span className={`px-3 py-1 text-[10px] font-black rounded-lg tracking-widest uppercase border backdrop-blur-sm ${isLowStock ? 'bg-red-500/10 text-red-400 border-red-500/20 animate-pulse' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
                   {item.status !== 'Active' ? item.status : (isLowStock ? 'Low Stock Warning' : 'Active Status')}
