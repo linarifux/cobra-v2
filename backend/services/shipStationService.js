@@ -1,31 +1,78 @@
 import axios from 'axios';
 
-// Extract and clean the API key securely
-const shipStationKey = process.env.SHIPSTATION_API_KEY?.replace(/['"]/g, '').trim();
+// 1. Extract and securely clean environment variables
+const baseURL = process.env.SHIPSTATION_API_URL;
+const apiKey = process.env.SHIPSTATION_API_KEY;
 
-// Initialize the ShipStation V2 Axios Instance
+if (!apiKey) {
+  console.warn('⚠️ WARNING: SHIPSTATION_API_KEY is missing from environment variables.');
+}
+
+// 2. Initialize the ShipStation V2 Axios Instance
 export const shipStationAPI = axios.create({
-  baseURL: 'https://ssapi.shipstation.com',
+  baseURL,
   headers: {
-    // V2 Authentication: Utilizing ONLY the API Key
-    'Authorization': shipStationKey, 
-    'Content-Type': 'application/json'
-  }
+    // Standardized to use the api-key header for V2 authentication
+    'api-key': apiKey,
+  },
+  timeout: 15000 // 15-second timeout for external API reliability
 });
 
-// --- HELPER FUNCTIONS ---
+// 3. Centralized Error Handler
+const handleApiError = (error, context) => {
+  const message = error.response?.data?.ExceptionMessage 
+    || error.response?.data?.Message 
+    || error.message 
+    || 'Unknown ShipStation API Error';
+  
+  console.error(`[ShipStation] ${context} Error:`, message);
+  throw new Error(message);
+};
+
+// --- API METHODS ---
+
+export const getWarehouses = async () => {
+  try {
+    const response = await shipStationAPI.get('/warehouses');
+    return response.data;
+  } catch (error) { 
+    handleApiError(error, 'getWarehouses'); 
+  }
+};
+
+// Fetch all connected carriers from ShipStation
+export const getCarriers = async () => {
+  try {
+    const response = await shipStationAPI.get('/carriers');
+    return response.data;
+  } catch (error) { 
+    handleApiError(error, 'getCarriers'); 
+  }
+};
 
 export const getOrders = async (params = {}) => {
-  const response = await shipStationAPI.get('/orders', { params });
-  return response.data;
+  try {
+    const response = await shipStationAPI.get('/orders', { params });
+    return response.data;
+  } catch (error) { 
+    handleApiError(error, 'getOrders'); 
+  }
 };
 
 export const createOrder = async (orderPayload) => {
-  const response = await shipStationAPI.post('/orders/createorder', orderPayload);
-  return response.data;
+  try {
+    const response = await shipStationAPI.post('/orders/createorder', orderPayload);
+    return response.data;
+  } catch (error) { 
+    handleApiError(error, 'createOrder'); 
+  }
 };
 
 export const getRates = async (ratePayload) => {
-  const response = await shipStationAPI.post('/shipments/getrates', ratePayload);
-  return response.data;
+  try {
+    const response = await shipStationAPI.post('/shipments/getrates', ratePayload);
+    return response.data;
+  } catch (error) { 
+    handleApiError(error, 'getRates'); 
+  }
 };
