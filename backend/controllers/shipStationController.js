@@ -30,11 +30,23 @@ export const fetchWarehouses = catchAsync(async (req, res, next) => {
 export const fetchCarriers = catchAsync(async (req, res, next) => {
   try {
     const carriers = await getCarriers();
-    
+
+    const filteredCarriers = await carriers?.carriers?.map(carrier => ({
+      code: carrier.carrier_code,
+      id: carrier.carrier_id,
+      accountNumber: carrier.account_number,
+      name: carrier.friendly_name,
+      services: carrier.services?.map(service => ({
+        code: service.service_code,
+        name: service.name,
+      }))
+    }));
+
     res.status(200).json({
       status: 'success',
-      results: carriers?.length || 0,
-      data: { carriers }
+      results: filteredCarriers?.length || 0,
+      data: filteredCarriers,
+      // carriers: {carriers}
     });
   } catch (error) {
     return next(new AppError(`ShipStation Error: ${error.message}`, 502));
