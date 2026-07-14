@@ -66,14 +66,10 @@ export default function InventoryTable({ filteredInventory, apiInventory, onEdit
                     </td>
 
                     <td className="p-4 text-slate-900 font-mono text-[13px] font-black">
-                      {item.price > 0 ? (
-                        <span className="flex items-center">
-                          <DollarSign size={12} className="text-slate-400 -mr-0.5" />
+                      <span className="flex items-center gap-1">
+                          <DollarSign size={12} className="text-slate-400 -mr-0.8 mt-0.5" />
                           {item.price.toFixed(2)}
                         </span>
-                      ) : (
-                        <span className="text-slate-400 font-bold text-[10px] tracking-widest uppercase bg-white/50 px-2 py-0.5 rounded-md border border-slate-200/60">N/A</span>
-                      )}
                     </td>
 
                     <td className="p-4">

@@ -7,38 +7,23 @@ import {
   MessageSquare, Mail, Phone, X, Weight, Loader2, Save, ExternalLink
 } from 'lucide-react';
 
+import api from '../utils/api'; 
+
 // Redux Actions
-import { fetchOrderById, updateOrder, clearCurrentOrder } from '../store/slices/orderSlice';
+import { fetchOrderById, updateOrder, clearCurrentOrder, generateOrderLabel } from '../store/slices/orderSlice'; 
 import { fetchInventory } from '../store/slices/inventorySlice';
 
-// 404 Fallback Component
 import NotFoundPage from './NotFoundPage';
 
-// Helper to generate safe local IDs for new items mapped in UI
 const generateLocalId = () => `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-// Helper to construct accurate tracking URLs based on carrier name
 const generateTrackingLink = (carrier, trackingNumber) => {
   if (!trackingNumber) return '#';
   const c = (carrier || '').toLowerCase().replace(/\s+/g, '');
-  
-  if (c.includes('ups')) {
-    return `https://www.ups.com/track?tracknum=${trackingNumber}`;
-  } else if (c.includes('fedex')) {
-    return `https://www.fedex.com/fedextrack/?trknbr=${trackingNumber}`;
-  } else if (c.includes('usps')) {
-    return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`;
-  } else if (c.includes('dhl')) {
-    return `https://www.dhl.com/global-en/home/tracking/tracking-express.html?submit=1&tracking-id=${trackingNumber}`;
-  } else if (c.includes('canadapost')) {
-    return `https://www.canadapost-postescanada.ca/track-reperage/en#/search?searchFor=${trackingNumber}`;
-  } else if (c.includes('australiapost') || c === 'auspost') {
-    return `https://auspost.com.au/mypost/track/#/details/${trackingNumber}`;
-  } else if (c.includes('royalmail')) {
-    return `https://www.royalmail.com/track-your-item#/${trackingNumber}`;
-  }
-  
-  // Fallback if carrier is unknown or blank
+  if (c.includes('ups')) return `https://www.ups.com/track?tracknum=${trackingNumber}`;
+  if (c.includes('fedex')) return `https://www.fedex.com/fedextrack/?trknbr=${trackingNumber}`;
+  if (c.includes('usps')) return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`;
+  if (c.includes('dhl')) return `https://www.dhl.com/global-en/home/tracking/tracking-express.html?submit=1&tracking-id=${trackingNumber}`;
   return `https://www.google.com/search?q=track+package+${trackingNumber}`;
 };
 
@@ -47,52 +32,83 @@ export default function OrderDetailsPage() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
 
-  // --- Security Check: Validate MongoDB ObjectID Format ---
-  // A valid Mongo ID is exactly 24 hex characters. If it's not, we immediately know it's a bad URL.
   const isValidMongoId = /^[0-9a-fA-F]{24}$/.test(id || '');
 
-  // Redux States
   const { currentOrder, status: orderLoadStatus, error: orderError } = useSelector((state) => state.orders || {});
   const { items: inventoryData = [], status: inventoryStatus } = useSelector((state) => state.inventory || {});
-
-  // Local editable states mapped directly to the API JSON structure
+  
   const [orderStatus, setOrderStatus] = useState('Pending');
   const [shipping, setShipping] = useState({ carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0 });
   const [address, setAddress] = useState({ name: '', email: '', phone: '', street: '', line2: '', city: '', state: '', zip: '', country: '' });
   const [items, setItems] = useState([]);
   const [notes, setNotes] = useState('');
   
-  // UI states
   const [fulfillOpen, setFulfillOpen] = useState(false);
   const [cartonCount, setCartonCount] = useState(1);
   const [newItem, setNewItem] = useState({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
   const [editing, setEditing] = useState({ logistics: false, address: false });
+  
   const [isSaving, setIsSaving] = useState(false);
+  const [isGeneratingLabel, setIsGeneratingLabel] = useState(false);
 
-  // 1. Fetch Order and Global Inventory on Mount (Only if ID is valid)
+  // --- WAREHOUSE STATE ---
+  const [warehouses, setWarehouses] = useState([]);
+  const [isLoadingWarehouses, setIsLoadingWarehouses] = useState(false);
+
+  // --- FULFILLMENT FORM STATE ---
+  const [fulfillmentData, setFulfillmentData] = useState({
+    shipFromId: '', 
+    weightInOunces: '',
+    length: 10,
+    width: 10,
+    height: 10,
+    isResidential: false
+  });
+
+  // Fetch Order and Inventory
   useEffect(() => {
-    if (isValidMongoId) {
-      dispatch(fetchOrderById(id));
-    }
-    if (inventoryStatus === 'idle') {
-      dispatch(fetchInventory());
-    }
-    
+    if (isValidMongoId) dispatch(fetchOrderById(id));
+    if (inventoryStatus === 'idle') dispatch(fetchInventory());
     return () => dispatch(clearCurrentOrder());
   }, [id, isValidMongoId, inventoryStatus, dispatch]);
 
-  // 2. Format Inventory Data for the UI Dropdowns
+  // Fetch ShipStation Warehouses
+  useEffect(() => {
+    const fetchLocations = async () => {
+      setIsLoadingWarehouses(true);
+      try {
+        const res = await api.get('/shipstation/warehouses');
+        
+        let fetchedWarehouses = res?.data?.data?.warehouses || [];
+        if (fetchedWarehouses.warehouses) {
+          fetchedWarehouses = fetchedWarehouses.warehouses;
+        }
+        
+        setWarehouses(fetchedWarehouses);
+        
+        if (fetchedWarehouses.length > 0) {
+          const firstId = fetchedWarehouses[0].warehouse_id;
+          setFulfillmentData(p => ({ ...p, shipFromId: firstId }));
+        }
+      } catch (err) {
+        console.error("Failed to fetch warehouses:", err);
+      } finally {
+        setIsLoadingWarehouses(false);
+      }
+    };
+    fetchLocations();
+  }, []);
+
   const availableInventories = useMemo(() => {
     return inventoryData.map(inv => ({
       id: inv._id,
       name: inv.itemName || 'Unnamed Item',
       sku: inv.sku,
-      price: inv.unitCost || 0,
+      price: inv.unitCost || inv.price || 0,
       weight: inv.weight || 0
     }));
   }, [inventoryData]);
 
-  // 3. Sync Redux Order Data to Local State for editing
   useEffect(() => {
     if (currentOrder) {
       setOrderStatus(currentOrder.status || 'Pending');
@@ -113,12 +129,11 @@ export default function OrderDetailsPage() {
         city: currentOrder.shippingAddress?.city || '', 
         state: currentOrder.shippingAddress?.state || '', 
         zip: currentOrder.shippingAddress?.zip || '',
-        country: currentOrder.shippingAddress?.country || 'USA'
+        country: currentOrder.shippingAddress?.country || 'US'
       });
       
       setNotes(currentOrder.notes || '');
       
-      // Initialize items mapping (attempting to match stock immediately if loaded)
       const mappedItems = currentOrder.items?.map((i) => {
         const matchedStock = availableInventories.find(inv => inv.sku === i.sku);
         return {
@@ -132,19 +147,19 @@ export default function OrderDetailsPage() {
       }) || [];
       
       setItems(mappedItems);
+
+      const calculatedOz = mappedItems.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
+      setFulfillmentData(prev => ({ ...prev, weightInOunces: calculatedOz > 0 ? calculatedOz : 16 }));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentOrder]); 
 
-  // 4. Backfill Weights if inventory data finishes loading AFTER the order maps
   useEffect(() => {
     if (availableInventories.length > 0 && items.length > 0) {
       setItems(prevItems => prevItems.map(item => {
         if (!item.weight || item.weight === 0) {
           const matchedStock = availableInventories.find(inv => inv.sku === item.sku);
-          if (matchedStock) {
-            return { ...item, weight: matchedStock.weight };
-          }
+          if (matchedStock) return { ...item, weight: matchedStock.weight };
         }
         return item;
       }));
@@ -152,7 +167,6 @@ export default function OrderDetailsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availableInventories]);
 
-  // Financial Calculations
   const subtotal = items.reduce((acc, item) => acc + (Number(item.price) * Number(item.qty)), 0);
   const shippingCost = Number(shipping.shippingCost) || 0;
   const tax = subtotal * 0.08; 
@@ -170,7 +184,7 @@ export default function OrderDetailsPage() {
   };
 
   const handleAddItem = () => {
-    if (!newItem.name || !newItem.price) return;
+    if (!newItem.name || newItem.price === undefined) return;
     setItems([
       ...items, 
       { 
@@ -184,43 +198,31 @@ export default function OrderDetailsPage() {
     setNewItem({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
   };
 
-  // Push changes to MongoDB via Redux
   const handleSaveOrder = async () => {
     setIsSaving(true);
-    
     const payload = {
       status: orderStatus,
       notes: notes,
       shippingAddress: {
-        recipientName: address.name,
-        email: address.email,
-        phone: address.phone,
-        line1: address.street,
-        line2: address.line2,
-        city: address.city,
-        state: address.state,
-        zip: address.zip,
-        country: address.country
+        recipientName: address.name, email: address.email, phone: address.phone,
+        line1: address.street, line2: address.line2, city: address.city,
+        state: address.state, zip: address.zip, country: address.country
       },
       shippingDetails: {
         ...currentOrder.shippingDetails,
-        carrierType: shipping.carrierType,
-        serviceCode: shipping.serviceCode,
-        trackingNumber: shipping.trackingNumber,
-        shippingCost: Number(shipping.shippingCost)
+        carrierType: shipping.carrierType, serviceCode: shipping.serviceCode,
+        trackingNumber: shipping.trackingNumber, shippingCost: Number(shipping.shippingCost)
       },
       items: items.map(item => ({
-        sku: item.sku,
-        name: item.name,
-        quantity: Number(item.qty),
-        unitPrice: Number(item.price),
-        totalPrice: Number(item.qty) * Number(item.price)
+        sku: item.sku, name: item.name, quantity: Number(item.qty),
+        unitPrice: Number(item.price), totalPrice: Number(item.qty) * Number(item.price)
       }))
     };
 
     try {
       await dispatch(updateOrder({ id: currentOrder._id, updateData: payload })).unwrap();
       setEditing({ logistics: false, address: false }); 
+      alert('Order saved successfully.');
     } catch (error) {
       alert(`Failed to save order: ${error}`);
     } finally {
@@ -228,19 +230,73 @@ export default function OrderDetailsPage() {
     }
   };
 
-  // --- RENDERING GUARDS ---
-  
-  // Guard 1: Garbage URL (e.g., /orders/bldgslgs or /orders/new when disabled)
-  if (!isValidMongoId) {
-    return <NotFoundPage />;
-  }
+  const handleGenerateLabel = async () => {
+    if (!shipping.carrierType || !shipping.serviceCode) {
+      return alert("You must configure the shipping carrier and service code on the order before generating a label.");
+    }
+    if (!fulfillmentData.shipFromId) {
+      return alert("Please select a Ship From location.");
+    }
 
-  // Guard 2: Order explicitly not found or backend error
-  if (orderLoadStatus === 'failed' || orderError) {
-    return <NotFoundPage />;
-  }
+    setIsGeneratingLabel(true);
 
-  // Guard 3: Legitimate Loading State
+    const selectedWarehouse = warehouses.find(w => w.warehouse_id === fulfillmentData.shipFromId);
+    const originAddress = selectedWarehouse?.origin_address || {};
+
+    const payload = {
+      weightInOunces: Number(fulfillmentData.weightInOunces),
+      dimensions: {
+        units: "inches", // Make sure this is "inches" not "inch" to prevent ShipEngine typo crash
+        length: Number(fulfillmentData.length),
+        width: Number(fulfillmentData.width),
+        height: Number(fulfillmentData.height)
+      },
+      isResidential: fulfillmentData.isResidential,
+      shipFrom: {
+        name: originAddress.name || "Fulfillment Center",
+        company_name: originAddress.company_name || "DSM Logistics",
+        street1: originAddress.address_line1 || "",
+        street2: originAddress.address_line2 || "",
+        city_locality: originAddress.city_locality || "",
+        state_province: originAddress.state_province || "",
+        postal_code: originAddress.postal_code || "",
+        country_code: originAddress.country_code || "US"
+      },
+      // Pass the local UI state dynamically so they don't have to hit save first
+      carrierCode: shipping.carrierType,
+      serviceCode: shipping.serviceCode
+    };
+
+    try {
+      const response = await dispatch(generateOrderLabel({ orderId: currentOrder._id, fulfillmentData: payload })).unwrap();
+      
+      setFulfillOpen(false);
+
+      if (response.labelData) {
+        const pdfWindow = window.open("");
+        pdfWindow.document.write(
+          `<iframe width='100%' height='100%' style='border:none;' src='data:application/pdf;base64,${encodeURI(response.labelData)}'></iframe>`
+        );
+      } else if (response.labelUrl) {
+        window.open(response.labelUrl, "_blank");
+      }
+      
+      // Auto-update local state with new tracking number so the UI instantly updates
+      if (response.trackingNumber) {
+        setShipping(prev => ({ ...prev, trackingNumber: response.trackingNumber }));
+        setOrderStatus('Shipped');
+      }
+      
+      alert(`Label generated successfully! Tracking: ${response.trackingNumber}`);
+    } catch (error) {
+      alert(`Label generation failed: ${error}`);
+    } finally {
+      setIsGeneratingLabel(false);
+    }
+  };
+
+  if (!isValidMongoId) return <NotFoundPage />;
+  if (orderLoadStatus === 'failed' || orderError) return <NotFoundPage />;
   if (orderLoadStatus === 'loading' || !currentOrder) {
     return (
       <div className="h-full flex items-center justify-center min-h-[600px]">
@@ -281,59 +337,83 @@ export default function OrderDetailsPage() {
         </div>
       </div>
 
-      {/* Slide-over Drawer */}
+      {/* Slide-over Drawer for Fulfillment */}
       <div className={`fixed inset-0 z-50 flex justify-end transition-opacity duration-300 ${fulfillOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
         <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setFulfillOpen(false)} />
         <div className={`relative w-full max-w-sm bg-white/95 backdrop-blur-2xl border-l border-white/50 p-5 shadow-2xl h-full overflow-y-auto transition-transform duration-300 ease-in-out ${fulfillOpen ? 'translate-x-0' : 'translate-x-full'}`}>
           <div className="flex justify-between items-center mb-6">
             <div className="flex items-center gap-3">
-              <h2 className="font-black uppercase tracking-wider text-xs text-slate-800">Fulfillment Details</h2>
-              <div className="flex gap-1 bg-white/50 p-0.5 rounded-lg shrink-0 border border-slate-200">
-                <button onClick={() => setCartonCount(prev => Math.max(1, prev - 1))} className="hover:bg-white p-1 rounded transition-colors"><Minus size={12}/></button>
-                <button onClick={() => setCartonCount(prev => prev + 1)} className="hover:bg-white p-1 rounded transition-colors"><Plus size={12}/></button>
-              </div>
+              <h2 className="font-black uppercase tracking-wider text-xs text-slate-800">Generate Label</h2>
             </div>
             <button onClick={() => setFulfillOpen(false)} className="text-slate-500 hover:text-slate-900"><X size={18}/></button>
           </div>
           
           <div className="space-y-4">
-            <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
-              {Array.from({ length: cartonCount }).map((_, index) => (
-                <div key={index} className="grid grid-cols-4 gap-2 bg-white/40 p-2 rounded-xl border border-slate-200">
-                   <div className="col-span-1">
-                      <label className="text-[9px] uppercase font-bold text-slate-400 mb-0.5 block truncate">Wgt</label>
-                      <input className="w-full bg-white p-1 rounded-md text-[11px] font-bold outline-none border border-slate-100 focus:border-brand-gold text-center" placeholder="lbs" />
-                   </div>
-                   <div className="col-span-1">
-                      <label className="text-[9px] uppercase font-bold text-slate-400 mb-0.5 block truncate">D1</label>
-                      <input className="w-full bg-white p-1 rounded-md text-[11px] font-bold outline-none border border-slate-100 focus:border-brand-gold text-center" placeholder="in" />
-                   </div>
-                   <div className="col-span-1">
-                      <label className="text-[9px] uppercase font-bold text-slate-400 mb-0.5 block truncate">D2</label>
-                      <input className="w-full bg-white p-1 rounded-md text-[11px] font-bold outline-none border border-slate-100 focus:border-brand-gold text-center" placeholder="in" />
-                   </div>
-                   <div className="col-span-1">
-                      <label className="text-[9px] uppercase font-bold text-slate-400 mb-0.5 block truncate">D3</label>
-                      <input className="w-full bg-white p-1 rounded-md text-[11px] font-bold outline-none border border-slate-100 focus:border-brand-gold text-center" placeholder="in" />
-                   </div>
+            
+            {/* Warehouse / Ship From Selection */}
+            <div className="bg-white/40 p-3 rounded-xl border border-slate-200 shadow-sm">
+              <label className="text-[10px] uppercase font-bold text-slate-500 mb-1.5 block flex items-center gap-1.5">
+                <MapPin size={12}/> Ship From Location
+              </label>
+              {isLoadingWarehouses ? (
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-400 p-2 border border-slate-100 rounded-lg bg-white/50">
+                  <Loader2 size={14} className="animate-spin text-brand-gold"/> Loading locations...
                 </div>
-              ))}
+              ) : (
+                <select
+                  value={fulfillmentData.shipFromId}
+                  onChange={(e) => setFulfillmentData(p => ({ ...p, shipFromId: e.target.value }))}
+                  className="w-full bg-white p-2 rounded-lg text-xs font-bold outline-none border border-slate-200 focus:border-brand-gold shadow-sm"
+                >
+                  <option value="" disabled>Select a shipping origin...</option>
+                  
+                  {warehouses?.map(wh => {
+                    const id = wh.warehouse_id;
+                    const name = wh.name;
+                    return <option key={id} value={id}>{name}</option>
+                  })}
+                </select>
+              )}
             </div>
 
-            <input className="w-full bg-white border border-slate-200 p-2.5 rounded-xl text-xs font-bold outline-none focus:border-brand-gold" placeholder="Total Cartons" />
+            {/* Box Details */}
+            <div className="bg-white/40 p-3 rounded-xl border border-slate-200 shadow-sm space-y-3">
+               <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Total Weight (Ounces)</label>
+                  <input 
+                    type="number"
+                    value={fulfillmentData.weightInOunces}
+                    onChange={(e) => setFulfillmentData(p => ({...p, weightInOunces: e.target.value}))}
+                    className="w-full bg-white p-2 rounded-lg text-xs font-bold outline-none border border-slate-200 focus:border-brand-gold" 
+                  />
+               </div>
+               
+               <div>
+                 <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Dimensions (L x W x H)</label>
+                 <div className="grid grid-cols-3 gap-2">
+                    <input type="number" value={fulfillmentData.length} onChange={(e) => setFulfillmentData(p => ({...p, length: e.target.value}))} className="w-full bg-white p-2 rounded-lg text-xs font-bold outline-none border border-slate-200 focus:border-brand-gold text-center" placeholder="L" />
+                    <input type="number" value={fulfillmentData.width} onChange={(e) => setFulfillmentData(p => ({...p, width: e.target.value}))} className="w-full bg-white p-2 rounded-lg text-xs font-bold outline-none border border-slate-200 focus:border-brand-gold text-center" placeholder="W" />
+                    <input type="number" value={fulfillmentData.height} onChange={(e) => setFulfillmentData(p => ({...p, height: e.target.value}))} className="w-full bg-white p-2 rounded-lg text-xs font-bold outline-none border border-slate-200 focus:border-brand-gold text-center" placeholder="H" />
+                 </div>
+               </div>
+            </div>
             
-            <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none">
-              <input type="checkbox" className="accent-brand-gold w-3.5 h-3.5" /> Residential?
+            <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none pl-1">
+              <input 
+                type="checkbox" 
+                checked={fulfillmentData.isResidential}
+                onChange={(e) => setFulfillmentData(p => ({...p, isResidential: e.target.checked}))}
+                className="accent-brand-gold w-3.5 h-3.5" 
+              /> Residential Address
             </label>
 
             <button 
-              onClick={() => {
-                setOrderStatus('Shipped');
-                setFulfillOpen(false);
-              }}
-              className="w-full bg-brand-gold text-white py-3 rounded-xl text-xs font-black shadow-md transition-all hover:bg-amber-500"
+              onClick={handleGenerateLabel}
+              disabled={isGeneratingLabel || !fulfillmentData.shipFromId}
+              className="w-full flex justify-center items-center gap-2 bg-brand-gold text-white py-3.5 rounded-xl text-xs font-black shadow-md transition-all hover:bg-amber-500 disabled:opacity-70 disabled:cursor-not-allowed"
             >
-              Simulate Fulfillment
+              {isGeneratingLabel ? <Loader2 size={16} className="animate-spin" /> : <Truck size={16} />}
+              {isGeneratingLabel ? 'Generating Label...' : 'Generate Shipping Label'}
             </button>
           </div>
         </div>
@@ -344,7 +424,7 @@ export default function OrderDetailsPage() {
         <div className="lg:col-span-2 space-y-5 w-full min-w-0">
           
           <div className="flex flex-wrap items-center gap-3 bg-white/40 border border-white/60 p-4 rounded-2xl shadow-sm">
-            <span className="text-sm font-black text-slate-800">Order: {currentOrder.orderReference || currentOrder._id}</span>
+            <span className="text-sm font-black text-slate-800">Order: {currentOrder.orderNumber}</span>
             <span className="px-2.5 py-1 text-[10px] uppercase font-black tracking-widest bg-slate-200 text-slate-600 rounded-md">
               {creationDate}
             </span>
@@ -380,7 +460,7 @@ export default function OrderDetailsPage() {
                
                {editing.logistics ? (
                    <div className="space-y-1.5 mt-2">
-                       <input className="w-full bg-white p-1.5 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none" value={shipping.carrierType} onChange={(e) => setShipping({...shipping, carrierType: e.target.value})} placeholder="Carrier (e.g. FedEx)" />
+                       <input className="w-full bg-white p-1.5 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none" value={shipping.carrierType} onChange={(e) => setShipping({...shipping, carrierType: e.target.value})} placeholder="Carrier (e.g. UPS)" />
                        <input className="w-full bg-white p-1.5 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none" value={shipping.serviceCode} onChange={(e) => setShipping({...shipping, serviceCode: e.target.value})} placeholder="Service Code" />
                        <input className="w-full bg-white p-1.5 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none" value={shipping.trackingNumber} onChange={(e) => setShipping({...shipping, trackingNumber: e.target.value})} placeholder="Tracking Number" />
                        <input type="number" className="w-full bg-white p-1.5 rounded-lg text-xs border border-slate-200 focus:border-brand-gold outline-none" value={shipping.shippingCost} onChange={(e) => setShipping({...shipping, shippingCost: e.target.value})} placeholder="Shipping Cost ($)" />
@@ -392,7 +472,6 @@ export default function OrderDetailsPage() {
                          <p className="text-slate-500 font-medium mt-1">Cost: ${Number(shipping.shippingCost).toFixed(2)}</p>
                        </div>
                        
-                       {/* Tracking Number Logic - NOW WITH CARRIER AWARENESS */}
                        {orderStatus === 'Shipped' && shipping.trackingNumber ? (
                           <div className="mt-2 pt-2 border-t border-slate-200">
                              <span className="text-[9px] font-black uppercase text-slate-400 block mb-1">Tracking Link</span>
@@ -423,7 +502,7 @@ export default function OrderDetailsPage() {
                  <Weight size={12}/> Est. Weight
                </h3>
                <div className="text-xs font-bold text-slate-900 mt-auto">
-                   <p className="text-xl font-black text-slate-800 tracking-tight truncate">{totalWeight.toFixed(2)} lbs</p>
+                   <p className="text-xl font-black text-slate-800 tracking-tight truncate">{(totalWeight / 16).toFixed(2)} lbs</p>
                    <p className="text-slate-400 text-[9px] font-medium mt-0.5">Calculated from items</p>
                 </div>
             </div>
@@ -492,7 +571,7 @@ export default function OrderDetailsPage() {
                       <td className="py-3 font-bold text-slate-900 break-words pr-2">{item.name}</td>
                       <td className="py-3 font-mono text-[10px] text-slate-500 break-all pr-2">{item.sku}</td>
                       <td className="py-3 font-bold text-center bg-slate-50/50 rounded-lg">{item.qty}</td>
-                      <td className="py-3 font-medium text-slate-500 text-right">{Number(item.weight).toFixed(2)} lbs</td>
+                      <td className="py-3 font-medium text-slate-500 text-right">{(Number(item.weight) / 16).toFixed(2)} lbs</td>
                       <td className="py-3 font-black text-slate-700 text-right">${Number(item.price).toFixed(2)}</td>
                       <td className="py-3 text-right">
                          <button onClick={() => setItems(items.filter(i => i.id !== item.id))} className="text-red-400 hover:text-red-600 transition-colors duration-200 p-1">
@@ -526,10 +605,12 @@ export default function OrderDetailsPage() {
                       <input type="number" min="1" className="w-full bg-white p-2 rounded-lg text-xs font-bold border border-slate-200 text-center outline-none focus:border-brand-gold" value={newItem.qty} onChange={(e) => setNewItem({...newItem, qty: e.target.value})} />
                     </td>
                     <td className="pt-3 pb-2 pr-2 text-right">
-                      <span className="text-slate-400 font-medium">{newItem.weight ? `${Number(newItem.weight).toFixed(2)} lbs` : '-'}</span>
+                      <span className="text-slate-400 font-medium">{newItem.weight ? `${(Number(newItem.weight) / 16).toFixed(2)} lbs` : '-'}</span>
                     </td>
                     <td className="pt-3 pb-2 pr-2">
-                      <input type="number" step="0.01" min="0" className="w-full bg-white p-2 rounded-lg text-xs font-bold border border-slate-200 text-right outline-none focus:border-brand-gold" placeholder="0.00" value={newItem.price || ''} onChange={(e) => setNewItem({...newItem, price: e.target.value})} />
+                      <div className="w-full bg-slate-50 p-2 rounded-lg text-xs font-black border border-slate-200 text-right text-slate-500 cursor-not-allowed select-none">
+                        {newItem.price ? `$${Number(newItem.price).toFixed(2)}` : '$0.00'}
+                      </div>
                     </td>
                     <td className="pt-3 pb-2 text-right">
                       <button onClick={handleAddItem} className="bg-slate-900 text-white p-2 rounded-lg hover:bg-slate-800 transition-all shadow-sm"><Plus size={14}/></button>
@@ -544,7 +625,6 @@ export default function OrderDetailsPage() {
         {/* Sidebar */}
         <div className="space-y-5 w-full min-w-0">
           
-          {/* Enhanced Customer Card */}
           <div className="bg-slate-950 text-white p-5 rounded-2xl shadow-xl border border-slate-900">
              <div className="flex justify-between items-start gap-4 mb-4 pb-3 border-b border-white/10">
                 <div className="min-w-0">
@@ -573,7 +653,6 @@ export default function OrderDetailsPage() {
              </div>
           </div>
 
-          {/* Notes Section */}
           <div className="bg-amber-50 border border-amber-200 p-5 rounded-2xl transition-all duration-300">
              <h3 className="text-[9px] font-black uppercase text-amber-800 mb-3 flex items-center gap-1.5"><MessageSquare size={12}/> Order Notes</h3>
              <textarea 
@@ -584,7 +663,6 @@ export default function OrderDetailsPage() {
              />
           </div>
 
-          {/* Payment Summary */}
           <div className="bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-white/60 shadow-sm">
              <h3 className="text-[9px] font-black uppercase text-slate-400 flex items-center gap-1.5 mb-3"><CreditCard size={12}/> Order Summary</h3>
              <div className="text-sm font-bold space-y-2">

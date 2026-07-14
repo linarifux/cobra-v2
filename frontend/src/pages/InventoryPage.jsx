@@ -38,6 +38,7 @@ export default function InventoryPage() {
   const { items: apiLocations = [], status: locStatus } = useSelector(state => state.locations || {});
   const { items: apiTypePieces = [], status: tpStatus } = useSelector(state => state.typePieces || {});
 
+  console.log(apiInventory)
   // --- 1. ROBUST FETCHING LOGIC ---
   const loadAllData = () => {
     if (invStatus === 'idle' || invStatus === 'failed') dispatch(fetchInventory());
@@ -157,7 +158,7 @@ export default function InventoryPage() {
       divisionId: item.division?._id || '',
       category: item.category1?.categoryName || 'Unassigned',
       categoryId: item.category1?._id || '',
-      price: item.price || item.unitCost || 0,
+      price: item.price || 0,
       available: item.available || item.unitsOnHand || 0,
       onOrder: item.pipelineSupply || item.openOrders || 0,
       minThreshold: item.min || item.safetyBuffer || 0,

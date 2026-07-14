@@ -22,6 +22,7 @@ export const shipStationAPI = axios.create({
 const handleApiError = (error, context) => {
   const message = error.response?.data?.ExceptionMessage 
     || error.response?.data?.Message 
+    || error.response?.data?.errors?.[0]?.message
     || error.message 
     || 'Unknown ShipStation API Error';
   
@@ -70,9 +71,21 @@ export const createOrder = async (orderPayload) => {
 
 export const getRates = async (ratePayload) => {
   try {
-    const response = await shipStationAPI.post('/shipments/getrates', ratePayload);
+    const response = await shipStationAPI.post('/rates', ratePayload);
     return response.data;
   } catch (error) { 
     handleApiError(error, 'getRates'); 
+  }
+};
+
+
+
+// Create a shipping label for a specific order
+export const createLabel = async (labelPayload) => {
+  try {
+    const response = await shipStationAPI.post('/labels', labelPayload);
+    return response.data;
+  } catch (error) { 
+    handleApiError(error, 'createLabel'); 
   }
 };
