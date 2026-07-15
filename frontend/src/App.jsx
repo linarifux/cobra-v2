@@ -25,7 +25,6 @@ import CategoryPage from './pages/CategoryPage';
 import ReceivingOrders from './pages/ReceivingOrders';
 import ReceivingOrderDetail from './pages/ReceivingOrderDetail';
 import WarehouseLocations from './pages/WarehouseLocations';
-import CarrierManagement from './pages/CarrierManagement';
 import AdminUsersPage from './pages/AdminUsersPage';
 import AccountSettingsPage from './pages/AccountSettingsPage';
 import NotFoundPage from './pages/NotFoundPage';
@@ -110,7 +109,6 @@ export default function App() {
               <Route path="/receiving" element={<ReceivingOrders />} />
               <Route path="/receiving/:id" element={<ReceivingOrderDetail />} />
               <Route path="/locations" element={<WarehouseLocations />} />
-              <Route path="/carriers" element={<CarrierManagement />} />
               <Route path="/shipping" element={<div className="p-6">ShipStation Integration Module</div>} />
               <Route path="/staff" element={<AdminUsersPage />} />
               <Route path="/settings" element={<AccountSettingsPage />} />

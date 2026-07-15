@@ -30,7 +30,6 @@ const navigation = [
   { name: 'Customers', href: '/customers', icon: UserCheck },
   // { name: 'Divisions', href: '/divisions', icon: LayoutGrid },
   { name: 'Locations', href: '/locations', icon: ShelvingUnit },
-  { name: 'Carriers', href: '/carriers', icon:  Box},
   { name: 'ShipStation', href: '/shipping', icon: Package },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
