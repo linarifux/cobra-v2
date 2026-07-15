@@ -11,9 +11,12 @@ import { toast } from 'sonner';
 
 import PageHeader from '../components/PageHeader';
 import { useConfirm } from '../providers/ConfirmProvider';
+
+// Redux Actions
 import { fetchOrders, updateOrder, deleteOrder } from '../store/slices/orderSlice';
 import { fetchCustomers } from '../store/slices/customerSlice';
 import { fetchDivisions } from '../store/slices/divisionSlice';
+import { fetchInventory, updateInventory } from '../store/slices/inventorySlice';
 
 const INITIAL_FILTERS = {
   status: 'All',
@@ -32,6 +35,7 @@ export default function OrdersPage() {
   const { items: ordersData = [], status: ordersStatus, error: ordersError } = useSelector((state) => state.orders || {});
   const { items: customersData = [] } = useSelector((state) => state.customers || {});
   const { items: divisionsData = [] } = useSelector((state) => state.divisions || {});
+  const { items: inventoryData = [], status: inventoryStatus } = useSelector((state) => state.inventory || {});
 
   // General States
   const [searchQuery, setSearchQuery] = useState('');
@@ -48,7 +52,8 @@ export default function OrdersPage() {
     dispatch(fetchOrders());
     dispatch(fetchCustomers());
     dispatch(fetchDivisions());
-  }, [dispatch]);
+    if (inventoryStatus === 'idle') dispatch(fetchInventory());
+  }, [dispatch, inventoryStatus]);
 
   // --- Cascading Filter Logic ---
   const availableDivisions = useMemo(() => {
@@ -126,6 +131,30 @@ export default function OrdersPage() {
     toast.success('Exporting Data', { description: `Generating CSV for ${selectedOrders.length} orders...` });
   };
 
+  // --- Core Restock Helper ---
+  const restoreInventoryStock = async (itemsToRestock) => {
+    if (!itemsToRestock || itemsToRestock.length === 0) return;
+    try {
+      await Promise.all(itemsToRestock.map(async (item) => {
+        const stockItem = inventoryData.find(inv => inv.sku === item.sku);
+        if (stockItem) {
+          const currentStock = Number(stockItem.unitsOnHand) || Number(stockItem.available) || 0;
+          const restoredStock = currentStock + Number(item.quantity || 0);
+          
+          const updatedData = { 
+            ...stockItem, 
+            unitsOnHand: restoredStock, 
+            available: restoredStock 
+          };
+          
+          await dispatch(updateInventory({ id: stockItem._id, inventoryData: updatedData })).unwrap();
+        }
+      }));
+    } catch (err) {
+      console.error("Failed to restore inventory during cancellation/deletion:", err);
+    }
+  };
+
   // --- Inline Action Handlers ---
   const openQuickEdit = (order) => {
     setEditingOrder({
@@ -141,14 +170,22 @@ export default function OrdersPage() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
+      const originalOrder = ordersData.find(o => o._id === editingOrder._id);
+      const isChangingToCancelled = editingOrder.status === 'Cancelled' && originalOrder?.status !== 'Cancelled';
+
       const actionPromise = dispatch(updateOrder({ 
         id: editingOrder._id, 
         updateData: { status: editingOrder.status, notes: editingOrder.notes } 
       })).unwrap();
       
+      // Restock inventory if explicitly changing status to Cancelled
+      if (isChangingToCancelled) {
+        await restoreInventoryStock(originalOrder?.items);
+      }
+
       toast.promise(actionPromise, {
         loading: 'Updating order...',
-        success: 'Order status updated successfully.',
+        success: isChangingToCancelled ? 'Order cancelled. Items returned to stock.' : 'Order status updated successfully.',
         error: 'Failed to update order.'
       });
       
@@ -173,15 +210,27 @@ export default function OrdersPage() {
 
     if (isConfirmed) {
       try {
+        const orderToDelete = ordersData.find(o => o._id === id);
+        
+        // Identify if the order needs to refund inventory
+        const safeToDeleteStatus = ['shipped', 'delivered', 'cancelled'];
+        const currentStatus = orderToDelete?.status?.toLowerCase() || 'pending';
+        const needsRestock = !safeToDeleteStatus.includes(currentStatus);
+
+        if (needsRestock && orderToDelete) {
+          await restoreInventoryStock(orderToDelete.items);
+        }
+
         const actionPromise = dispatch(deleteOrder(id)).unwrap();
         toast.promise(actionPromise, {
           loading: 'Deleting order...',
-          success: 'Order successfully deleted.',
+          success: needsRestock ? 'Order deleted and items returned to stock.' : 'Order successfully deleted.',
           error: 'Failed to delete order.'
         });
         await actionPromise;
       } catch (err) {
         console.error(err);
+        toast.error(`Failed to delete order: ${err.message || 'Unknown error'}`);
       }
     }
   };
