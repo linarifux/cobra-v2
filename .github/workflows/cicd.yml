@@ -4,8 +4,8 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'backenddasdasdg/**' # Only triggers when the backend code changes
+    # paths:
+    #   - 'backend/**' # Only triggers when the backend code changes
 
 jobs:
   build:
