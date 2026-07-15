@@ -221,6 +221,7 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
   const order = await Order.findById(orderId).populate('division customer');
   if (!order) return next(new AppError('Order not found', 404));
 
+  // console.log(order)
   // Determine Carrier & Service: Use frontend live values first, fallback to DB
   const finalCarrierType = carrierCode || order.shippingDetails?.carrierType;
   const finalServiceCode = serviceCode || order.shippingDetails?.serviceCode;

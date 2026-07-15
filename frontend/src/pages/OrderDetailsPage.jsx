@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
+import { toast } from 'sonner'; // Added for professional alerts
 import { 
   ArrowLeft, Truck, MapPin, User, CreditCard, 
   Trash2, Edit2, Check, Plus, Minus,
@@ -11,7 +12,7 @@ import api from '../utils/api';
 
 // Redux Actions
 import { fetchOrderById, updateOrder, clearCurrentOrder, generateOrderLabel } from '../store/slices/orderSlice'; 
-import { fetchInventory } from '../store/slices/inventorySlice';
+import { fetchInventory, updateInventory } from '../store/slices/inventorySlice'; // Added updateInventory
 
 import NotFoundPage from './NotFoundPage';
 
@@ -50,6 +51,7 @@ export default function OrderDetailsPage() {
   
   const [isSaving, setIsSaving] = useState(false);
   const [isGeneratingLabel, setIsGeneratingLabel] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // --- WAREHOUSE STATE ---
   const [warehouses, setWarehouses] = useState([]);
@@ -198,8 +200,35 @@ export default function OrderDetailsPage() {
     setNewItem({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
   };
 
+  // --- CORE RESTOCK LOGIC ---
+  const restoreInventoryStock = async () => {
+    try {
+      await Promise.all(items.map(async (item) => {
+        const stockItem = inventoryData.find(inv => inv.sku === item.sku);
+        if (stockItem) {
+          const currentStock = Number(stockItem.unitsOnHand) || Number(stockItem.available) || 0;
+          const restoredStock = currentStock + Number(item.qty);
+          
+          const updatedData = { 
+            ...stockItem, 
+            unitsOnHand: restoredStock, 
+            available: restoredStock 
+          };
+          
+          await dispatch(updateInventory({ id: stockItem._id, inventoryData: updatedData })).unwrap();
+        }
+      }));
+    } catch (err) {
+      console.error("Failed to restore inventory during cancellation/deletion:", err);
+    }
+  };
+
+  // --- SAVE ORDER ---
   const handleSaveOrder = async () => {
     setIsSaving(true);
+
+    const isChangingToCancelled = orderStatus === 'Cancelled' && currentOrder?.status !== 'Cancelled';
+
     const payload = {
       status: orderStatus,
       notes: notes,
@@ -221,21 +250,63 @@ export default function OrderDetailsPage() {
 
     try {
       await dispatch(updateOrder({ id: currentOrder._id, updateData: payload })).unwrap();
+      
+      // Trigger Restock if status specifically changed to cancelled
+      if (isChangingToCancelled) {
+        await restoreInventoryStock();
+        toast.success('Order cancelled. Items have been returned to stock.');
+      } else {
+        toast.success('Order saved successfully.');
+      }
+      
       setEditing({ logistics: false, address: false }); 
-      alert('Order saved successfully.');
     } catch (error) {
-      alert(`Failed to save order: ${error}`);
+      toast.error(`Failed to save order: ${error}`);
     } finally {
       setIsSaving(false);
     }
   };
 
+  // --- DELETE ORDER ---
+  const handleDeleteOrder = async () => {
+    const confirmDelete = window.confirm("Are you sure you want to permanently delete this order? This action cannot be undone.");
+    if (!confirmDelete) return;
+
+    setIsDeleting(true);
+
+    // Identify if the order needs to refund inventory
+    const safeToDeleteStatus = ['shipped', 'delivered', 'cancelled'];
+    const currentStatus = currentOrder?.status?.toLowerCase() || 'pending';
+    const needsRestock = !safeToDeleteStatus.includes(currentStatus);
+
+    try {
+      if (needsRestock) {
+        await restoreInventoryStock();
+      }
+
+      // Delete request to API
+      await api.delete(`/orders/${currentOrder._id}`);
+      
+      toast.success(needsRestock 
+        ? 'Order deleted and items returned to stock.' 
+        : 'Order deleted successfully.'
+      );
+      
+      navigate('/orders');
+    } catch (error) {
+      toast.error(`Failed to delete order: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // --- GENERATE LABEL ---
   const handleGenerateLabel = async () => {
     if (!shipping.carrierType || !shipping.serviceCode) {
-      return alert("You must configure the shipping carrier and service code on the order before generating a label.");
+      return toast.warning("Please configure shipping carrier and service code before generating a label.");
     }
     if (!fulfillmentData.shipFromId) {
-      return alert("Please select a Ship From location.");
+      return toast.warning("Please select a Ship From location.");
     }
 
     setIsGeneratingLabel(true);
@@ -246,23 +317,24 @@ export default function OrderDetailsPage() {
     const payload = {
       weightInOunces: Number(fulfillmentData.weightInOunces),
       dimensions: {
-        units: "inches", // Make sure this is "inches" not "inch" to prevent ShipEngine typo crash
+        units: "inches", 
         length: Number(fulfillmentData.length),
         width: Number(fulfillmentData.width),
         height: Number(fulfillmentData.height)
       },
-      isResidential: fulfillmentData.isResidential,
       shipFrom: {
         name: originAddress.name || "Fulfillment Center",
+        phone:originAddress.phone || "",
         company_name: originAddress.company_name || "DSM Logistics",
-        street1: originAddress.address_line1 || "",
-        street2: originAddress.address_line2 || "",
+        address_line1: originAddress.address_line1 || "",
+        address_line2: originAddress.address_line2 || "",
         city_locality: originAddress.city_locality || "",
         state_province: originAddress.state_province || "",
         postal_code: originAddress.postal_code || "",
-        country_code: originAddress.country_code || "US"
+        country_code: originAddress.country_code || "US",
+        address_residential_indicator: fulfillmentData.isResidential ? "yes" : "no",
+        instructions: originAddress.instructions || "Any Instructions"
       },
-      // Pass the local UI state dynamically so they don't have to hit save first
       carrierCode: shipping.carrierType,
       serviceCode: shipping.serviceCode
     };
@@ -281,15 +353,14 @@ export default function OrderDetailsPage() {
         window.open(response.labelUrl, "_blank");
       }
       
-      // Auto-update local state with new tracking number so the UI instantly updates
       if (response.trackingNumber) {
         setShipping(prev => ({ ...prev, trackingNumber: response.trackingNumber }));
         setOrderStatus('Shipped');
       }
       
-      alert(`Label generated successfully! Tracking: ${response.trackingNumber}`);
+      toast.success(`Label generated! Tracking: ${response.trackingNumber}`);
     } catch (error) {
-      alert(`Label generation failed: ${error}`);
+      toast.error(`Label generation failed: ${error}`);
     } finally {
       setIsGeneratingLabel(false);
     }
@@ -316,21 +387,33 @@ export default function OrderDetailsPage() {
     <div className="h-full flex flex-col gap-5 animate-fade-in max-w-[1400px] mx-auto pb-10 px-4 box-border text-slate-900">
       
       {/* Header */}
-      <div className="flex items-center justify-between bg-white/30 p-3 rounded-2xl border border-white/50 backdrop-blur-xl transition-all duration-300 gap-4">
+      <div className="flex flex-wrap items-center justify-between bg-white/30 p-3 rounded-2xl border border-white/50 backdrop-blur-xl transition-all duration-300 gap-4">
         <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors duration-200 shrink-0">
           <ArrowLeft size={16} /> <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">Back to Orders</span>
         </button>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          
+          <button 
+            onClick={handleDeleteOrder}
+            disabled={isSaving || isDeleting}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-xl text-[11px] font-black shadow-sm hover:bg-red-100 transition-all duration-200 disabled:opacity-70"
+          >
+            {isDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Delete
+          </button>
+          
+          <div className="w-px h-6 bg-slate-300/60 mx-1"></div>
+
           <button 
             onClick={handleSaveOrder}
-            disabled={isSaving}
+            disabled={isSaving || isDeleting}
             className="flex items-center gap-1.5 px-4 py-1.5 bg-slate-900 text-white rounded-xl text-[11px] font-black shadow-lg hover:bg-slate-800 transition-all duration-200 disabled:opacity-70"
           >
             {isSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save Changes
           </button>
           <button 
             onClick={() => setFulfillOpen(true)}
-            className="bg-brand-gold text-white px-4 py-1.5 rounded-xl text-[11px] font-black shadow-lg shadow-brand-gold/20 hover:scale-105 transition-all duration-200"
+            disabled={isSaving || isDeleting}
+            className="bg-brand-gold text-white px-4 py-1.5 rounded-xl text-[11px] font-black shadow-lg shadow-brand-gold/20 hover:scale-105 transition-all duration-200 disabled:opacity-70"
           >
             Fulfill Order
           </button>
@@ -474,16 +557,16 @@ export default function OrderDetailsPage() {
                        
                        {orderStatus === 'Shipped' && shipping.trackingNumber ? (
                           <div className="mt-2 pt-2 border-t border-slate-200">
-                             <span className="text-[9px] font-black uppercase text-slate-400 block mb-1">Tracking Link</span>
-                             <a 
+                              <span className="text-[9px] font-black uppercase text-slate-400 block mb-1">Tracking Link</span>
+                              <a 
                                href={generateTrackingLink(shipping.carrierType, shipping.trackingNumber)}
                                target="_blank" 
                                rel="noopener noreferrer"
                                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-[11px] font-mono bg-blue-50/50 hover:bg-blue-50 px-2 py-1 rounded transition-colors w-fit border border-blue-100"
-                             >
-                               {shipping.trackingNumber}
-                               <ExternalLink size={10} />
-                             </a>
+                              >
+                                {shipping.trackingNumber}
+                                <ExternalLink size={10} />
+                              </a>
                           </div>
                        ) : (
                           shipping.trackingNumber && orderStatus !== 'Shipped' && (

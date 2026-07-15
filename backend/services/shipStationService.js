@@ -83,6 +83,7 @@ export const getRates = async (ratePayload) => {
 // Create a shipping label for a specific order
 export const createLabel = async (labelPayload) => {
   try {
+    console.log(labelPayload)
     const response = await shipStationAPI.post('/labels', labelPayload);
     return response.data;
   } catch (error) { 
