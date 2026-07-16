@@ -55,11 +55,11 @@ export const createOrder = createAsyncThunk(
     try {
       // Intelligently route through nested endpoints if relationships are provided
       let endpoint = "/orders";
-      if (orderData.division) {
-        endpoint = `/divisions/${orderData.division}/orders`;
-      } else if (orderData.customer) {
-        endpoint = `/customers/${orderData.customer}/orders`;
-      }
+      // if (orderData.division) {
+      //   endpoint = `/divisions/${orderData.division}/orders`;
+      // } else if (orderData.customer) {
+      //   endpoint = `/customers/${orderData.customer}/orders`;
+      // }
 
       const response = await api.post(endpoint, orderData);
       return response.data.data.order || response.data.data;

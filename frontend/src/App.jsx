@@ -32,6 +32,7 @@ import NotFoundPage from './pages/NotFoundPage';
 // IMPORT THE GLOBAL CONFIRM PROVIDER
 import { ConfirmProvider } from './providers/ConfirmProvider';
 import DivisionDetail from './pages/DivisionDetail';
+import CreateOrderPage from './pages/CreateOrderPage';
 
 /**
  * ProtectedRoute Wrapper
@@ -93,6 +94,7 @@ export default function App() {
               {/* Default Dashboard Route */}
               <Route index element={<DashboardHome />} />
               <Route path="/orders" element={<OrdersPage />} />
+              <Route path="/orders/new" element={<CreateOrderPage />} />
               <Route path="/orders/:id" element={<OrderDetailsPage />} />
               <Route path="/customers" element={<CustomersPage />} />
               <Route path="/customers/:customerId/divisions" element={<DivisionsPage />} />

@@ -255,7 +255,7 @@ export default function OrdersPage() {
           onClick={() => navigate('/orders/new')}
           className="flex items-center justify-center gap-2 bg-slate-900 text-brand-gold px-6 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl active:scale-95 shrink-0"
         >
-          <Plus size={16} /> Deploy Order
+          <Plus size={16} /> New Order
         </button>
       </div>
 
