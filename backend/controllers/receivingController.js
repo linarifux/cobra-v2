@@ -256,20 +256,24 @@ export const saveAndSendPdf = catchAsync(async (req, res, next) => {
 
   const { id } = req.params;
   const file = req.file; 
+  const { recipientEmail } = req.body; // Extract email targeted by the frontend payload
 
   if (!file) {
     return next(new AppError('No PDF document was received from the client.', 400));
   }
 
-  // 2. Fetch Receiving Record to get Customer Email
+  // 2. Fetch Receiving Record
   const receiving = await Receiving.findById(id).populate('customer', 'contactEmail');
   
   if (!receiving) {
     return next(new AppError('No receiving record found.', 404));
   }
 
-  if (!receiving.customer?.contactEmail) {
-    return next(new AppError('Customer does not have an email address configured.', 400));
+  // Determine email priority: Target passed from frontend first, fallback to DB record
+  const targetEmail = recipientEmail || receiving.customer?.contactEmail;
+
+  if (!targetEmail) {
+    return next(new AppError('No recipient email provided or configured.', 400));
   }
 
   // 3. Extract and AGGRESSIVELY CLEAN AWS variables inside the function
@@ -317,12 +321,9 @@ export const saveAndSendPdf = catchAsync(async (req, res, next) => {
   receiving.pdfUrl = s3Url; 
   await receiving.save();
 
-  
-
-  // 6. FIRE AND FORGET: Send Email via Webmail SMTP
-  // Removed 'await' so the server can respond instantly to the frontend while the email sends in the background
+  // 6. FIRE AND FORGET: Send Email to the dynamically selected user
   sendReceivingConfirmationEmail(
-    receiving.customer.contactEmail, 
+    targetEmail, 
     receiving.receivingId, 
     file.buffer
   ).catch(emailError => {
@@ -332,7 +333,7 @@ export const saveAndSendPdf = catchAsync(async (req, res, next) => {
   // 7. Respond immediately
   res.status(200).json({
     status: 'success',
-    message: 'PDF successfully saved to S3. Email is being dispatched in the background.',
+    message: `PDF successfully saved to S3. Email is being dispatched to ${targetEmail} in the background.`,
     s3Url
   });
 });
