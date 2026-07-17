@@ -78,12 +78,14 @@ export default function OrderDetailsPage() {
     { id: generateLocalId(), weightInOunces: 16, length: 10, width: 10, height: 10 }
   ]);
 
+  const ssData = currentOrder?.shipstationDetails || currentOrder?.shipstationOrder || currentOrder?.shipstation || null;
+  const ssOrderId = ssData?.orderId || currentOrder?.shipstationOrderId || null;
+
   // --- DYNAMIC WORKFLOW STATUSES ---
-  const isLabelPurchased = !!shipping.trackingNumber || ['Shipped', 'Delivered'].includes(orderStatus);
-  const isShipmentCreated = isLabelPurchased || ['Processing', 'Ready to Ship'].includes(orderStatus);
+  const isLabelPurchased = !!shipping.trackingNumber || ['Shipped', 'Delivered'].includes(orderStatus) || !!ssData?.labelId;
+  const isShipmentCreated = !!ssOrderId || isLabelPurchased || ['Processing', 'Ready to Ship'].includes(orderStatus);
   const isPackingSlipDone = packingSlipDownloaded || isLabelPurchased;
   const isPickingListDone = pickingListDownloaded || isLabelPurchased;
-  const canPurchaseLabel = isShipmentCreated && isPackingSlipDone && isPickingListDone && !isLabelPurchased;
 
   // --- Calculations ---
   const subtotal = items.reduce((acc, item) => acc + (Number(item.price) * Number(item.qty)), 0);
@@ -92,10 +94,7 @@ export default function OrderDetailsPage() {
   const grandTotal = subtotal + shippingCost + tax;
   const totalItemWeightOz = items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
   const totalPackageWeightOz = packages.reduce((acc, pkg) => acc + Number(pkg.weightInOunces || 0), 0);
-  const isWeightMismatched = Math.abs(totalItemWeightOz - totalPackageWeightOz) > 1;
-
-  const ssData = currentOrder?.shipstationDetails || currentOrder?.shipstationOrder || currentOrder?.shipstation || null;
-  const ssOrderId = ssData?.orderId || currentOrder?.shipstationOrderId || null;
+  const isWeightMismatched = Math.abs(totalItemWeightOz - totalPackageWeightOz) > 1; // 1 oz tolerance
 
   // Fetch Order and Inventory
   useEffect(() => {
@@ -297,6 +296,7 @@ export default function OrderDetailsPage() {
       doc.setTextColor(148, 163, 184);
       doc.text("Thank you for your business!", 105, doc.lastAutoTable.finalY + 15, { align: 'center' });
 
+      // Embed print instruction and open in new tab
       doc.autoPrint();
       const blobUrl = doc.output('bloburl');
       window.open(blobUrl, '_blank');
@@ -664,6 +664,7 @@ export default function OrderDetailsPage() {
   return (
     <div className="h-full flex flex-col gap-5 animate-fade-in max-w-[1400px] mx-auto pb-10 px-4 box-border text-slate-900">
       
+      {/* Header */}
       <div className="flex items-center justify-between bg-white/30 p-3 rounded-2xl border border-white/50 backdrop-blur-xl transition-all duration-300 gap-4 shadow-sm">
         <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors duration-200 shrink-0">
           <ArrowLeft size={16} /> <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">Back to Orders</span>
@@ -695,6 +696,7 @@ export default function OrderDetailsPage() {
         </div>
       </div>
 
+      {/* Slide-over Drawer for Fulfillment */}
       <div className={`fixed inset-0 z-50 flex justify-end transition-opacity duration-300 ${fulfillOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
         <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setFulfillOpen(false)} />
         <div className={`relative w-full max-w-[400px] bg-white/95 backdrop-blur-2xl border-l border-white/50 p-6 shadow-2xl h-full overflow-y-auto transition-transform duration-300 ease-in-out flex flex-col ${fulfillOpen ? 'translate-x-0' : 'translate-x-full'}`}>
@@ -805,32 +807,31 @@ export default function OrderDetailsPage() {
               </button>
             ) : (
               <div className="space-y-3">
+                 {/* ALWAYS CLICKABLE ONCE SHIPMENT IS CREATED */}
                  <button 
                    onClick={handlePrintPackingSlip}
-                   disabled={isLabelPurchased}
                    className={`w-full flex justify-center items-center gap-2 border py-3.5 rounded-xl text-xs font-black shadow-sm transition-all ${
-                     isPackingSlipDone ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
-                   } disabled:opacity-50`}
+                     isPackingSlipDone ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                   }`}
                  >
                    {isPackingSlipDone ? <CheckCircle2 size={16} /> : <Printer size={16} />} 
-                   {isPackingSlipDone ? 'Packing Slip Printed' : 'Print Packing Slip'}
+                   Print Packing Slip
                  </button>
 
                  <button 
                    onClick={handlePrintPickingList}
-                   disabled={isLabelPurchased}
                    className={`w-full flex justify-center items-center gap-2 border py-3.5 rounded-xl text-xs font-black shadow-sm transition-all ${
-                     isPickingListDone ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
-                   } disabled:opacity-50`}
+                     isPickingListDone ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                   }`}
                  >
                    {isPickingListDone ? <CheckCircle2 size={16} /> : <Printer size={16} />} 
-                   {isPickingListDone ? 'Picking List Printed' : 'Print Picking List'}
+                   Print Picking List
                  </button>
                  
                  {!isLabelPurchased ? (
                    <button 
                      onClick={handleGenerateLabel}
-                     disabled={!canPurchaseLabel || isGeneratingLabel}
+                     disabled={isGeneratingLabel}
                      className="w-full flex justify-center items-center gap-2 text-white py-3.5 rounded-xl text-xs font-black shadow-md transition-all bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
                    >
                      {isGeneratingLabel ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
@@ -941,7 +942,7 @@ export default function OrderDetailsPage() {
             </div>
           </div>
 
-          {/* <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
+          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
              <div className="flex justify-between items-center mb-4 border-b border-white/60 pb-3">
                 <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
                    <Box size={14}/> ShipStation Fulfillment Details
@@ -993,7 +994,7 @@ export default function OrderDetailsPage() {
                    </button>
                 </div>
              )}
-          </div> */}
+          </div>
 
           <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
             <div className="flex justify-between items-center mb-4 border-b border-white/60 pb-3">
