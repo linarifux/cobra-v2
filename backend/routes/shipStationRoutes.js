@@ -5,7 +5,8 @@ import {
     fetchWarehouses, 
     fetchCarriers, 
     generateOrderLabel,
-    createOrderShipment 
+    createOrderShipment,
+    downloadOrderLabel 
 } from '../controllers/shipStationController.js';
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
@@ -27,5 +28,8 @@ router.post('/checkout/rates', getCheckoutRates);
 // Restrict to admins and staff members
 router.post('/label/:orderId', restrictTo('admin', 'super_admin', 'staff'), generateOrderLabel);
 router.post('/shipments/:orderId', restrictTo('admin', 'super_admin', 'staff'), createOrderShipment);
+
+// --- NEW ROUTE: View/Download Purchased Label ---
+router.get('/labels/download/:orderId', restrictTo('admin', 'super_admin', 'staff'), downloadOrderLabel);
 
 export default router;

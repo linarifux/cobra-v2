@@ -3,7 +3,7 @@ import api from "../../utils/api"; // Adjust the import path if necessary based 
 
 // --- Thunks ---
 
-// 1. Fetch All Orders (Supports global, customer-scoped, or division-scoped fetching)
+// 1. Fetch All Orders
 export const fetchOrders = createAsyncThunk(
   "orders/fetchOrders",
   async ({ customerId, divisionId } = {}, { rejectWithValue }) => {
@@ -18,14 +18,10 @@ export const fetchOrders = createAsyncThunk(
       }
 
       const response = await api.get(endpoint);
-
-      // Defensive fallback against API wrapping changes
       return response.data.data.orders || response.data.data || [];
     } catch (error) {
       return rejectWithValue(
-        error.response?.data?.message ||
-          error.message ||
-          "Failed to fetch orders",
+        error.response?.data?.message || error.message || "Failed to fetch orders"
       );
     }
   },
@@ -40,9 +36,7 @@ export const fetchOrderById = createAsyncThunk(
       return response.data.data.order || response.data.data;
     } catch (error) {
       return rejectWithValue(
-        error.response?.data?.message ||
-          error.message ||
-          "Failed to fetch order details",
+        error.response?.data?.message || error.message || "Failed to fetch order details"
       );
     }
   },
@@ -53,21 +47,12 @@ export const createOrder = createAsyncThunk(
   "orders/createOrder",
   async (orderData, { rejectWithValue }) => {
     try {
-      // Intelligently route through nested endpoints if relationships are provided
       let endpoint = "/orders";
-      // if (orderData.division) {
-      //   endpoint = `/divisions/${orderData.division}/orders`;
-      // } else if (orderData.customer) {
-      //   endpoint = `/customers/${orderData.customer}/orders`;
-      // }
-
       const response = await api.post(endpoint, orderData);
       return response.data.data.order || response.data.data;
     } catch (error) {
       return rejectWithValue(
-        error.response?.data?.message ||
-          error.message ||
-          "Failed to create order",
+        error.response?.data?.message || error.message || "Failed to create order"
       );
     }
   },
@@ -82,9 +67,7 @@ export const updateOrder = createAsyncThunk(
       return response.data.data.order || response.data.data;
     } catch (error) {
       return rejectWithValue(
-        error.response?.data?.message ||
-          error.message ||
-          "Failed to update order",
+        error.response?.data?.message || error.message || "Failed to update order"
       );
     }
   },
@@ -99,30 +82,42 @@ export const deleteOrder = createAsyncThunk(
       return id;
     } catch (error) {
       return rejectWithValue(
-        error.response?.data?.message ||
-          error.message ||
-          "Failed to delete order",
+        error.response?.data?.message || error.message || "Failed to delete order"
       );
     }
   },
 );
 
+// 6. Generate New Label via ShipStation
 export const generateOrderLabel = createAsyncThunk(
   "orders/generateLabel",
   async ({ orderId, fulfillmentData }, { rejectWithValue }) => {
     try {
-      const response = await api.post(
-        `/shipstation/label/${orderId}`,
-        fulfillmentData,
-      );
-      return response.data.data; // Contains order, labelData, trackingNumber
+      const response = await api.post(`/shipstation/label/${orderId}`, fulfillmentData);
+      return response.data.data; 
     } catch (error) {
       return rejectWithValue(
-        error.response?.data?.message || "Failed to generate shipping label",
+        error.response?.data?.message || "Failed to generate shipping label"
       );
     }
   },
 );
+
+// --- NEW: Download/Print Previously Purchased Label ---
+export const downloadPurchasedLabel = createAsyncThunk(
+  "orders/downloadPurchasedLabel",
+  async (orderId, { rejectWithValue }) => {
+    try {
+      const response = await api.get(`/shipstation/labels/download/${orderId}`);
+      return response.data.data;
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || error.message || "Failed to download the label."
+      );
+    }
+  }
+);
+
 
 // --- Slice Definition ---
 const orderSlice = createSlice({
@@ -137,7 +132,6 @@ const orderSlice = createSlice({
     clearCurrentOrder: (state) => {
       state.currentOrder = null;
     },
-    // Utility to wipe state (e.g., on user logout or when hard-switching context)
     clearOrders: (state) => {
       state.items = [];
       state.status = "idle";
@@ -181,50 +175,40 @@ const orderSlice = createSlice({
 
       // --- Update ---
       .addCase(updateOrder.fulfilled, (state, action) => {
-        // Safe string casting prevents Mongoose ObjectId strict equality mismatches
-        const index = state.items.findIndex(
-          (o) => String(o._id) === String(action.payload._id),
-        );
+        const index = state.items.findIndex((o) => String(o._id) === String(action.payload._id));
         if (index !== -1) {
           state.items[index] = action.payload;
         }
 
-        if (
-          state.currentOrder &&
-          String(state.currentOrder._id) === String(action.payload._id)
-        ) {
+        if (state.currentOrder && String(state.currentOrder._id) === String(action.payload._id)) {
           state.currentOrder = action.payload;
         }
       })
 
       // --- Delete ---
       .addCase(deleteOrder.fulfilled, (state, action) => {
-        // Safe string casting
-        state.items = state.items.filter(
-          (o) => String(o._id) !== String(action.payload),
-        );
+        state.items = state.items.filter((o) => String(o._id) !== String(action.payload));
 
-        if (
-          state.currentOrder &&
-          String(state.currentOrder._id) === String(action.payload)
-        ) {
+        if (state.currentOrder && String(state.currentOrder._id) === String(action.payload)) {
           state.currentOrder = null;
         }
       })
 
-      
-      .addCase(generateOrderLabel.pending, (state) => {
-        // Optional: Add a specific loading state for label generation
-      })
+      // --- Label Generation ---
+      .addCase(generateOrderLabel.pending, (state) => {})
       .addCase(generateOrderLabel.fulfilled, (state, action) => {
-        state.currentOrder = action.payload.order; // Automatically updates the UI to Shipped!
-        // If editing an array of orders, update the item in the list too:
-        const index = state.items.findIndex(
-          (o) => o._id === action.payload.order._id,
-        );
+        state.currentOrder = action.payload.order; 
+        const index = state.items.findIndex((o) => String(o._id) === String(action.payload.order._id));
         if (index !== -1) {
           state.items[index] = action.payload.order;
         }
+      })
+
+      // --- Label Download ---
+      .addCase(downloadPurchasedLabel.pending, (state) => {})
+      .addCase(downloadPurchasedLabel.fulfilled, (state) => {})
+      .addCase(downloadPurchasedLabel.rejected, (state, action) => {
+        state.error = action.payload;
       });
   },
 });

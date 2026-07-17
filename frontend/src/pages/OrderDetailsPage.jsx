@@ -7,7 +7,7 @@ import {
   Trash2, Edit2, Check, Plus, MessageSquare, 
   Mail, Phone, X, Weight, Loader2, Save, ExternalLink, 
   CloudUpload, FileText, CheckCircle2, PackageCheck, AlertTriangle, Clock,
-  Box 
+  Box, Printer
 } from 'lucide-react';
 
 // --- PDF GENERATION LIBRARIES ---
@@ -17,7 +17,7 @@ import autoTable from 'jspdf-autotable';
 import api from '../utils/api'; 
 
 // Redux Actions
-import { fetchOrderById, updateOrder, clearCurrentOrder, generateOrderLabel } from '../store/slices/orderSlice'; 
+import { fetchOrderById, updateOrder, clearCurrentOrder, generateOrderLabel, downloadPurchasedLabel } from '../store/slices/orderSlice'; 
 import { fetchInventory, updateInventory } from '../store/slices/inventorySlice'; 
 
 import NotFoundPage from './NotFoundPage';
@@ -58,6 +58,7 @@ export default function OrderDetailsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isPushingShipment, setIsPushingShipment] = useState(false);
   const [isGeneratingLabel, setIsGeneratingLabel] = useState(false);
+  const [isDownloadingLabel, setIsDownloadingLabel] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   // --- WAREHOUSE STATE ---
@@ -91,7 +92,7 @@ export default function OrderDetailsPage() {
   const grandTotal = subtotal + shippingCost + tax;
   const totalItemWeightOz = items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
   const totalPackageWeightOz = packages.reduce((acc, pkg) => acc + Number(pkg.weightInOunces || 0), 0);
-  const isWeightMismatched = Math.abs(totalItemWeightOz - totalPackageWeightOz) > 1; // 1 oz tolerance
+  const isWeightMismatched = Math.abs(totalItemWeightOz - totalPackageWeightOz) > 1;
 
   const ssData = currentOrder?.shipstationDetails || currentOrder?.shipstationOrder || currentOrder?.shipstation || null;
   const ssOrderId = ssData?.orderId || currentOrder?.shipstationOrderId || null;
@@ -179,8 +180,7 @@ export default function OrderDetailsPage() {
          setPackages([{ id: generateLocalId(), weightInOunces: calculatedOz > 0 ? calculatedOz : 16, length: 10, width: 10, height: 10 }]);
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentOrder]); 
+  }, [currentOrder, availableInventories]); 
 
   // Dynamically attach weight to added items if missing
   useEffect(() => {
@@ -193,44 +193,37 @@ export default function OrderDetailsPage() {
         return item;
       }));
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availableInventories]);
 
 
-  // --- PDF GENERATION LOGIC ---
-  const handleDownloadPackingSlip = () => {
+  // --- AUTO-PRINT PDF GENERATION LOGIC ---
+  const handlePrintPackingSlip = () => {
     try {
       const doc = new jsPDF();
       
-      // Data Extraction
       const selectedWarehouse = warehouses.find(w => w.warehouse_id === fulfillmentData.shipFromId);
       const origin = selectedWarehouse?.origin_address || {};
       
-      // Pull dynamic division/account names from your order schema
       const divisionName = currentOrder?.division?.name || 'Warehouse Fulfillment'; 
       const customerName = currentOrder?.customer?.customerName || address.name || 'Valued Customer';
       const orderDate = currentOrder?.createdAt ? new Date(currentOrder.createdAt).toLocaleDateString() : 'N/A';
 
-      // --- 1. HEADER ROW ---
       doc.setFontSize(22);
       doc.setTextColor(15, 23, 42); 
-      doc.text("PACKING SLIP", 196, 22, { align: 'right' }); // Right aligned
+      doc.text("PACKING SLIP", 196, 22, { align: 'right' }); 
       
       doc.setFontSize(16);
       doc.setFont('helvetica', 'bold');
       doc.text(divisionName, 14, 22);
 
-      // --- 2. ORDER DETAILS ROW ---
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(100, 116, 139);
       
-      // Left side details
       doc.text(`Order Ref: ${currentOrder.orderNumber || 'N/A'}`, 14, 32);
       doc.text(`Order Date: ${orderDate}`, 14, 38);
       if (ssOrderId) doc.text(`ShipStation ID: ${ssOrderId}`, 14, 44);
 
-      // Right side details
       doc.text(`Printed On: ${new Date().toLocaleDateString()}`, 196, 32, { align: 'right' });
       if (shipping.carrierType || shipping.serviceCode) {
          doc.text(`Shipping Method: ${shipping.carrierType.toUpperCase()} ${shipping.serviceCode || ''}`, 196, 38, { align: 'right' });
@@ -239,8 +232,6 @@ export default function OrderDetailsPage() {
          doc.text(`Tracking: ${shipping.trackingNumber}`, 196, 44, { align: 'right' });
       }
       
-      // --- 3. ADDRESS BLOCKS ---
-      // Ship From (Left Column)
       doc.setFontSize(11);
       doc.setTextColor(15, 23, 42);
       doc.setFont('helvetica', 'bold');
@@ -259,7 +250,6 @@ export default function OrderDetailsPage() {
         doc.text("Origin Warehouse (Pending)", 14, 64);
       }
 
-      // Ship To (Right Column - aligned roughly halfway)
       doc.setFontSize(11);
       doc.setTextColor(15, 23, 42);
       doc.setFont('helvetica', 'bold');
@@ -269,12 +259,11 @@ export default function OrderDetailsPage() {
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(71, 85, 105);
       
-      doc.text(address.name, 110, 64);
+      doc.text(address.name || 'N/A', 110, 64);
       doc.text(`${address.street || ''} ${address.line2 || ''}`.trim(), 110, 70);
       doc.text(`${address.city || ''}, ${address.state || ''} ${address.zip || ''}`.trim(), 110, 76);
       doc.text(address.country || 'US', 110, 82);
 
-      // --- 4. NOTES SECTION ---
       let currentY = 96;
       if (notes) {
         doc.setFont('helvetica', 'italic');
@@ -283,7 +272,6 @@ export default function OrderDetailsPage() {
         currentY += 8;
       }
 
-      // --- 5. ITEMS TABLE ---
       const tableColumn = ["Item Description", "SKU", "Qty", "Weight"];
       const tableRows = items.map(item => [
         item.name,
@@ -305,41 +293,39 @@ export default function OrderDetailsPage() {
         }
       });
 
-      // --- 6. FOOTER ---
       doc.setFontSize(10);
       doc.setTextColor(148, 163, 184);
       doc.text("Thank you for your business!", 105, doc.lastAutoTable.finalY + 15, { align: 'center' });
 
-      // Save the PDF
-      doc.save(`Packing_Slip_${currentOrder.orderNumber}.pdf`);
+      doc.autoPrint();
+      const blobUrl = doc.output('bloburl');
+      window.open(blobUrl, '_blank');
+      
       setPackingSlipDownloaded(true);
-      toast.success("Packing slip downloaded successfully.");
+      toast.success("Packing slip opened for printing.");
     } catch(err) {
       console.error(err);
       toast.error("Failed to generate PDF. Make sure jspdf is installed.");
     }
   };
 
-  const handleDownloadPickingList = () => {
+  const handlePrintPickingList = () => {
     try {
       const doc = new jsPDF();
       
-      // Document Title
       doc.setFontSize(22);
       doc.setTextColor(15, 23, 42);
       doc.text("WAREHOUSE PICKING LIST", 14, 22);
       
-      // Order Metadata
       doc.setFontSize(10);
       doc.setTextColor(100, 116, 139);
       doc.text(`Order Ref: ${currentOrder.orderNumber}`, 14, 32);
       doc.text(`Date Printed: ${new Date().toLocaleDateString()}`, 14, 38);
       if (ssOrderId) doc.text(`ShipStation ID: ${ssOrderId}`, 120, 32);
 
-      // Interactive Items Table with Checkboxes
       const tableColumn = ["Picked", "SKU", "Item Description", "Qty Required"];
       const tableRows = items.map(item => [
-        " [   ] ", // Checkbox space
+        " [   ] ", 
         item.sku,
         item.name,
         item.qty.toString()
@@ -358,20 +344,20 @@ export default function OrderDetailsPage() {
         styles: { fontSize: 10, cellPadding: 5 },
       });
 
-      // Signature line for warehouse staff
       doc.setFontSize(10);
       doc.text("Packed By: ___________________________    Date: ______________", 14, doc.lastAutoTable.finalY + 30);
 
-      // Save the PDF
-      doc.save(`Picking_List_${currentOrder.orderNumber}.pdf`);
+      doc.autoPrint();
+      const blobUrl = doc.output('bloburl');
+      window.open(blobUrl, '_blank');
+
       setPickingListDownloaded(true);
-      toast.success("Picking list downloaded successfully.");
+      toast.success("Picking list opened for printing.");
     } catch(err) {
       console.error(err);
       toast.error("Failed to generate PDF. Make sure jspdf is installed.");
     }
   };
-
 
   // --- Handlers ---
   const handleInventoryChange = (e) => {
@@ -399,7 +385,6 @@ export default function OrderDetailsPage() {
     setNewItem({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
   };
 
-  // --- Package Handlers ---
   const addPackage = () => {
     setPackages([...packages, { id: generateLocalId(), weightInOunces: 16, length: 10, width: 10, height: 10 }]);
   };
@@ -419,7 +404,6 @@ export default function OrderDetailsPage() {
     toast.success('Package weights synced with item weights.');
   };
 
-  // --- DB Operations ---
   const restoreInventoryStock = async () => {
     try {
       await Promise.all(items.map(async (item) => {
@@ -499,7 +483,6 @@ export default function OrderDetailsPage() {
     }
   };
 
-  // --- CREATE SHIPMENT (Push to Awaiting Shipment) ---
   const handlePushShipment = async () => {
     if (!shipping.carrierType || !shipping.serviceCode) {
       return toast.warning("Please configure shipping carrier and service code on the order before pushing.");
@@ -562,7 +545,6 @@ export default function OrderDetailsPage() {
     }
   };
 
-  // --- PURCHASE LABEL (V2 API) ---
   const handleGenerateLabel = async () => {
     if (!shipping.carrierType || !shipping.serviceCode) {
       return toast.warning("Please configure shipping carrier and service code on the order before purchasing.");
@@ -631,6 +613,37 @@ export default function OrderDetailsPage() {
     }
   };
 
+  const handlePrintPurchasedLabel = async () => {
+    setIsDownloadingLabel(true);
+    try {
+      const response = await dispatch(downloadPurchasedLabel(currentOrder._id)).unwrap();
+      const labelUrl = response.labelUrl || response.downloadUrl;
+      const labelData = response.labelData;
+
+      if (labelUrl) {
+        window.open(labelUrl, "_blank");
+        toast.success("Label opened for printing.");
+      } else if (labelData) {
+        const binary = atob(labelData);
+        const array = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          array[i] = binary.charCodeAt(i);
+        }
+        const blob = new Blob([array], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        
+        window.open(url, "_blank");
+        toast.success("Label ready for printing.");
+      } else {
+        toast.error("Label URL not found in response.");
+      }
+    } catch (error) {
+      toast.error('Print Failed', { description: error || "Failed to fetch label." });
+    } finally {
+      setIsDownloadingLabel(false);
+    }
+  };
+
   if (!isValidMongoId) return <NotFoundPage />;
   if (orderLoadStatus === 'failed' || orderError) return <NotFoundPage />;
   if (orderLoadStatus === 'loading' || !currentOrder) {
@@ -651,7 +664,6 @@ export default function OrderDetailsPage() {
   return (
     <div className="h-full flex flex-col gap-5 animate-fade-in max-w-[1400px] mx-auto pb-10 px-4 box-border text-slate-900">
       
-      {/* Header */}
       <div className="flex items-center justify-between bg-white/30 p-3 rounded-2xl border border-white/50 backdrop-blur-xl transition-all duration-300 gap-4 shadow-sm">
         <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors duration-200 shrink-0">
           <ArrowLeft size={16} /> <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">Back to Orders</span>
@@ -683,7 +695,6 @@ export default function OrderDetailsPage() {
         </div>
       </div>
 
-      {/* Slide-over Drawer for Fulfillment (Multi-Package Support) */}
       <div className={`fixed inset-0 z-50 flex justify-end transition-opacity duration-300 ${fulfillOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
         <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setFulfillOpen(false)} />
         <div className={`relative w-full max-w-[400px] bg-white/95 backdrop-blur-2xl border-l border-white/50 p-6 shadow-2xl h-full overflow-y-auto transition-transform duration-300 ease-in-out flex flex-col ${fulfillOpen ? 'translate-x-0' : 'translate-x-full'}`}>
@@ -698,7 +709,6 @@ export default function OrderDetailsPage() {
           
           <div className="space-y-5 flex-1">
             
-            {/* Warehouse / Ship From Selection */}
             <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-200/60 shadow-sm">
               <label className="text-[10px] uppercase font-bold text-slate-500 mb-2 block flex items-center gap-1.5">
                 <MapPin size={12}/> Origin Warehouse
@@ -732,7 +742,6 @@ export default function OrderDetailsPage() {
 
             <hr className="border-slate-200" />
 
-            {/* Dynamic Packages Array */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-[10px] uppercase font-black text-slate-500 flex items-center gap-1.5">
@@ -784,7 +793,6 @@ export default function OrderDetailsPage() {
             </div>
           </div>
           
-          {/* FULFILLMENT ACTION WORKFLOW BUTTONS */}
           <div className="mt-4 pt-4 border-t border-slate-200 shrink-0 bg-white/95">
             {!isShipmentCreated ? (
               <button 
@@ -798,37 +806,46 @@ export default function OrderDetailsPage() {
             ) : (
               <div className="space-y-3">
                  <button 
-                   onClick={handleDownloadPackingSlip}
+                   onClick={handlePrintPackingSlip}
                    disabled={isLabelPurchased}
                    className={`w-full flex justify-center items-center gap-2 border py-3.5 rounded-xl text-xs font-black shadow-sm transition-all ${
                      isPackingSlipDone ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
                    } disabled:opacity-50`}
                  >
-                   {isPackingSlipDone ? <CheckCircle2 size={16} /> : <FileText size={16} />} 
-                   {isPackingSlipDone ? 'Packing Slip Downloaded' : 'Download Packing Slip'}
+                   {isPackingSlipDone ? <CheckCircle2 size={16} /> : <Printer size={16} />} 
+                   {isPackingSlipDone ? 'Packing Slip Printed' : 'Print Packing Slip'}
                  </button>
 
                  <button 
-                   onClick={handleDownloadPickingList}
+                   onClick={handlePrintPickingList}
                    disabled={isLabelPurchased}
                    className={`w-full flex justify-center items-center gap-2 border py-3.5 rounded-xl text-xs font-black shadow-sm transition-all ${
                      isPickingListDone ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
                    } disabled:opacity-50`}
                  >
-                   {isPickingListDone ? <CheckCircle2 size={16} /> : <FileText size={16} />} 
-                   {isPickingListDone ? 'Picking List Downloaded' : 'Download Picking List'}
+                   {isPickingListDone ? <CheckCircle2 size={16} /> : <Printer size={16} />} 
+                   {isPickingListDone ? 'Picking List Printed' : 'Print Picking List'}
                  </button>
                  
-                 <button 
-                   onClick={handleGenerateLabel}
-                   disabled={!canPurchaseLabel || isGeneratingLabel}
-                   className={`w-full flex justify-center items-center gap-2 text-white py-3.5 rounded-xl text-xs font-black shadow-md transition-all ${
-                     isLabelPurchased ? 'bg-slate-800' : 'bg-emerald-600 hover:bg-emerald-500'
-                   } disabled:opacity-50 disabled:cursor-not-allowed`}
-                 >
-                   {isGeneratingLabel ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-                   {isLabelPurchased ? 'Label Already Purchased' : 'Purchase Label'}
-                 </button>
+                 {!isLabelPurchased ? (
+                   <button 
+                     onClick={handleGenerateLabel}
+                     disabled={!canPurchaseLabel || isGeneratingLabel}
+                     className="w-full flex justify-center items-center gap-2 text-white py-3.5 rounded-xl text-xs font-black shadow-md transition-all bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                   >
+                     {isGeneratingLabel ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                     Purchase Label
+                   </button>
+                 ) : (
+                   <button 
+                     onClick={handlePrintPurchasedLabel}
+                     disabled={isDownloadingLabel}
+                     className="w-full flex justify-center items-center gap-2 text-white py-3.5 rounded-xl text-xs font-black shadow-md transition-all bg-slate-800 hover:bg-slate-700 disabled:opacity-50"
+                   >
+                     {isDownloadingLabel ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
+                     Print Purchased Label
+                   </button>
+                 )}
               </div>
             )}
           </div>
@@ -837,7 +854,6 @@ export default function OrderDetailsPage() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start mt-2">
-        {/* Main Content (2/3) */}
         <div className="xl:col-span-2 space-y-6 w-full min-w-0">
           
           <div className="flex flex-wrap items-center justify-between gap-3 bg-white/40 border border-white/60 p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] backdrop-blur-xl">
@@ -851,7 +867,6 @@ export default function OrderDetailsPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {/* Status Selector */}
             <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl flex flex-col justify-between min-h-[130px] transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
                <h3 className="text-[10px] font-black uppercase text-slate-400 mb-3 tracking-widest">Order Status</h3>
                <select 
@@ -869,7 +884,6 @@ export default function OrderDetailsPage() {
                 </select>
             </div>
 
-            {/* Logistics & Carriers */}
             <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl flex flex-col justify-between min-h-[130px] transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
                <div className="flex justify-between items-center mb-3">
                 <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5"><Truck size={14}/> Shipping Method</h3>
@@ -892,7 +906,6 @@ export default function OrderDetailsPage() {
                          <p className="text-slate-400 font-medium text-xs mt-1 border-b border-slate-100 pb-2">Cost: ${Number(shipping.shippingCost).toFixed(2)}</p>
                        </div>
                        
-                       {/* Tracking Link Logic */}
                        {orderStatus === 'Shipped' && shipping.trackingNumber ? (
                           <div className="mt-2">
                              <a 
@@ -916,7 +929,6 @@ export default function OrderDetailsPage() {
                )}
             </div>
 
-            {/* Consolidated Total Weight Metrics Card */}
             <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl flex flex-col justify-between min-h-[130px] transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 flex items-center justify-between">
                  <span className="flex items-center gap-1.5"><Weight size={14}/> Est. Weight</span>
@@ -929,9 +941,60 @@ export default function OrderDetailsPage() {
             </div>
           </div>
 
-          
+          {/* <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
+             <div className="flex justify-between items-center mb-4 border-b border-white/60 pb-3">
+                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                   <Box size={14}/> ShipStation Fulfillment Details
+                </h3>
+                {ssOrderId && (
+                    <span className="px-2 py-1 bg-emerald-50 text-emerald-600 rounded-md text-[9px] font-black uppercase tracking-widest border border-emerald-100 flex items-center gap-1">
+                       <CheckCircle2 size={10} /> Synced
+                    </span>
+                )}
+             </div>
+             
+             {ssData || ssOrderId ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-center">
+                   <div>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">ShipStation ID</p>
+                      <p className="text-xs font-bold text-slate-900">{ssOrderId || 'N/A'}</p>
+                   </div>
+                   <div>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">SS Status</p>
+                      <p className="text-xs font-bold text-slate-900 capitalize">
+                        {(ssData?.orderStatus || ssData?.status || 'N/A').replace('_', ' ')}
+                      </p>
+                   </div>
+                   <div>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Order Key</p>
+                      <p className="text-xs font-bold text-slate-900">{ssData?.orderKey || 'N/A'}</p>
+                   </div>
+                   <div className="flex justify-end">
+                      {ssOrderId && (
+                        <a 
+                          href={`https://ship.shipstation.com/orders/details/${ssOrderId}`} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-[10px] font-bold shadow-md transition-colors"
+                        >
+                          View in SS <ExternalLink size={12} />
+                        </a>
+                      )}
+                   </div>
+                </div>
+             ) : (
+                <div className="flex flex-col items-center justify-center py-4 text-center">
+                   <p className="text-xs font-bold text-slate-500 mb-3">Order hasn't been pushed to ShipStation yet.</p>
+                   <button 
+                      onClick={() => setFulfillOpen(true)}
+                      className="bg-brand-gold text-white px-4 py-2 rounded-xl text-[11px] font-black shadow-lg shadow-brand-gold/20 hover:scale-105 transition-all duration-200"
+                   >
+                      Configure Fulfillment
+                   </button>
+                </div>
+             )}
+          </div> */}
 
-          {/* Editable Shipping Address */}
           <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
             <div className="flex justify-between items-center mb-4 border-b border-white/60 pb-3">
                 <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2"><MapPin size={14}/> Shipping Address</h3>
@@ -975,7 +1038,6 @@ export default function OrderDetailsPage() {
             )}
           </div>
 
-          {/* Manifest Section */}
           <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
             <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-5 flex items-center gap-2 border-b border-white/60 pb-3">
               <PackageCheck size={14} /> Manifest Items
@@ -1013,7 +1075,6 @@ export default function OrderDetailsPage() {
                     </tr>
                   ))}
                   
-                  {/* Add Row Component */}
                   <tr className="bg-slate-50/50">
                     <td className="py-3 pl-2 pr-2">
                       <select 
@@ -1052,10 +1113,8 @@ export default function OrderDetailsPage() {
           </div>
         </div>
 
-        {/* Sidebar */}
         <div className="xl:col-span-1 space-y-6 w-full min-w-0">
           
-          {/* Fulfillment Tracker / Activity Log */}
           <div className="bg-white/80 backdrop-blur-xl p-6 rounded-3xl shadow-[0_8px_30px_rgba(0,0,0,0.06)] border border-white/60">
              <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-5 flex items-center gap-2 border-b border-slate-100 pb-3">
                <Truck size={14}/> Activity Log

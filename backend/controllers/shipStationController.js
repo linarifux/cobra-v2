@@ -4,7 +4,10 @@ import Carrier from '../models/Carrier.js';
 import Shipment from '../models/Shipment.js';
 import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
-import { getRates, getWarehouses, getCarriers, createLabel, createShipment } from '../services/shipStationService.js';
+import { 
+  getRates, getWarehouses, getCarriers, 
+  createLabel, createShipment, getLabelByExternalId 
+} from '../services/shipStationService.js';
 
 // Fallback to 08036 if not set in .env
 const originZip = process.env.SHIPSTATION_ORIGIN_ZIP?.replace(/['"]/g, '').trim() || '08036';
@@ -18,11 +21,10 @@ const normalizeCountry = (countryStr) => {
   if (c === 'mexico' || c === 'mex' || c === 'mx') return 'MX';
   if (c === 'united kingdom' || c === 'uk' || c === 'gb') return 'GB';
   if (c === 'australia' || c === 'aus' || c === 'au') return 'AU';
-  return countryStr.substring(0, 2).toUpperCase(); // Fallback
+  return countryStr.substring(0, 2).toUpperCase(); 
 };
 
 // --- HELPER: Map Frontend Packages ---
-// FIX: Added 'package_code: "package"' to prevent carrier validation errors
 const mapPackages = (packages, totalWeightInOunces = 16) => {
   if (packages && packages.length > 0) {
     return packages.map(pkg => ({
@@ -46,22 +48,13 @@ const mapPackages = (packages, totalWeightInOunces = 16) => {
   }];
 };
 
-// @desc    Fetch all warehouses from ShipStation
 export const fetchWarehouses = catchAsync(async (req, res, next) => {
   try {
     const warehouses = await getWarehouses();
-    res.status(200).json({
-      status: 'success',
-      results: warehouses?.length || 0,
-      data: { warehouses }
-    });
-  } catch (error) {
-    return next(new AppError(`ShipStation Error: ${error.message}`, 502));
-  }
+    res.status(200).json({ status: 'success', results: warehouses?.length || 0, data: { warehouses } });
+  } catch (error) { return next(new AppError(`ShipStation Error: ${error.message}`, 502)); }
 });
 
-
-// @desc    Fetch all connected carriers from ShipStation
 export const fetchCarriers = catchAsync(async (req, res, next) => {
   try {
     const carriers = await getCarriers();
@@ -75,29 +68,16 @@ export const fetchCarriers = catchAsync(async (req, res, next) => {
         name: service.name,
       }))
     }));
-
-    res.status(200).json({
-      status: 'success',
-      results: filteredCarriers?.length || 0,
-      data: filteredCarriers,
-    });
-  } catch (error) {
-    return next(new AppError(`ShipStation Error: ${error.message}`, 502));
-  }
+    res.status(200).json({ status: 'success', results: filteredCarriers?.length || 0, data: filteredCarriers });
+  } catch (error) { return next(new AppError(`ShipStation Error: ${error.message}`, 502)); }
 });
 
-
-// @desc    Get live shipping rates using unsaved frontend data
 export const fetchLiveRates = catchAsync(async (req, res, next) => {
   const { carrierCode, address, totalWeightInOunces, divisionId } = req.body;
-
   if (!address || (!address.zipCode && !address.zip) || (!address.state && !address.state_province) || (!address.city && !address.city_locality)) {
     return next(new AppError('Missing required shipping address fields (City, State, Zip).', 400));
   }
-
-  if (!carrierCode) {
-    return next(new AppError('Carrier Code is required to fetch rates.', 400));
-  }
+  if (!carrierCode) return next(new AppError('Carrier Code is required to fetch rates.', 400));
 
   const carrier = await Carrier.findOne({ carrierType: carrierCode, division: divisionId, isActive: true });
   if (!carrier) return next(new AppError(`Carrier ${carrierCode} is not configured or disabled.`, 404));
@@ -130,37 +110,24 @@ export const fetchLiveRates = catchAsync(async (req, res, next) => {
       },
       packages: mapPackages([], totalWeightInOunces)
     },
-    rate_options: {
-      carrier_ids: [carrier.shipStationId] 
-    }
+    rate_options: { carrier_ids: [carrier.shipStationId] }
   };
 
   try {
     const response = await getRates(ratePayload);
     const rates = response?.rate_response?.rates || []; 
-
     const normalizedRates = rates.map(r => ({
       serviceCode: r.service_code,
       serviceName: r.service_type || r.service_code,
       shipmentCost: r.shipping_amount?.amount || 0,
       transitDays: r.delivery_days || null
     }));
-
-    res.status(200).json({
-      status: 'success',
-      results: normalizedRates?.length || 0,
-      data: { rates: normalizedRates }
-    });
-  } catch (error) {
-    return next(new AppError(`ShipStation Error: ${error.message}`, 502));
-  }
+    res.status(200).json({ status: 'success', results: normalizedRates?.length || 0, data: { rates: normalizedRates } });
+  } catch (error) { return next(new AppError(`ShipStation Error: ${error.message}`, 502)); }
 });
 
-
-// @desc    Get clean, filtered live shipping rates for a customer checking out
 export const getCheckoutRates = catchAsync(async (req, res, next) => {
   const { divisionId, address, totalWeightInOunces } = req.body;
-
   if (!divisionId) return next(new AppError('Division ID context is required.', 400));
   if (!address || (!address.zipCode && !address.zip) || !address.state || !address.city) {
     return next(new AppError('Missing required shipping address fields.', 400));
@@ -203,9 +170,7 @@ export const getCheckoutRates = catchAsync(async (req, res, next) => {
           },
           packages: mapPackages([], totalWeightInOunces)
         },
-        rate_options: {
-          carrier_ids: [carrier.shipStationId] 
-        }
+        rate_options: { carrier_ids: [carrier.shipStationId] }
       };
 
       try {
@@ -214,7 +179,6 @@ export const getCheckoutRates = catchAsync(async (req, res, next) => {
         if (!ssRates || ssRates.length === 0) return;
 
         const enabledServiceCodes = carrier.enabledServices.filter(s => s.isActive).map(s => s.serviceCode);
-
         ssRates.forEach(rate => {
           if (enabledServiceCodes.includes(rate.service_code)) {
             unifiedRates.push({
@@ -235,20 +199,12 @@ export const getCheckoutRates = catchAsync(async (req, res, next) => {
     await Promise.all(rateRequests);
     unifiedRates.sort((a, b) => a.cost - b.cost);
 
-    res.status(200).json({
-      status: 'success',
-      results: unifiedRates.length,
-      data: { rates: unifiedRates }
-    });
-
+    res.status(200).json({ status: 'success', results: unifiedRates.length, data: { rates: unifiedRates } });
   } catch (error) {
-    console.error("Checkout Rate Fetching Failure:", error.message);
     return next(new AppError('Fulfillment system was unable to calculate shipping rates.', 502));
   }
 });
 
-
-// @desc    Generate a shipping label for a specific order and update the DB
 export const generateOrderLabel = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
   const { packages, weightInOunces, dimensions, isResidential, shipFrom, carrierCode, serviceCode, externalShipmentId, orderNumber } = req.body; 
@@ -257,13 +213,10 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
   if (!order) return next(new AppError('Order not found', 404));
 
   const displayId = externalShipmentId || orderNumber || order.orderNumber || order._id.toString();
-
   const finalCarrierType = carrierCode || order.shippingDetails?.carrierType;
   const finalServiceCode = serviceCode || order.shippingDetails?.serviceCode;
 
-  if (!finalCarrierType || !finalServiceCode) {
-    return next(new AppError('Shipping carrier and service code must be selected.', 400));
-  }
+  if (!finalCarrierType || !finalServiceCode) return next(new AppError('Shipping carrier and service code must be selected.', 400));
   
   const carrier = await Carrier.findOne({ carrierType: finalCarrierType, division: order.division._id, isActive: true });
   if (!carrier) return next(new AppError(`Carrier configuration not found.`, 404));
@@ -293,7 +246,7 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
     label_format: "pdf",
     label_layout: "4x6",
     shipment: {
-      carrier_id: carrier.shipStationId, // FIX: The Label API strictly requires the carrier_id (se-xxxx), not string code
+      carrier_id: carrier.shipStationId, 
       service_code: finalServiceCode,
       external_shipment_id: displayId,
       external_order_id: displayId,
@@ -343,33 +296,29 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
   try {
     const labelResponse = await createLabel(labelPayload);
 
-    // Check for silent errors in label generation
     if (labelResponse?.hasErrors) {
        const errorMsg = labelResponse.shipments?.[0]?.errorMessage || labelResponse.results?.[0]?.errorMessage || "Failed to generate label.";
        return next(new AppError(`ShipStation Error: ${errorMsg}`, 400));
     }
 
-    // Update Core Order
     order.status = 'Shipped';
     order.shippingDetails.trackingNumber = labelResponse.tracking_number || labelResponse.trackingNumber;
     order.shippingDetails.shippingCost = labelResponse.shipment_cost?.amount || labelResponse.shipmentCost; 
     
-    // Save SS details if label generation created an underlying record
-    if (labelResponse.order_id || labelResponse.orderId || labelResponse.shipment_id || labelResponse.shipmentId) {
-        order.shipstationDetails = {
-            ...order.shipstationDetails,
-            orderId: labelResponse.order_id || labelResponse.orderId || labelResponse.shipment_id || labelResponse.shipmentId
-        };
-    }
+    order.shipstationDetails = {
+        ...order.shipstationDetails,
+        orderId: labelResponse.order_id || labelResponse.orderId || labelResponse.shipment_id || labelResponse.shipmentId || order.shipstationDetails?.orderId,
+        labelId: labelResponse.label_id || labelResponse.labelId,
+        externalShipmentId: displayId // SAVE EXTERNAL ID FOR DOWNLOADING 
+    };
     await order.save();
 
-    // 🚨 UPDATE ACTIVITY TRACKER (Shipment Model) 🚨
     let shipmentTracker = await Shipment.findOne({ order: order._id });
     if (!shipmentTracker) {
       shipmentTracker = new Shipment({
         order: order._id,
         division: order.division._id,
-        shipStationLabelId: labelResponse.label_id || '',
+        shipStationLabelId: labelResponse.label_id || labelResponse.labelId || '',
         currentStatus: 'Label Purchased',
         isLabelPurchased: true,
         isShipmentCreated: true, 
@@ -378,7 +327,7 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
     } else {
       shipmentTracker.isLabelPurchased = true;
       shipmentTracker.currentStatus = 'Label Purchased';
-      shipmentTracker.shipStationLabelId = labelResponse.label_id || '';
+      shipmentTracker.shipStationLabelId = labelResponse.label_id || labelResponse.labelId || '';
       shipmentTracker.statusHistory.push({ status: 'Label Purchased', notes: `Label generated via ${finalCarrierType}.` });
     }
     await shipmentTracker.save();
@@ -391,13 +340,9 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
         trackingNumber: labelResponse.tracking_number || labelResponse.trackingNumber
       }
     });
-  } catch (error) {
-    return next(new AppError(`ShipStation Label Error: ${error.message}`, 502));
-  }
+  } catch (error) { return next(new AppError(`ShipStation Label Error: ${error.message}`, 502)); }
 });
 
-
-// @desc    Create a shipment in ShipStation for a specific order (No Label Gen)
 export const createOrderShipment = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
   const { packages, isResidential, shipFrom, carrierCode, serviceCode, externalShipmentId, orderNumber } = req.body;
@@ -406,17 +351,11 @@ export const createOrderShipment = catchAsync(async (req, res, next) => {
   if (!order) return next(new AppError('Order not found in database.', 404));
 
   const displayId = externalShipmentId || orderNumber || order.orderNumber || order._id.toString();
-
   const { recipientName, line1, city, state, zip, country } = order.shippingAddress || {};
-  if (!recipientName || !line1 || !city || !state || !zip) {
-    return next(new AppError('Incomplete destination address.', 400));
-  }
-  if (!shipFrom || !shipFrom.postal_code || !shipFrom.address_line1) {
-    return next(new AppError('A valid Ship-From (Origin) location is required.', 400));
-  }
-  if (!packages || !Array.isArray(packages) || packages.length === 0) {
-    return next(new AppError('Packages array is required to construct shipment.', 400));
-  }
+  
+  if (!recipientName || !line1 || !city || !state || !zip) return next(new AppError('Incomplete destination address.', 400));
+  if (!shipFrom || !shipFrom.postal_code || !shipFrom.address_line1) return next(new AppError('A valid Ship-From (Origin) location is required.', 400));
+  if (!packages || !Array.isArray(packages) || packages.length === 0) return next(new AppError('Packages array is required to construct shipment.', 400));
 
   const finalCarrierType = carrierCode || order.shippingDetails?.carrierType;
   const finalServiceCode = serviceCode || order.shippingDetails?.serviceCode;
@@ -436,19 +375,11 @@ export const createOrderShipment = catchAsync(async (req, res, next) => {
         validate_address: "no_validation",
         external_shipment_id: displayId, 
         external_order_id: displayId,
-        
-        // FIX 1: Must tell ShipStation to create the parent order shell!
         create_sales_order: true, 
-
         shipment_number: displayId,    
         shipment_status: "pending",    
-        
-        // FIX 2: V2 Shipment API explicitly expects the ID (se-xxxx), not the string code
         carrier_id: carrier.shipStationId, 
-        
-        // FIX 3: V2 Shipment API uses requested_shipment_service, not service_code
         requested_shipment_service: finalServiceCode, 
-        
         ship_date: new Date().toISOString().split('T')[0] + "T00:00:00.000Z", 
         ship_to: {
           name: recipientName,
@@ -481,10 +412,7 @@ export const createOrderShipment = catchAsync(async (req, res, next) => {
           name: item.name ? item.name.substring(0, 200) : "Merchandise",
           sku: item.sku || "UNKNOWN",
           quantity: item.quantity || 1,
-          weight: {
-            value: item.weight || 0,
-            unit: "ounce"
-          }
+          weight: { value: item.weight || 0, unit: "ounce" }
         })),
         ...(isInternational && {
           customs: {
@@ -505,36 +433,29 @@ export const createOrderShipment = catchAsync(async (req, res, next) => {
   try {
     const shipmentResponse = await createShipment(shipmentPayload);
     
-    // STRICT ERROR CHECKING 
-    // Prevent DB update if ShipStation silently rejected the payload internally.
     if (shipmentResponse?.hasErrors || shipmentResponse?.has_errors) {
       const failedItem = shipmentResponse.shipments?.[0] || shipmentResponse.results?.[0];
-      // SS Validation errors usually surface in an 'errors' array inside the failed shipment object
       const errorMessage = failedItem?.errors?.[0] || failedItem?.errorMessage || "ShipStation rejected the fulfillment criteria.";
       return next(new AppError(`ShipStation Rejected: ${errorMessage}`, 400));
     }
 
     const processedShipment = shipmentResponse?.shipments?.[0] || shipmentResponse?.results?.[0] || shipmentResponse;
-    
     if (!processedShipment || (!processedShipment.shipment_id && !processedShipment.shipmentId)) {
         return next(new AppError('ShipStation failed to return a valid shipment ID.', 502));
     }
 
-    // Update Core Order ONLY when ShipStation returns success
     order.status = 'Processing';
     order.shippingDetails.carrierType = finalCarrierType;
     order.shippingDetails.serviceCode = finalServiceCode;
     
-    // SAVE SHIPSTATION DATA TO MONGODB (Required for frontend to show the widget)
     order.shipstationDetails = {
       orderId: processedShipment.shipment_id || processedShipment.shipmentId,
       orderKey: processedShipment.external_order_id || processedShipment.orderKey || '',
-      orderStatus: processedShipment.shipment_status || processedShipment.shipmentStatus || 'pending'
+      orderStatus: processedShipment.shipment_status || processedShipment.shipmentStatus || 'pending',
+      externalShipmentId: displayId // SAVE EXTERNAL ID FOR DOWNLOADING
     };
-    
     await order.save();
 
-    // 🚨 UPDATE ACTIVITY TRACKER (Shipment Model) 🚨
     let shipmentTracker = await Shipment.findOne({ order: order._id });
     if (!shipmentTracker) {
       shipmentTracker = new Shipment({
@@ -551,12 +472,41 @@ export const createOrderShipment = catchAsync(async (req, res, next) => {
     }
     await shipmentTracker.save();
 
-    res.status(200).json({
-      status: 'success',
-      message: 'Shipment pushed to ShipStation.',
-      data: { shipment: processedShipment, order }
-    });
+    res.status(200).json({ status: 'success', message: 'Shipment pushed to ShipStation.', data: { shipment: processedShipment, order } });
+  } catch (error) { return next(new AppError(`ShipStation API Error: ${error.message}`, 502)); }
+});
 
+// @desc    Download an existing label PDF for an order via external_shipment_id
+export const downloadOrderLabel = catchAsync(async (req, res, next) => {
+  const { orderId } = req.params;
+
+  const order = await Order.findById(orderId);
+  if (!order) return next(new AppError('Order not found', 400));
+
+  // Retrieve the externalShipmentId we safely recorded during creation, or fallback to standard logic
+  const externalId = order.shipstationDetails?.externalShipmentId || order.orderNumber || order._id.toString();
+
+  try {
+    const labelResponse = await getLabelByExternalId(externalId);
+
+    // Shipstation JSON mapping for download link
+    const pdfUrl = labelResponse?.label_download?.pdf || labelResponse?.label_download?.href || labelResponse?.download_url;
+
+    if (pdfUrl) {
+      return res.status(200).json({
+        status: 'success',
+        data: { labelUrl: pdfUrl }
+      });
+    }
+
+    if (labelResponse?.label_data) {
+       return res.status(200).json({
+          status: 'success',
+          data: { labelData: labelResponse.label_data }
+       })
+    }
+
+    return next(new AppError('Label data could not be retrieved from ShipStation.', 400));
   } catch (error) {
     return next(new AppError(`ShipStation API Error: ${error.message}`, 502));
   }
