@@ -1,5 +1,12 @@
 import express from 'express';
-import { fetchLiveRates, fetchWarehouses, fetchCarriers, generateOrderLabel } from '../controllers/shipStationController.js';
+import { 
+    fetchLiveRates, 
+    getCheckoutRates,
+    fetchWarehouses, 
+    fetchCarriers, 
+    generateOrderLabel,
+    createOrderShipment 
+} from '../controllers/shipStationController.js';
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
@@ -7,22 +14,18 @@ const router = express.Router();
 // All ShipStation routes require authentication
 router.use(protect);
 
-// Get all warehouses
-router.route('/warehouses')
-    .get(fetchWarehouses);
+// Get all warehouses & carriers
+router.route('/warehouses').get(fetchWarehouses);
+router.route('/carriers').get(fetchCarriers);
 
-
-// Get all Carriers
-router.route('/carriers')
-    .get(fetchCarriers);
-
-// Rate Fetching
+// --- Rate Fetching ---
 // POST route to accept live frontend data
-// Customer-Facing Checkout Rates (Protected but NOT restricted to admin/staff)
 router.post('/rates/live', fetchLiveRates);
+router.post('/checkout/rates', getCheckoutRates);
 
-
-// Label Generation (Admin/Staff only)
-router.post('/label/:orderId', restrictTo('admin', 'super_admin'), generateOrderLabel);
+// --- Fulfillment & Logistics ---
+// Restrict to admins and staff members
+router.post('/label/:orderId', restrictTo('admin', 'super_admin', 'staff'), generateOrderLabel);
+router.post('/shipments/:orderId', restrictTo('admin', 'super_admin', 'staff'), createOrderShipment);
 
 export default router;

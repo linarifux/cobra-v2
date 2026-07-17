@@ -29,7 +29,7 @@ export const sendReceivingConfirmationEmail = async (customerEmail, receivingId,
   }
 
   const mailOptions = {
-    from: `"Mi-Kro Orders" <${smtpUser}>`,
+    from: `"MI-KRO Orders" <${smtpUser}>`,
     to: customerEmail,
     subject: `Receiving Confirmation - Receipt #${receivingId}`,
     html: `
@@ -40,7 +40,7 @@ export const sendReceivingConfirmationEmail = async (customerEmail, receivingId,
         <p>Please find the official receiving breakdown document attached as a PDF file for your internal records.</p>
         <br/>
         <p>Best Regards,</p>
-        <p><strong>Mi-Kro Operations Team</strong></p>
+        <p><strong>MI-KRO Operations Team</strong></p>
       </div>
     `,
     attachments: [

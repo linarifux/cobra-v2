@@ -12,6 +12,7 @@ import { createOrder } from '../store/slices/orderSlice';
 import { fetchCustomers } from '../store/slices/customerSlice';
 import { fetchDivisions } from '../store/slices/divisionSlice';
 import { fetchInventory, updateInventory } from '../store/slices/inventorySlice';
+import { fetchCarriers } from '../store/slices/carrierSlice'; 
 
 const generateLocalId = () => `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -23,6 +24,7 @@ export default function CreateOrderPage() {
   const { items: customers = [], status: custStatus } = useSelector(state => state.customers || {});
   const { items: divisions = [], status: divStatus } = useSelector(state => state.divisions || {});
   const { items: inventory = [], status: invStatus } = useSelector(state => state.inventory || {});
+  const { items: carriers = [], status: carrierStatus } = useSelector(state => state.carriers || {}); 
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -39,18 +41,34 @@ export default function CreateOrderPage() {
   const [items, setItems] = useState([]);
   const [newItem, setNewItem] = useState({ inventoryId: '', sku: '', name: '', quantity: 1, unitPrice: 0, weight: 0 });
 
-  // --- Fetch Dependencies ---
+  // --- Fetch Global Dependencies Once on Mount ---
   useEffect(() => {
     if (custStatus === 'idle') dispatch(fetchCustomers());
     if (divStatus === 'idle') dispatch(fetchDivisions());
     if (invStatus === 'idle') dispatch(fetchInventory());
-  }, [dispatch, custStatus, divStatus, invStatus]);
+    if (carrierStatus === 'idle' || carrierStatus === 'failed') dispatch(fetchCarriers());
+  }, [dispatch, custStatus, divStatus, invStatus, carrierStatus]);
 
   // --- Filter Divisions based on Customer ---
   const availableDivisions = useMemo(() => {
     if (!formData.customer) return [];
     return divisions.filter(d => (d.customer?._id || d.customer) === formData.customer);
   }, [divisions, formData.customer]);
+
+  // --- Local Filter: Carriers Scoped to the Selected Division ---
+  const divisionCarriers = useMemo(() => {
+    if (!formData.division) return [];
+    return carriers.filter(c => 
+      String(c.division?._id || c.division) === String(formData.division) && c.isActive
+    );
+  }, [carriers, formData.division]);
+
+  // --- Filter Services based on Carrier Selection ---
+  const availableServices = useMemo(() => {
+    if (!formData.shippingDetails.carrierType) return [];
+    const selectedCarrier = divisionCarriers.find(c => c.carrierType === formData.shippingDetails.carrierType);
+    return selectedCarrier?.enabledServices?.filter(s => s.isActive) || [];
+  }, [divisionCarriers, formData.shippingDetails.carrierType]);
 
   // --- Calculations ---
   const subtotal = items.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.unitPrice)), 0);
@@ -119,10 +137,9 @@ export default function CreateOrderPage() {
     const toastId = toast.loading("Creating Order and Deducting Inventory...");
 
     try {
-      // 1. Format payload EXACTLY matching the Redux thunk and Backend expectations
       const orderPayload = {
         customer: formData.customer,
-        division: formData.division, // Redux thunk uses this to build: /divisions/:divisionId/orders
+        division: formData.division, 
         status: formData.status,
         notes: formData.notes,
         orderNumber: `ORD-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -131,7 +148,7 @@ export default function CreateOrderPage() {
         shippingAddress: formData.shippingAddress,
         shippingDetails: {
           ...formData.shippingDetails,
-          shippingCost: Number(formData.shippingDetails.shippingCost) // Explicit cast
+          shippingCost: Number(formData.shippingDetails.shippingCost) 
         },
         items: items.map(i => ({
           sku: i.sku,
@@ -142,10 +159,9 @@ export default function CreateOrderPage() {
         }))
       };
 
-      // 2. Submit Order to API (Hits nested division route automatically via Thunk)
       const newOrder = await dispatch(createOrder(orderPayload)).unwrap();
 
-      // 3. Robust Inventory Deduction
+      // Robust Inventory Deduction
       await Promise.all(items.map(async (item) => {
         if (!item.inventoryId) return; 
         
@@ -228,7 +244,12 @@ export default function CreateOrderPage() {
                     className={`${inputClass} pl-10 appearance-none`}
                     value={formData.customer} 
                     onChange={(e) => {
-                      setFormData({ ...formData, customer: e.target.value, division: '' });
+                      setFormData({ 
+                        ...formData, 
+                        customer: e.target.value, 
+                        division: '',
+                        shippingDetails: { ...formData.shippingDetails, carrierType: '', serviceCode: '' } 
+                      });
                     }}
                   >
                     <option value="" disabled>Choose a customer...</option>
@@ -246,7 +267,13 @@ export default function CreateOrderPage() {
                     disabled={!formData.customer}
                     className={`${inputClass} pl-10 appearance-none disabled:opacity-50`}
                     value={formData.division} 
-                    onChange={(e) => setFormData({ ...formData, division: e.target.value })}
+                    onChange={(e) => {
+                      setFormData({ 
+                        ...formData, 
+                        division: e.target.value,
+                        shippingDetails: { ...formData.shippingDetails, carrierType: '', serviceCode: '' }
+                      });
+                    }}
                   >
                     <option value="" disabled>{formData.customer ? 'Choose a division...' : 'Select customer first...'}</option>
                     {availableDivisions.map(d => <option key={d._id} value={d._id}>{d.divisionName}</option>)}
@@ -310,14 +337,51 @@ export default function CreateOrderPage() {
             </h2>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
+                
+                {/* Dynamic Carrier Dropdown Scoped to Division */}
                 <div>
-                  <label className={labelClass}>Carrier Type</label>
-                  <input type="text" name="carrierType" value={formData.shippingDetails.carrierType} onChange={handleShippingChange} className={inputClass} placeholder="UPS, FedEx, USPS" />
+                  <label className={labelClass}>Carrier Network</label>
+                  <select 
+                    name="carrierType" 
+                    value={formData.shippingDetails.carrierType} 
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      shippingDetails: { ...prev.shippingDetails, carrierType: e.target.value, serviceCode: '' }
+                    }))} 
+                    className={`${inputClass} appearance-none cursor-pointer disabled:opacity-50`}
+                    disabled={!formData.division || carrierStatus === 'loading'}
+                  >
+                    <option value="" disabled>{carrierStatus === 'loading' ? 'Syncing carriers...' : 'Select a carrier...'}</option>
+                    {divisionCarriers.map(c => (
+                      <option key={c._id} value={c.carrierType}>
+                        {c.carrierType} {c.accountName ? `(${c.accountName})` : ''}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+
+                {/* Dynamic Service Dropdown */}
                 <div>
-                  <label className={labelClass}>Service Code</label>
-                  <input type="text" name="serviceCode" value={formData.shippingDetails.serviceCode} onChange={handleShippingChange} className={inputClass} placeholder="ups_ground" />
+                  <label className={labelClass}>Service Level</label>
+                  <select 
+                    name="serviceCode" 
+                    value={formData.shippingDetails.serviceCode} 
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      shippingDetails: { ...prev.shippingDetails, serviceCode: e.target.value }
+                    }))} 
+                    className={`${inputClass} appearance-none cursor-pointer disabled:opacity-50`}
+                    disabled={!formData.shippingDetails.carrierType}
+                  >
+                    <option value="" disabled>Select service...</option>
+                    {availableServices.map(s => (
+                      <option key={s.serviceCode} value={s.serviceCode}>
+                        {s.serviceName || s.serviceCode}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

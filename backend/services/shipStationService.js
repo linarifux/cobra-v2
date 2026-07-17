@@ -1,7 +1,8 @@
 import axios from 'axios';
 
 // 1. Extract and securely clean environment variables
-const baseURL = process.env.SHIPSTATION_API_URL;
+// Strip any trailing slashes from the base URL to prevent double-slash route errors
+const baseURL = (process.env.SHIPSTATION_API_URL || '').replace(/\/+$/, '');
 const apiKey = process.env.SHIPSTATION_API_KEY;
 
 if (!apiKey) {
@@ -10,21 +11,24 @@ if (!apiKey) {
 
 // 2. Initialize the ShipStation V2 Axios Instance
 export const shipStationAPI = axios.create({
-  baseURL,
+  baseURL, // Ensure your .env URL points to https://api.shipstation.com/v2
   headers: {
-    // Standardized to use the api-key header for V2 authentication
+    // ShipStation V2 strictly uses the api-key header for authentication
     'api-key': apiKey,
+    'Content-Type': 'application/json'
   },
   timeout: 30000 // 30-second timeout for external API reliability
 });
 
-// 3. Centralized Error Handler
+// 3. Centralized Error Handler (Robust for V2 error arrays)
 const handleApiError = (error, context) => {
-  const message = error.response?.data?.ExceptionMessage 
-    || error.response?.data?.Message 
-    || error.response?.data?.errors?.[0]?.message
-    || error.message 
-    || 'Unknown ShipStation API Error';
+  // ShipStation V2 usually places detailed validation messages inside an 'errors' array
+  const detailedError = error.response?.data?.errors?.[0]?.message;
+  
+  // Fallbacks for generic or server-level errors
+  const genericMessage = error.response?.data?.Message || error.response?.data?.ExceptionMessage;
+  
+  const message = detailedError || genericMessage || error.message || 'Unknown ShipStation API Error';
   
   console.error(`[ShipStation] ${context} Error:`, message);
   throw new Error(message);
@@ -41,7 +45,6 @@ export const getWarehouses = async () => {
   }
 };
 
-// Fetch all connected carriers from ShipStation
 export const getCarriers = async () => {
   try {
     const response = await shipStationAPI.get('/carriers');
@@ -78,15 +81,20 @@ export const getRates = async (ratePayload) => {
   }
 };
 
-
-
-// Create a shipping label for a specific order
 export const createLabel = async (labelPayload) => {
   try {
-    console.log(labelPayload)
     const response = await shipStationAPI.post('/labels', labelPayload);
     return response.data;
   } catch (error) { 
     handleApiError(error, 'createLabel'); 
+  }
+};
+
+export const createShipment = async (shipmentPayload) => {
+  try {
+    const response = await shipStationAPI.post('/shipments', shipmentPayload);
+    return response.data;
+  } catch (error) { 
+    handleApiError(error, 'createShipment'); 
   }
 };
