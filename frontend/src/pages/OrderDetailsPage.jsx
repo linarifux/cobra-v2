@@ -942,7 +942,7 @@ export default function OrderDetailsPage() {
             </div>
           </div>
 
-          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
+          {/* <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
              <div className="flex justify-between items-center mb-4 border-b border-white/60 pb-3">
                 <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
                    <Box size={14}/> ShipStation Fulfillment Details
@@ -994,7 +994,7 @@ export default function OrderDetailsPage() {
                    </button>
                 </div>
              )}
-          </div>
+          </div> */}
 
           <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
             <div className="flex justify-between items-center mb-4 border-b border-white/60 pb-3">
