@@ -16,10 +16,17 @@ const orderSchema = new mongoose.Schema(
       unique: true,
       trim: true
     },
+    // The 3PL Client/Brand
     customer: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Customer',
       required: [true, 'Order must belong to a customer']
+    },
+    // The End-Consumer / Shopper
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: false // Kept false to allow guest checkouts and preserve existing DB data safely
     },
     // Scope this order to a specific division for strict routing and access control
     division: {
@@ -52,14 +59,22 @@ const orderSchema = new mongoose.Schema(
     // Integration with the Carrier module
     shippingDetails: {
       carrierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Carrier' },
-      carrierType: { type: String }, // e.g., 'FedEx'
-      serviceCode: { type: String }, // e.g., 'FEDEX_GROUND'
+      carrierType: { type: String }, 
+      serviceCode: { type: String }, 
       trackingNumber: { type: String, default: '' },
       shippingCost: { type: Number, default: 0 }
     },
     notes: {
       type: String,
       default: ''
+    },
+    // ShipStation Integration Data
+    shipstationDetails: {
+      orderId: { type: String },
+      labelId: { type: String },
+      orderKey: { type: String },
+      orderStatus: { type: String },
+      externalShipmentId: { type: String }
     }
   },
   { 
@@ -67,9 +82,6 @@ const orderSchema = new mongoose.Schema(
   }
 );
 
-// FIX: Removed the `next` callback parameter entirely. 
-// Modern Mongoose natively supports synchronous hooks without requiring a callback,
-// preventing the "next is not a function" crash during creation.
 orderSchema.pre('save', function() {
   if (this.items && this.items.length > 0) {
     this.totalAmount = this.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0);
@@ -77,7 +89,9 @@ orderSchema.pre('save', function() {
 });
 
 // INDEXING FOR PERFORMANCE
-// Creates a compound index so queries filtering by Customer -> Division -> Status are highly optimized
+// 1. Core 3PL Dashboard Index
 orderSchema.index({ customer: 1, division: 1, status: 1 });
+// 2. Core End-User Index (allows rapid fetching of a specific shopper's order history)
+orderSchema.index({ user: 1 });
 
 export default mongoose.model('Order', orderSchema);

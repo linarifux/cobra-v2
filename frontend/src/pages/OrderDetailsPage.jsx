@@ -19,6 +19,7 @@ import api from '../utils/api';
 // Redux Actions
 import { fetchOrderById, updateOrder, clearCurrentOrder, generateOrderLabel, downloadPurchasedLabel } from '../store/slices/orderSlice'; 
 import { fetchInventory, updateInventory } from '../store/slices/inventorySlice'; 
+import { fetchUsers } from '../store/slices/userSlice'; // <-- NEW IMPORT
 
 import NotFoundPage from './NotFoundPage';
 
@@ -42,10 +43,14 @@ export default function OrderDetailsPage() {
 
   const isValidMongoId = /^[0-9a-fA-F]{24}$/.test(id || '');
 
+  // --- REDUX STATE ---
   const { currentOrder, status: orderLoadStatus, error: orderError } = useSelector((state) => state.orders || {});
   const { items: inventoryData = [], status: inventoryStatus } = useSelector((state) => state.inventory || {});
+  const { items: usersData = [], status: usersStatus } = useSelector((state) => state.users || {}); // <-- NEW STATE
   
+  // --- FORM STATE ---
   const [orderStatus, setOrderStatus] = useState('Pending');
+  const [selectedUserId, setSelectedUserId] = useState(''); // <-- NEW STATE FOR ASSIGNING USER
   const [shipping, setShipping] = useState({ carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0 });
   const [address, setAddress] = useState({ name: '', email: '', phone: '', street: '', line2: '', city: '', state: '', zip: '', country: '' });
   const [items, setItems] = useState([]);
@@ -80,10 +85,11 @@ export default function OrderDetailsPage() {
 
   const ssData = currentOrder?.shipstationDetails || currentOrder?.shipstationOrder || currentOrder?.shipstation || null;
   const ssOrderId = ssData?.orderId || currentOrder?.shipstationOrderId || null;
+  const ssLabelId = ssData?.labelId || null;
 
   // --- DYNAMIC WORKFLOW STATUSES ---
-  const isLabelPurchased = !!shipping.trackingNumber || ['Shipped', 'Delivered'].includes(orderStatus) || !!ssData?.labelId;
-  const isShipmentCreated = !!ssOrderId || isLabelPurchased || ['Processing', 'Ready to Ship'].includes(orderStatus);
+  const isShipmentCreated = !!ssOrderId;
+  const isLabelPurchased = !!ssLabelId || !!shipping.trackingNumber;
   const isPackingSlipDone = packingSlipDownloaded || isLabelPurchased;
   const isPickingListDone = pickingListDownloaded || isLabelPurchased;
 
@@ -94,16 +100,16 @@ export default function OrderDetailsPage() {
   const grandTotal = subtotal + shippingCost + tax;
   const totalItemWeightOz = items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
   const totalPackageWeightOz = packages.reduce((acc, pkg) => acc + Number(pkg.weightInOunces || 0), 0);
-  const isWeightMismatched = Math.abs(totalItemWeightOz - totalPackageWeightOz) > 1; // 1 oz tolerance
+  const isWeightMismatched = Math.abs(totalItemWeightOz - totalPackageWeightOz) > 1;
 
-  // Fetch Order and Inventory
+  // --- API DATA FETCHING ---
   useEffect(() => {
     if (isValidMongoId) dispatch(fetchOrderById(id));
     if (inventoryStatus === 'idle') dispatch(fetchInventory());
+    if (usersStatus === 'idle') dispatch(fetchUsers()); // Initialize users
     return () => dispatch(clearCurrentOrder());
-  }, [id, isValidMongoId, inventoryStatus, dispatch]);
+  }, [id, isValidMongoId, inventoryStatus, usersStatus, dispatch]);
 
-  // Fetch ShipStation Warehouses
   useEffect(() => {
     const fetchLocations = async () => {
       setIsLoadingWarehouses(true);
@@ -125,6 +131,7 @@ export default function OrderDetailsPage() {
     fetchLocations();
   }, []);
 
+  // --- MEMOS & SELECTORS ---
   const availableInventories = useMemo(() => {
     return inventoryData.map(inv => ({
       id: inv._id,
@@ -135,9 +142,24 @@ export default function OrderDetailsPage() {
     }));
   }, [inventoryData]);
 
+  // Filter available users to strictly those matching this order's division or customer
+  const contextualUsers = useMemo(() => {
+    if (!currentOrder) return [];
+    const divId = currentOrder.division?._id || currentOrder.division;
+    const custId = currentOrder.customer?._id || currentOrder.customer;
+    
+    return usersData.filter(u => {
+      const uDivId = u.division?._id || u.division;
+      const uCustId = u.customer?._id || u.customer;
+      return (uDivId && uDivId === divId) || (uCustId && uCustId === custId);
+    });
+  }, [usersData, currentOrder]);
+
+  // --- POPULATE STATE ---
   useEffect(() => {
     if (currentOrder) {
       setOrderStatus(currentOrder.status || 'Pending');
+      setSelectedUserId(currentOrder.user?._id || currentOrder.user || ''); // Hook user state
       
       setShipping({ 
         carrierType: currentOrder.shippingDetails?.carrierType || '', 
@@ -195,7 +217,7 @@ export default function OrderDetailsPage() {
   }, [availableInventories]);
 
 
-  // --- AUTO-PRINT PDF GENERATION LOGIC ---
+  // --- PDF GENERATION LOGIC ---
   const handlePrintPackingSlip = () => {
     try {
       const doc = new jsPDF();
@@ -286,17 +308,13 @@ export default function OrderDetailsPage() {
         theme: 'striped',
         headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold' },
         styles: { fontSize: 10, cellPadding: 5 },
-        columnStyles: {
-          2: { halign: 'center' },
-          3: { halign: 'right' }
-        }
+        columnStyles: { 2: { halign: 'center' }, 3: { halign: 'right' } }
       });
 
       doc.setFontSize(10);
       doc.setTextColor(148, 163, 184);
       doc.text("Thank you for your business!", 105, doc.lastAutoTable.finalY + 15, { align: 'center' });
 
-      // Embed print instruction and open in new tab
       doc.autoPrint();
       const blobUrl = doc.output('bloburl');
       window.open(blobUrl, '_blank');
@@ -385,18 +403,10 @@ export default function OrderDetailsPage() {
     setNewItem({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
   };
 
-  const addPackage = () => {
-    setPackages([...packages, { id: generateLocalId(), weightInOunces: 16, length: 10, width: 10, height: 10 }]);
-  };
-
-  const updatePackage = (id, field, value) => {
-    setPackages(packages.map(p => p.id === id ? { ...p, [field]: value } : p));
-  };
-
-  const removePackage = (id) => {
-    setPackages(packages.filter(p => p.id !== id));
-  };
-
+  const addPackage = () => setPackages([...packages, { id: generateLocalId(), weightInOunces: 16, length: 10, width: 10, height: 10 }]);
+  const updatePackage = (id, field, value) => setPackages(packages.map(p => p.id === id ? { ...p, [field]: value } : p));
+  const removePackage = (id) => setPackages(packages.filter(p => p.id !== id));
+  
   const autoSyncWeights = () => {
     if (packages.length === 0 || totalItemWeightOz === 0) return;
     const weightPerBox = Math.ceil(totalItemWeightOz / packages.length);
@@ -411,14 +421,11 @@ export default function OrderDetailsPage() {
         if (stockItem) {
           const currentStock = Number(stockItem.unitsOnHand) || Number(stockItem.available) || 0;
           const restoredStock = currentStock + Number(item.qty);
-          
           const updatedData = { ...stockItem, unitsOnHand: restoredStock, available: restoredStock };
           await dispatch(updateInventory({ id: stockItem._id, inventoryData: updatedData })).unwrap();
         }
       }));
-    } catch (err) {
-      console.error("Failed to restore inventory:", err);
-    }
+    } catch (err) { console.error("Failed to restore inventory:", err); }
   };
 
   const handleSaveOrder = async () => {
@@ -427,6 +434,7 @@ export default function OrderDetailsPage() {
 
     const payload = {
       status: orderStatus,
+      user: selectedUserId || null, // Include user assignment
       notes: notes,
       shippingAddress: {
         recipientName: address.name, email: address.email, phone: address.phone,
@@ -526,35 +534,19 @@ export default function OrderDetailsPage() {
 
     try {
       const response = await api.post(`/shipstation/shipments/${currentOrder._id}`, payload);
-      
-      toast.success('Pushed to ShipStation', {
-        description: 'Order is now waiting in your ShipStation dashboard.'
-      });
-
-      if (response.data?.data?.order?.status) {
-        setOrderStatus(response.data.data.order.status);
-      }
-      
+      toast.success('Pushed to ShipStation', { description: 'Order is now waiting in your ShipStation dashboard.' });
+      if (response.data?.data?.order?.status) setOrderStatus(response.data.data.order.status);
       dispatch(fetchOrderById(currentOrder._id));
-
     } catch (error) {
-      const errMsg = error.response?.data?.message || error.message || "Failed to push shipment to ShipStation.";
-      toast.error('ShipStation API Error', { description: errMsg });
-    } finally {
-      setIsPushingShipment(false);
-    }
+      toast.error('ShipStation API Error', { description: error.response?.data?.message || error.message });
+    } finally { setIsPushingShipment(false); }
   };
 
   const handleGenerateLabel = async () => {
-    if (!shipping.carrierType || !shipping.serviceCode) {
-      return toast.warning("Please configure shipping carrier and service code on the order before purchasing.");
-    }
-    if (!fulfillmentData.shipFromId) {
-      return toast.warning("Please select a Ship From warehouse location.");
-    }
+    if (!shipping.carrierType || !shipping.serviceCode) return toast.warning("Please configure shipping carrier and service code on the order before purchasing.");
+    if (!fulfillmentData.shipFromId) return toast.warning("Please select a Ship From warehouse location.");
 
     setIsGeneratingLabel(true);
-
     const selectedWarehouse = warehouses.find(w => w.warehouse_id === fulfillmentData.shipFromId);
     const originAddress = selectedWarehouse?.origin_address || {};
 
@@ -587,14 +579,11 @@ export default function OrderDetailsPage() {
 
     try {
       const response = await dispatch(generateOrderLabel({ orderId: currentOrder._id, fulfillmentData: payload })).unwrap();
-      
       setFulfillOpen(false);
 
       if (response.labelData) {
         const pdfWindow = window.open("");
-        pdfWindow.document.write(
-          `<iframe width='100%' height='100%' style='border:none;' src='data:application/pdf;base64,${encodeURI(response.labelData)}'></iframe>`
-        );
+        pdfWindow.document.write(`<iframe width='100%' height='100%' style='border:none;' src='data:application/pdf;base64,${encodeURI(response.labelData)}'></iframe>`);
       } else if (response.labelUrl) {
         window.open(response.labelUrl, "_blank");
       }
@@ -603,14 +592,10 @@ export default function OrderDetailsPage() {
         setShipping(prev => ({ ...prev, trackingNumber: response.trackingNumber }));
         setOrderStatus('Shipped');
       }
-      
       toast.success('Label Purchased!', { description: `Tracking Number: ${response.trackingNumber}`});
     } catch (error) {
-      const errMsg = typeof error === 'string' ? error : (error.message || "An unknown error occurred.");
-      toast.error(`Label Generation Failed`, { description: errMsg });
-    } finally {
-      setIsGeneratingLabel(false);
-    }
+      toast.error(`Label Generation Failed`, { description: typeof error === 'string' ? error : error.message });
+    } finally { setIsGeneratingLabel(false); }
   };
 
   const handlePrintPurchasedLabel = async () => {
@@ -711,6 +696,7 @@ export default function OrderDetailsPage() {
           
           <div className="space-y-5 flex-1">
             
+            {/* Warehouse / Ship From Selection */}
             <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-200/60 shadow-sm">
               <label className="text-[10px] uppercase font-bold text-slate-500 mb-2 block flex items-center gap-1.5">
                 <MapPin size={12}/> Origin Warehouse
@@ -744,6 +730,7 @@ export default function OrderDetailsPage() {
 
             <hr className="border-slate-200" />
 
+            {/* Dynamic Packages Array */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-[10px] uppercase font-black text-slate-500 flex items-center gap-1.5">
@@ -795,6 +782,7 @@ export default function OrderDetailsPage() {
             </div>
           </div>
           
+          {/* FULFILLMENT ACTION WORKFLOW BUTTONS */}
           <div className="mt-4 pt-4 border-t border-slate-200 shrink-0 bg-white/95">
             {!isShipmentCreated ? (
               <button 
@@ -807,25 +795,18 @@ export default function OrderDetailsPage() {
               </button>
             ) : (
               <div className="space-y-3">
-                 {/* ALWAYS CLICKABLE ONCE SHIPMENT IS CREATED */}
                  <button 
                    onClick={handlePrintPackingSlip}
-                   className={`w-full flex justify-center items-center gap-2 border py-3.5 rounded-xl text-xs font-black shadow-sm transition-all ${
-                     isPackingSlipDone ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
-                   }`}
+                   className="w-full flex justify-center items-center gap-2 border py-3.5 rounded-xl text-xs font-black shadow-sm transition-all bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200"
                  >
-                   {isPackingSlipDone ? <CheckCircle2 size={16} /> : <Printer size={16} />} 
-                   Print Packing Slip
+                   <Printer size={16} /> Print Packing Slip
                  </button>
 
                  <button 
                    onClick={handlePrintPickingList}
-                   className={`w-full flex justify-center items-center gap-2 border py-3.5 rounded-xl text-xs font-black shadow-sm transition-all ${
-                     isPickingListDone ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
-                   }`}
+                   className="w-full flex justify-center items-center gap-2 border py-3.5 rounded-xl text-xs font-black shadow-sm transition-all bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200"
                  >
-                   {isPickingListDone ? <CheckCircle2 size={16} /> : <Printer size={16} />} 
-                   Print Picking List
+                   <Printer size={16} /> Print Picking List
                  </button>
                  
                  {!isLabelPurchased ? (
@@ -942,7 +923,7 @@ export default function OrderDetailsPage() {
             </div>
           </div>
 
-          {/* <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
+          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
              <div className="flex justify-between items-center mb-4 border-b border-white/60 pb-3">
                 <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
                    <Box size={14}/> ShipStation Fulfillment Details
@@ -994,7 +975,7 @@ export default function OrderDetailsPage() {
                    </button>
                 </div>
              )}
-          </div> */}
+          </div>
 
           <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
             <div className="flex justify-between items-center mb-4 border-b border-white/60 pb-3">

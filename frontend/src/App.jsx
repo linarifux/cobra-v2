@@ -28,11 +28,13 @@ import WarehouseLocations from './pages/WarehouseLocations';
 import AdminUsersPage from './pages/AdminUsersPage';
 import AccountSettingsPage from './pages/AccountSettingsPage';
 import NotFoundPage from './pages/NotFoundPage';
+import DivisionDetail from './pages/DivisionDetail';
+
+// Forms & Components
+import OrderForm from './components/order/OrderForm';
 
 // IMPORT THE GLOBAL CONFIRM PROVIDER
 import { ConfirmProvider } from './providers/ConfirmProvider';
-import DivisionDetail from './pages/DivisionDetail';
-import CreateOrderPage from './pages/CreateOrderPage';
 
 /**
  * ProtectedRoute Wrapper
@@ -94,15 +96,17 @@ export default function App() {
               {/* Default Dashboard Route */}
               <Route index element={<DashboardHome />} />
               <Route path="/orders" element={<OrdersPage />} />
-              <Route path="/orders/new" element={<CreateOrderPage />} />
+              
+              {/* Order Creation & Editing via OrderForm */}
+              <Route path="/orders/new" element={<OrderForm />} />
+              <Route path="/orders/edit/:id" element={<OrderForm />} />
+              
               <Route path="/orders/:id" element={<OrderDetailsPage />} />
               <Route path="/customers" element={<CustomersPage />} />
               <Route path="/customers/:customerId/divisions" element={<DivisionsPage />} />
               <Route path="/customers/:id/edit" element={<EditCustomerDetailsPage />} />
               
               {/* Division Routes */}
-              {/* <Route path="/divisions" element={<DivisionsPage />} /> */}
-              {/* FIX: Ensure param matches the component's expected useParam hook and pass as a JSX element */}
               <Route path="/divisions/:divisionId" element={<DivisionDetail />} />
               
               <Route path="/inventory" element={<InventoryPage />} />

@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, MapPin, Package, Loader2, Filter, X, 
   Calendar, Building2, User, Plus, FileText, Truck,
-  Layers, Edit2, Trash2, Save
+  Layers, Edit2, Trash2, Briefcase
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -13,15 +13,16 @@ import PageHeader from '../components/PageHeader';
 import { useConfirm } from '../providers/ConfirmProvider';
 
 // Redux Actions
-import { fetchOrders, updateOrder, deleteOrder } from '../store/slices/orderSlice';
+import { fetchOrders, deleteOrder } from '../store/slices/orderSlice';
 import { fetchCustomers } from '../store/slices/customerSlice';
 import { fetchDivisions } from '../store/slices/divisionSlice';
 import { fetchInventory, updateInventory } from '../store/slices/inventorySlice';
 
 const INITIAL_FILTERS = {
   status: 'All',
-  customer: 'All',
+  customer: 'All', // The 3PL Brand
   division: 'All',
+  user: 'All',     // The End-Consumer/Shopper
   dateStart: '',
   dateEnd: ''
 };
@@ -42,11 +43,6 @@ export default function OrdersPage() {
   const [selectedOrders, setSelectedOrders] = useState([]);
   const [filters, setFilters] = useState(INITIAL_FILTERS);
 
-  // Edit Modal States
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editingOrder, setEditingOrder] = useState(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
   // Fetch all required contextual data on mount
   useEffect(() => {
     dispatch(fetchOrders());
@@ -60,6 +56,20 @@ export default function OrdersPage() {
     if (filters.customer === 'All') return divisionsData;
     return divisionsData.filter(d => (d.customer?._id || d.customer) === filters.customer);
   }, [divisionsData, filters.customer]);
+
+  // Dynamically extract unique Shoppers (Users) from the existing orders data
+  const uniqueShoppers = useMemo(() => {
+    const map = new Map();
+    ordersData.forEach(o => {
+      if (o.user) {
+        const id = o.user._id || o.user;
+        // Fallback to shipping recipient name if user name isn't populated
+        const name = o.user.name || o.user.email || o.shippingAddress?.recipientName || id;
+        if (!map.has(id)) map.set(id, { id, name });
+      }
+    });
+    return Array.from(map.values());
+  }, [ordersData]);
 
   const handleCustomerChange = (e) => {
     const newCustomer = e.target.value;
@@ -81,6 +91,7 @@ export default function OrdersPage() {
     if (filters.status !== 'All') count++;
     if (filters.customer !== 'All') count++;
     if (filters.division !== 'All') count++;
+    if (filters.user !== 'All') count++;
     if (filters.dateStart || filters.dateEnd) count++;
     return count;
   }, [searchQuery, filters]);
@@ -92,25 +103,31 @@ export default function OrdersPage() {
     return ordersData.filter(order => {
       const orderCustomerId = order.customer?._id || order.customer;
       const orderDivisionId = order.division?._id || order.division; 
+      const orderUserId = order.user?._id || order.user;
 
       const customerName = order.customer?.customerName || '';
       const orderNumber = order.orderNumber || '';
+      const recipientName = order.shippingAddress?.recipientName || '';
       
       let orderDate = '';
       try {
         if (order.createdAt) orderDate = new Date(order.createdAt).toISOString().split('T')[0];
       } catch (e) {}
 
+      // Enhanced search allows finding by Order Number, 3PL Brand, or Shopper Name
       const matchSearch = customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          orderNumber.toLowerCase().includes(searchQuery.toLowerCase());
+                          orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          recipientName.toLowerCase().includes(searchQuery.toLowerCase());
+                          
       const matchStatus = filters.status === 'All' || order.status === filters.status;
       const matchCustomer = filters.customer === 'All' || orderCustomerId === filters.customer;
       const matchDivision = filters.division === 'All' || orderDivisionId === filters.division;
+      const matchUser = filters.user === 'All' || orderUserId === filters.user;
       
       const matchDateStart = !filters.dateStart || orderDate >= filters.dateStart;
       const matchDateEnd = !filters.dateEnd || orderDate <= filters.dateEnd;
       
-      return matchSearch && matchStatus && matchCustomer && matchDivision && matchDateStart && matchDateEnd;
+      return matchSearch && matchStatus && matchCustomer && matchDivision && matchUser && matchDateStart && matchDateEnd;
     });
   }, [searchQuery, filters, ordersData]);
 
@@ -155,50 +172,6 @@ export default function OrdersPage() {
     }
   };
 
-  // --- Inline Action Handlers ---
-  const openQuickEdit = (order) => {
-    setEditingOrder({
-      _id: order._id,
-      orderNumber: order.orderNumber,
-      status: order.status || 'Pending',
-      notes: order.notes || ''
-    });
-    setIsEditModalOpen(true);
-  };
-
-  const submitQuickEdit = async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    try {
-      const originalOrder = ordersData.find(o => o._id === editingOrder._id);
-      const isChangingToCancelled = editingOrder.status === 'Cancelled' && originalOrder?.status !== 'Cancelled';
-
-      const actionPromise = dispatch(updateOrder({ 
-        id: editingOrder._id, 
-        updateData: { status: editingOrder.status, notes: editingOrder.notes } 
-      })).unwrap();
-      
-      // Restock inventory if explicitly changing status to Cancelled
-      if (isChangingToCancelled) {
-        await restoreInventoryStock(originalOrder?.items);
-      }
-
-      toast.promise(actionPromise, {
-        loading: 'Updating order...',
-        success: isChangingToCancelled ? 'Order cancelled. Items returned to stock.' : 'Order status updated successfully.',
-        error: 'Failed to update order.'
-      });
-      
-      await actionPromise;
-      setIsEditModalOpen(false);
-      setEditingOrder(null);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const handleDeleteOrder = async (id, orderNumber) => {
     const isConfirmed = await confirm({
       title: 'Delete Order?',
@@ -212,7 +185,6 @@ export default function OrdersPage() {
       try {
         const orderToDelete = ordersData.find(o => o._id === id);
         
-        // Identify if the order needs to refund inventory
         const safeToDeleteStatus = ['shipped', 'delivered', 'cancelled'];
         const currentStatus = orderToDelete?.status?.toLowerCase() || 'pending';
         const needsRestock = !safeToDeleteStatus.includes(currentStatus);
@@ -235,20 +207,13 @@ export default function OrdersPage() {
     }
   };
 
-  // Prevent background scrolling when modal is open
-  useEffect(() => {
-    document.body.style.overflow = isEditModalOpen ? 'hidden' : 'unset';
-    return () => { document.body.style.overflow = 'unset'; };
-  }, [isEditModalOpen]);
-
-
   // --- UI Components ---
   const selectClass = "w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white/50 text-xs font-bold outline-none cursor-pointer focus:border-brand-gold/50 focus:ring-2 focus:ring-brand-gold/20 transition-all appearance-none";
 
   return (
     <div className="relative h-full p-6 space-y-6 animate-fade-in max-w-[1600px] mx-auto pb-32">
       
-      {/* Top Header with Create Button */}
+      {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <PageHeader title="Fulfillment Queue" subtitle="Real-time dispatch and logistics overview." />
         <button 
@@ -283,7 +248,7 @@ export default function OrdersPage() {
             <Search className="absolute left-4 top-3 text-slate-400" size={16} />
             <input 
               className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white/70 text-sm font-bold outline-none focus:ring-2 focus:ring-brand-gold/50 transition-all shadow-sm"
-              placeholder="Search by Customer Name or Order Number (e.g. ORD-2026-12345)..."
+              placeholder="Search by Brand Name, Shopper Name, or Order Number..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -300,12 +265,13 @@ export default function OrdersPage() {
         </div>
 
         {/* Bottom Row: Dynamic Filters */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 border-t border-slate-200/60 pt-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 border-t border-slate-200/60 pt-4">
           
+          {/* 3PL Customer (Brand) Filter */}
           <div className="relative">
-            <User className="absolute left-3 top-2.5 text-brand-gold" size={14} />
+            <Briefcase className="absolute left-3 top-2.5 text-brand-gold" size={14} />
             <select className={selectClass} value={filters.customer} onChange={handleCustomerChange}>
-              <option value="All">All Customers</option>
+              <option value="All">All Brands</option>
               {customersData.map(c => <option key={c._id} value={c._id}>{c.customerName}</option>)}
             </select>
           </div>
@@ -315,6 +281,15 @@ export default function OrdersPage() {
             <select className={selectClass} value={filters.division} onChange={(e) => setFilters({...filters, division: e.target.value})}>
               <option value="All">All Divisions</option>
               {availableDivisions.map(d => <option key={d._id} value={d._id}>{d.divisionName}</option>)}
+            </select>
+          </div>
+
+          {/* New Shopper (User) Filter */}
+          <div className="relative">
+            <User className="absolute left-3 top-2.5 text-brand-gold" size={14} />
+            <select className={selectClass} value={filters.user} onChange={(e) => setFilters({...filters, user: e.target.value})}>
+              <option value="All">All Shoppers</option>
+              {uniqueShoppers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
           </div>
 
@@ -383,7 +358,7 @@ export default function OrdersPage() {
                   <th className="p-5">Order Reference</th>
                   <th className="p-5">Date Logged</th>
                   <th className="p-5">Customer & Origin</th>
-                  <th className="p-5">Destination</th>
+                  <th className="p-5">Shopper & Dest.</th>
                   <th className="p-5">Assets</th>
                   <th className="p-5">Status</th>
                   <th className="p-5 text-right pr-6">Actions</th>
@@ -407,6 +382,9 @@ export default function OrdersPage() {
                     const divisionObj = divisionsData.find(d => d._id === (divRef?._id || divRef));
                     const displayDivision = divisionObj ? divisionObj.divisionName : 'Unassigned Branch';
 
+                    // Resolve Shopper Name
+                    const shopperName = order.user?.name || order.shippingAddress?.recipientName || 'Unknown Shopper';
+
                     return (
                       <tr key={order._id} className="hover:bg-white/80 transition-colors group cursor-pointer" onClick={() => navigate(`/orders/${order._id}`)}>
                         <td className="p-5" onClick={e => e.stopPropagation()}>
@@ -423,12 +401,17 @@ export default function OrdersPage() {
                         </td>
                         <td className="p-5 text-slate-500 font-bold">{displayDate}</td>
                         <td className="p-5">
-                          <div className="font-black text-slate-700">{order.customer?.customerName || 'Unknown Customer'}</div>
+                          <div className="font-black text-slate-700">{order.customer?.customerName || 'Unknown Brand'}</div>
                           <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 flex items-center gap-1">
                              <Layers size={10}/> {displayDivision}
                           </div>
                         </td>
-                        <td className="p-5 text-slate-600 font-medium flex items-center gap-1.5 mt-2.5"><MapPin size={12} className="text-brand-gold"/>{location}</td>
+                        <td className="p-5">
+                          <div className="font-black text-slate-700">{shopperName}</div>
+                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 flex items-center gap-1">
+                             <MapPin size={10} className="text-brand-gold"/> {location}
+                          </div>
+                        </td>
                         <td className="p-5">
                           <span className="bg-slate-100 border border-slate-200 px-2 py-1 rounded text-slate-600 font-black">{order.items?.length || 0}</span>
                         </td>
@@ -444,10 +427,11 @@ export default function OrdersPage() {
                         </td>
                         <td className="p-5 text-right pr-6" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {/* --- EDIT BUTTON NOW ROUTES TO THE FULL FORM --- */}
                             <button 
-                              onClick={() => openQuickEdit(order)}
+                              onClick={() => navigate(`/orders/edit/${order._id}`)}
                               className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 shadow-sm transition-all" 
-                              title="Update Status"
+                              title="Edit Order"
                             >
                               <Edit2 size={14} />
                             </button>
@@ -519,65 +503,6 @@ export default function OrdersPage() {
               </button>
             </div>
           </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Quick Edit Modal */}
-      <AnimatePresence>
-        {isEditModalOpen && editingOrder && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => !isSubmitting && setIsEditModalOpen(false)} />
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative w-full max-w-md bg-white/95 backdrop-blur-xl border border-white/50 p-6 rounded-3xl shadow-2xl">
-              
-              <div className="flex justify-between items-center mb-6">
-                <div>
-                  <h2 className="text-lg font-black text-slate-900 tracking-tight">Quick Update</h2>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Order {editingOrder.orderNumber}</p>
-                </div>
-                <button onClick={() => !isSubmitting && setIsEditModalOpen(false)} className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition-colors"><X size={16} /></button>
-              </div>
-
-              <form onSubmit={submitQuickEdit} className="space-y-4">
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5 block">Pipeline Status</label>
-                  <select 
-                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/50 transition-all cursor-pointer"
-                    value={editingOrder.status}
-                    onChange={(e) => setEditingOrder({...editingOrder, status: e.target.value})}
-                    disabled={isSubmitting}
-                  >
-                    <option value="Pending">Pending</option>
-                    <option value="Processing">Processing</option>
-                    <option value="Ready to Ship">Ready to Ship</option>
-                    <option value="Shipped">Shipped</option>
-                    <option value="Delivered">Delivered</option>
-                    <option value="On Hold">On Hold</option>
-                    <option value="Cancelled">Cancelled</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5 block">Fulfillment Notes</label>
-                  <textarea 
-                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/50 transition-all resize-none"
-                    rows="3"
-                    placeholder="Internal logistics notes..."
-                    value={editingOrder.notes}
-                    onChange={(e) => setEditingOrder({...editingOrder, notes: e.target.value})}
-                    disabled={isSubmitting}
-                  />
-                </div>
-
-                <div className="pt-4 flex gap-3">
-                  <button type="button" onClick={() => setIsEditModalOpen(false)} disabled={isSubmitting} className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50">Cancel</button>
-                  <button type="submit" disabled={isSubmitting} className="flex-[2] flex justify-center items-center gap-2 px-4 py-3 bg-brand-gold hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-brand-gold/20 transition-all disabled:opacity-70">
-                    {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <><Save size={16} /> Save Status</>}
-                  </button>
-                </div>
-              </form>
-
-            </motion.div>
-          </div>
         )}
       </AnimatePresence>
 
