@@ -11,13 +11,15 @@ export const createOrder = catchAsync(async (req, res, next) => {
   // Support nested routing for both customer and division boundaries
   if (!req.body.customer && req.params.customerId) req.body.customer = req.params.customerId;
   if (!req.body.division && req.params.divisionId) req.body.division = req.params.divisionId;
+  if (!req.body.user && req.params.userId) req.body.user = req.params.userId;
 
   const order = await Order.create(req.body);
 
   // Populate relational data before returning the new document
   await order.populate([
     { path: 'customer', select: 'customerName contactEmail' },
-    { path: 'division', select: 'divisionName divisionCode' }
+    { path: 'division', select: 'divisionName divisionCode' },
+    { path: 'user', select: 'name firstName lastName email' } // Populate new user field
   ]);
 
   res.status(201).json({
@@ -26,20 +28,27 @@ export const createOrder = catchAsync(async (req, res, next) => {
   });
 });
 
-// @desc    Get all orders (with optional customer or division filter)
+// @desc    Get all orders (with optional customer, division, or user filter)
 // @route   GET /api/v1/orders
 // @route   GET /api/v1/customers/:customerId/orders
 // @route   GET /api/v1/divisions/:divisionId/orders
+// @route   GET /api/v1/users/:userId/orders
 export const getAllOrders = catchAsync(async (req, res, next) => {
   let filter = {};
   
-  // Support nested routing to scope orders to specific relational boundaries
+  // Support nested routing parameters
   if (req.params.customerId) filter.customer = req.params.customerId;
   if (req.params.divisionId) filter.division = req.params.divisionId;
+  if (req.params.userId) filter.user = req.params.userId;
+
+  // Support query string filtering (e.g., ?user=64a2... OR ?userId=64a2...)
+  if (req.query.user) filter.user = req.query.user;
+  if (req.query.userId) filter.user = req.query.userId;
 
   const orders = await Order.find(filter)
     .populate('customer', 'customerName contactEmail')
-    .populate('division', 'divisionName divisionCode') //  Supply division details to the frontend
+    .populate('division', 'divisionName divisionCode') 
+    .populate('user', 'name firstName lastName email') // Supply shopper details to frontend
     .populate('shippingDetails.carrierId', 'carrierType accountName')
     .sort('-createdAt');
 
@@ -55,7 +64,8 @@ export const getAllOrders = catchAsync(async (req, res, next) => {
 export const getOrder = catchAsync(async (req, res, next) => {
   const order = await Order.findById(req.params.id)
     .populate('customer', 'customerName contactEmail contactNumber address')
-    .populate('division', 'divisionName divisionCode address') // Include full division context
+    .populate('division', 'divisionName divisionCode address') 
+    .populate('user', 'name firstName lastName email phone') // Include full shopper context
     .populate('shippingDetails.carrierId', 'carrierType accountName');
 
   if (!order) {
@@ -80,7 +90,8 @@ export const updateOrder = catchAsync(async (req, res, next) => {
     }
   )
   .populate('customer', 'customerName')
-  .populate('division', 'divisionName divisionCode') // Ensure populated on return
+  .populate('division', 'divisionName divisionCode') 
+  .populate('user', 'name firstName lastName email') // Ensure populated on return
   .populate('shippingDetails.carrierId', 'carrierType accountName');
 
   if (!order) {
