@@ -3,19 +3,21 @@ import api from "../../utils/api"; // Adjust the import path if necessary based 
 
 // --- Thunks ---
 
-// 1. Fetch All Orders
+// 1. Fetch All Orders (Dynamically scoped via query params for RBAC)
 export const fetchOrders = createAsyncThunk(
   "orders/fetchOrders",
-  async ({ customerId, divisionId } = {}, { rejectWithValue }) => {
+  async (params = {}, { rejectWithValue }) => {
     try {
-      let endpoint = "/orders";
+      const { customerId, divisionId, userId } = params;
+      
+      // Dynamically build query parameters based on what is provided
+      const queryParams = new URLSearchParams();
+      if (customerId) queryParams.append('customer', customerId);
+      if (divisionId) queryParams.append('division', divisionId);
+      if (userId) queryParams.append('user', userId); // Intercepted by backend to filter by shopper
 
-      // Utilize the nested Express routes we configured in the backend
-      if (divisionId) {
-        endpoint = `/divisions/${divisionId}/orders`;
-      } else if (customerId) {
-        endpoint = `/customers/${customerId}/orders`;
-      }
+      const queryString = queryParams.toString();
+      const endpoint = queryString ? `/orders?${queryString}` : `/orders`;
 
       const response = await api.get(endpoint);
       return response.data.data.orders || response.data.data || [];
@@ -24,7 +26,7 @@ export const fetchOrders = createAsyncThunk(
         error.response?.data?.message || error.message || "Failed to fetch orders"
       );
     }
-  },
+  }
 );
 
 // 2. Fetch Single Order by ID
@@ -39,7 +41,7 @@ export const fetchOrderById = createAsyncThunk(
         error.response?.data?.message || error.message || "Failed to fetch order details"
       );
     }
-  },
+  }
 );
 
 // 3. Create New Order
@@ -47,15 +49,14 @@ export const createOrder = createAsyncThunk(
   "orders/createOrder",
   async (orderData, { rejectWithValue }) => {
     try {
-      let endpoint = "/orders";
-      const response = await api.post(endpoint, orderData);
+      const response = await api.post("/orders", orderData);
       return response.data.data.order || response.data.data;
     } catch (error) {
       return rejectWithValue(
         error.response?.data?.message || error.message || "Failed to create order"
       );
     }
-  },
+  }
 );
 
 // 4. Update Existing Order (e.g., status changes, adding tracking)
@@ -70,7 +71,7 @@ export const updateOrder = createAsyncThunk(
         error.response?.data?.message || error.message || "Failed to update order"
       );
     }
-  },
+  }
 );
 
 // 5. Delete Order
@@ -85,7 +86,7 @@ export const deleteOrder = createAsyncThunk(
         error.response?.data?.message || error.message || "Failed to delete order"
       );
     }
-  },
+  }
 );
 
 // 6. Generate New Label via ShipStation
@@ -100,7 +101,7 @@ export const generateOrderLabel = createAsyncThunk(
         error.response?.data?.message || "Failed to generate shipping label"
       );
     }
-  },
+  }
 );
 
 // --- NEW: Download/Print Previously Purchased Label ---
@@ -117,7 +118,6 @@ export const downloadPurchasedLabel = createAsyncThunk(
     }
   }
 );
-
 
 // --- Slice Definition ---
 const orderSlice = createSlice({
