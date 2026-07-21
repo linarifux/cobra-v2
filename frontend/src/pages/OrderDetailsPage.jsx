@@ -10,20 +10,16 @@ import {
   Box, Printer
 } from 'lucide-react';
 
-// --- PDF GENERATION LIBRARIES ---
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 import api from '../utils/api'; 
-
-// Redux Actions
 import { fetchOrderById, updateOrder, clearCurrentOrder, generateOrderLabel, downloadPurchasedLabel } from '../store/slices/orderSlice'; 
 import { fetchInventory, updateInventory } from '../store/slices/inventorySlice'; 
 import { fetchUsers } from '../store/slices/userSlice'; 
 
 import NotFoundPage from './NotFoundPage';
 
-// --- Utilities ---
 const generateLocalId = () => `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
 const generateTrackingLink = (carrier, trackingNumber) => {
@@ -43,13 +39,11 @@ export default function OrderDetailsPage() {
 
   const isValidMongoId = /^[0-9a-fA-F]{24}$/.test(id || '');
 
-  // --- REDUX STATE ---
   const { currentOrder, status: orderLoadStatus, error: orderError } = useSelector((state) => state.orders || {});
   const { items: inventoryData = [], status: inventoryStatus } = useSelector((state) => state.inventory || {});
   const { items: usersData = [], status: usersStatus } = useSelector((state) => state.users || {}); 
   
-  // --- FORM STATE ---
-  const [orderStatus, setOrderStatus] = useState('Pending');
+  const [orderStatus, setOrderStatus] = useState('New');
   const [selectedUserId, setSelectedUserId] = useState(''); 
   const [shipping, setShipping] = useState({ carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0 });
   const [address, setAddress] = useState({ name: '', email: '', phone: '', street: '', line2: '', city: '', state: '', zip: '', country: '' });
@@ -66,11 +60,9 @@ export default function OrderDetailsPage() {
   const [isDownloadingLabel, setIsDownloadingLabel] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // --- WAREHOUSE STATE ---
   const [warehouses, setWarehouses] = useState([]);
   const [isLoadingWarehouses, setIsLoadingWarehouses] = useState(false);
 
-  // --- FULFILLMENT WORKFLOW STATE ---
   const [packingSlipDownloaded, setPackingSlipDownloaded] = useState(false);
   const [pickingListDownloaded, setPickingListDownloaded] = useState(false);
 
@@ -87,13 +79,11 @@ export default function OrderDetailsPage() {
   const ssOrderId = ssData?.orderId || currentOrder?.shipstationOrderId || null;
   const ssLabelId = ssData?.labelId || null;
 
-  // --- DYNAMIC WORKFLOW STATUSES ---
   const isShipmentCreated = !!ssOrderId;
   const isLabelPurchased = !!ssLabelId || !!shipping.trackingNumber;
   const isPackingSlipDone = packingSlipDownloaded || isLabelPurchased;
   const isPickingListDone = pickingListDownloaded || isLabelPurchased;
 
-  // --- Calculations ---
   const subtotal = items.reduce((acc, item) => acc + (Number(item.price) * Number(item.qty)), 0);
   const shippingCost = Number(shipping.shippingCost) || 0;
   const tax = subtotal * 0.08; 
@@ -102,7 +92,6 @@ export default function OrderDetailsPage() {
   const totalPackageWeightOz = packages.reduce((acc, pkg) => acc + Number(pkg.weightInOunces || 0), 0);
   const isWeightMismatched = Math.abs(totalItemWeightOz - totalPackageWeightOz) > 1;
 
-  // --- Identify Order Creator ---
   const orderUserId = currentOrder?.user?._id || currentOrder?.user;
   const orderCreator = useMemo(() => {
     if (!orderUserId || usersData.length === 0) return null;
@@ -111,11 +100,10 @@ export default function OrderDetailsPage() {
   
   const orderCreatorName = orderCreator ? (orderCreator.name || orderCreator.firstName || orderCreator.email) : null;
 
-  // --- API DATA FETCHING ---
   useEffect(() => {
     if (isValidMongoId) dispatch(fetchOrderById(id));
     if (inventoryStatus === 'idle') dispatch(fetchInventory());
-    if (usersStatus === 'idle') dispatch(fetchUsers()); // Initialize users
+    if (usersStatus === 'idle') dispatch(fetchUsers()); 
     return () => dispatch(clearCurrentOrder());
   }, [id, isValidMongoId, inventoryStatus, usersStatus, dispatch]);
 
@@ -140,7 +128,6 @@ export default function OrderDetailsPage() {
     fetchLocations();
   }, []);
 
-  // --- MEMOS & SELECTORS ---
   const availableInventories = useMemo(() => {
     return inventoryData.map(inv => ({
       id: inv._id,
@@ -151,7 +138,6 @@ export default function OrderDetailsPage() {
     }));
   }, [inventoryData]);
 
-  // Filter available users to strictly those matching this order's division or customer
   const contextualUsers = useMemo(() => {
     if (!currentOrder) return [];
     const divId = currentOrder.division?._id || currentOrder.division;
@@ -164,10 +150,9 @@ export default function OrderDetailsPage() {
     });
   }, [usersData, currentOrder]);
 
-  // --- POPULATE STATE ---
   useEffect(() => {
     if (currentOrder) {
-      setOrderStatus(currentOrder.status || 'Pending');
+      setOrderStatus(currentOrder.status || 'New');
       setSelectedUserId(currentOrder.user?._id || currentOrder.user || ''); 
       
       setShipping({ 
@@ -212,7 +197,6 @@ export default function OrderDetailsPage() {
     }
   }, [currentOrder, availableInventories]); 
 
-  // Dynamically attach weight to added items if missing
   useEffect(() => {
     if (availableInventories.length > 0 && items.length > 0) {
       setItems(prevItems => prevItems.map(item => {
@@ -226,7 +210,6 @@ export default function OrderDetailsPage() {
   }, [availableInventories]);
 
 
-  // --- PDF GENERATION LOGIC ---
   const handlePrintPackingSlip = () => {
     try {
       const doc = new jsPDF();
@@ -386,7 +369,6 @@ export default function OrderDetailsPage() {
     }
   };
 
-  // --- Handlers ---
   const handleInventoryChange = (e) => {
     const selectedId = e.target.value;
     const matchedStock = availableInventories.find(inv => inv.id === selectedId);
@@ -443,7 +425,7 @@ export default function OrderDetailsPage() {
 
     const payload = {
       status: orderStatus,
-      user: selectedUserId || null,
+      ...(selectedUserId ? { user: selectedUserId } : { user: null }), // Only send user if explicitly selected
       notes: notes,
       shippingAddress: {
         recipientName: address.name, email: address.email, phone: address.phone,
@@ -483,8 +465,8 @@ export default function OrderDetailsPage() {
     if (!window.confirm("Are you sure you want to permanently delete this order?")) return;
     setIsDeleting(true);
 
-    const safeToDeleteStatus = ['shipped', 'delivered', 'cancelled'];
-    const currentStatus = currentOrder?.status?.toLowerCase() || 'pending';
+    const safeToDeleteStatus = ['shipped', 'delivered', 'cancelled', 'billed'];
+    const currentStatus = currentOrder?.status?.toLowerCase() || 'new';
     const needsRestock = !safeToDeleteStatus.includes(currentStatus);
 
     try {
@@ -870,13 +852,14 @@ export default function OrderDetailsPage() {
                  onChange={(e) => setOrderStatus(e.target.value)} 
                  className="w-full bg-white text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 cursor-pointer outline-none focus:border-brand-gold transition-all shadow-sm"
                 >
+                    <option value="New">New</option>
                     <option value="Pending">Pending</option>
-                    <option value="Processing">Processing</option>
-                    <option value="Ready to Ship">Ready to Ship</option>
+                    <option value="Picked">Picked</option>
                     <option value="Shipped">Shipped</option>
-                    <option value="Delivered">Delivered</option>
+                    <option value="Hold">Hold</option>
                     <option value="Cancelled">Cancelled</option>
-                    <option value="On Hold">On Hold</option>
+                    <option value="Delivered">Delivered</option>
+                    <option value="Billed">Billed</option>
                 </select>
             </div>
 
@@ -1117,6 +1100,7 @@ export default function OrderDetailsPage() {
                   <User size={22} strokeWidth={2.5}/>
                 </div>
              </div>
+             
              <div className="space-y-3 text-xs font-medium relative z-10">
                 {currentOrder.customer?.contactEmail && (
                   <div className="flex items-center gap-3 min-w-0 bg-white/5 p-3 rounded-xl border border-white/5 hover:bg-white/10 transition-colors">

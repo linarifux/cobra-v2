@@ -16,7 +16,7 @@ import { fetchCustomers } from '../../store/slices/customerSlice';
 import { fetchDivisions } from '../../store/slices/divisionSlice';
 import { fetchInventory } from '../../store/slices/inventorySlice';
 import { fetchUsers } from '../../store/slices/userSlice';
-import { fetchCarriers } from '../../store/slices/carrierSlice'; // <-- Imported Carrier Slice
+import { fetchCarriers } from '../../store/slices/carrierSlice';
 
 // --- Utilities ---
 const generateLocalId = () => `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -37,7 +37,7 @@ export default function OrderForm() {
   const { items: usersData = [], status: usersStatus } = useSelector((state) => state.users || {}); 
   const { items: customersData = [], status: customersStatus } = useSelector((state) => state.customers || {}); 
   const { items: divisionsData = [], status: divisionsStatus } = useSelector((state) => state.divisions || {}); 
-  const { items: carriersData = [], status: carrierStatus } = useSelector((state) => state.carriers || {}); // <-- Carrier State
+  const { items: carriersData = [], status: carrierStatus } = useSelector((state) => state.carriers || {}); 
   
   // --- Form State ---
   // Core Identifiers
@@ -46,7 +46,7 @@ export default function OrderForm() {
   const [divisionId, setDivisionId] = useState('');
   const [userId, setUserId] = useState(''); 
 
-  const [orderStatus, setOrderStatus] = useState('Pending');
+  const [orderStatus, setOrderStatus] = useState('New');
   const [shipping, setShipping] = useState({ carrierId: '', carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0 });
   const [address, setAddress] = useState({ name: '', email: '', phone: '', street: '', line2: '', city: '', state: '', zip: '', country: 'US' });
   const [items, setItems] = useState([]);
@@ -158,7 +158,7 @@ export default function OrderForm() {
       setDivisionId(currentOrder.division?._id || currentOrder.division || '');
       setUserId(currentOrder.user?._id || currentOrder.user || ''); 
       
-      setOrderStatus(currentOrder.status || 'Pending');
+      setOrderStatus(currentOrder.status || 'New');
       setShipping({ 
         carrierId: currentOrder.shippingDetails?.carrierId?._id || currentOrder.shippingDetails?.carrierId || '',
         carrierType: currentOrder.shippingDetails?.carrierType || '', 
@@ -200,13 +200,13 @@ export default function OrderForm() {
     setCustomerId(e.target.value);
     setDivisionId(''); 
     setUserId('');     
-    setShipping({...shipping, carrierId: '', carrierType: '', serviceCode: ''}); // Reset shipping when context changes
+    setShipping({...shipping, carrierId: '', carrierType: '', serviceCode: ''}); 
   };
 
   const handleDivisionChange = (e) => {
     setDivisionId(e.target.value);
     setUserId('');     
-    setShipping({...shipping, carrierId: '', carrierType: '', serviceCode: ''}); // Reset shipping when context changes
+    setShipping({...shipping, carrierId: '', carrierType: '', serviceCode: ''}); 
   };
 
   const handleInventoryChange = (e) => {
@@ -245,7 +245,7 @@ export default function OrderForm() {
       orderNumber: orderNumber.trim() || generateAutoOrderNumber(),
       customer: customerId,
       division: divisionId,
-      user: userId || null, 
+      user: userId || null, // Will send null if empty string, ensuring it is unassigned
       status: orderStatus,
       notes: notes,
       shippingAddress: {
@@ -284,7 +284,6 @@ export default function OrderForm() {
     }
   };
 
-  // Prevent missing option selection in edit mode if carrier was removed globally
   const isLegacyShippingService = shipping.serviceCode && !shippingOptions.some(opt => opt.serviceCode === shipping.serviceCode);
 
   if (isEditMode && !isValidMongoId) return <NotFoundPage />;
@@ -413,13 +412,14 @@ export default function OrderForm() {
                         onChange={(e) => setOrderStatus(e.target.value)} 
                         className="w-full bg-white text-xs font-bold px-4 py-3 rounded-xl border border-slate-200 cursor-pointer outline-none focus:border-brand-gold transition-all shadow-sm"
                     >
+                        <option value="New">New</option>
                         <option value="Pending">Pending</option>
-                        <option value="Processing">Processing</option>
-                        <option value="Ready to Ship">Ready to Ship</option>
+                        <option value="Picked">Picked</option>
                         <option value="Shipped">Shipped</option>
-                        <option value="Delivered">Delivered</option>
-                        <option value="On Hold">On Hold</option>
+                        <option value="Hold">Hold</option>
                         <option value="Cancelled">Cancelled</option>
+                        <option value="Delivered">Delivered</option>
+                        <option value="Billed">Billed</option>
                     </select>
                 </div>
 

@@ -19,8 +19,10 @@ const getAccessLevel = (user) => {
 export const createOrder = catchAsync(async (req, res, next) => {
   if (!req.body.customer && req.params.customerId) req.body.customer = req.params.customerId;
   if (!req.body.division && req.params.divisionId) req.body.division = req.params.divisionId;
+  
+  // NOTE: We no longer auto-assign req.user._id if req.body.user is missing or null.
+  // This allows the frontend to explicitly submit unassigned/guest checkout orders.
   if (!req.body.user && req.params.userId) req.body.user = req.params.userId;
-  if (!req.body.user && req.user) req.body.user = req.user._id;
 
   const order = await Order.create(req.body);
 
@@ -38,14 +40,29 @@ export const createOrder = catchAsync(async (req, res, next) => {
 export const getAllOrders = catchAsync(async (req, res, next) => {
   let filter = {};
   
+  // 1. Process nested route params if they exist
   if (req.params.customerId) filter.customer = req.params.customerId;
   if (req.params.divisionId) filter.division = req.params.divisionId;
+
+  // 2. Safely apply frontend query filters (Ignore 'All' defaults from UI)
+  if (req.query.customer && req.query.customer !== 'All') filter.customer = req.query.customer;
+  if (req.query.division && req.query.division !== 'All') filter.division = req.query.division;
+  if (req.query.user && req.query.user !== 'All') filter.user = req.query.user;
+  if (req.query.status && req.query.status !== 'All') filter.status = req.query.status;
+  
+  // Apply Search Logic
+  if (req.query.search) {
+    filter.$or = [
+      { orderNumber: { $regex: req.query.search, $options: 'i' } },
+      { 'shippingAddress.recipientName': { $regex: req.query.search, $options: 'i' } }
+    ];
+  }
 
   // --- 3-TIER ROLE-BASED ACCESS CONTROL (RBAC) ---
   const accessLevel = getAccessLevel(req.user);
 
   if (accessLevel === 'standard_user') {
-    // Standard user: Forcefully scope to their own orders
+    // Standard user: Forcefully scope to their own orders, ignoring any other user query
     filter.user = req.user._id;
 
   } else if (accessLevel === 'division_admin') {
@@ -61,17 +78,10 @@ export const getAllOrders = catchAsync(async (req, res, next) => {
       // If no division is specified, return orders from ALL their assigned divisions
       filter.division = { $in: userDivisions };
     }
-    
-    // Allow filtering by specific user if requested via query
-    if (req.params.userId) filter.user = req.params.userId;
-    if (req.query.user) filter.user = req.query.user;
-    if (req.query.userId) filter.user = req.query.userId;
-
   } else {
-    // Global Admin: Allow them to view all, OR filter by specific user if queried
-    if (req.params.userId) filter.user = req.params.userId;
-    if (req.query.user) filter.user = req.query.user;
-    if (req.query.userId) filter.user = req.query.userId;
+    // Global Admin: Do nothing extra. 
+    // If they didn't specifically filter by division or user, the filter stays empty 
+    // and fetches ALL orders across the entire database.
   }
 
   const orders = await Order.find(filter)
@@ -108,6 +118,7 @@ export const getOrder = catchAsync(async (req, res, next) => {
         return next(new AppError('You do not have permission to view orders outside your assigned divisions', 403));
       }
     } else {
+      // Check if order belongs to the standard user (Guest checkouts won't be accessible by standard users)
       if (orderUserId !== String(req.user._id)) {
         return next(new AppError('You do not have permission to view this order', 403));
       }

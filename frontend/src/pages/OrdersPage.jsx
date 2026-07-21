@@ -19,7 +19,7 @@ import { fetchDivisions } from '../store/slices/divisionSlice';
 import { fetchInventory, updateInventory } from '../store/slices/inventorySlice';
 
 const INITIAL_FILTERS = {
-  status: 'All',
+  status: 'New',
   customer: 'All', 
   division: 'All',
   user: 'All',     
@@ -46,8 +46,6 @@ export default function OrdersPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    // FIX: Always dispatch on mount. Removing `if(ordersStatus === 'idle')` ensures the 
-    // Admin page forces a fresh global fetch, overwriting any scoped dashboard data.
     dispatch(fetchOrders({})); 
     
     if (customersData.length === 0) dispatch(fetchCustomers());
@@ -194,7 +192,7 @@ export default function OrdersPage() {
     setEditingOrder({
       _id: order._id,
       orderNumber: order.orderNumber,
-      status: order.status || 'Pending',
+      status: order.status || 'New',
       notes: order.notes || ''
     });
     setIsEditModalOpen(true);
@@ -244,8 +242,8 @@ export default function OrdersPage() {
     if (isConfirmed) {
       try {
         const orderToDelete = ordersData.find(o => o._id === id);
-        const safeToDeleteStatus = ['shipped', 'delivered', 'cancelled'];
-        const currentStatus = orderToDelete?.status?.toLowerCase() || 'pending';
+        const safeToDeleteStatus = ['shipped', 'delivered', 'cancelled', 'billed'];
+        const currentStatus = orderToDelete?.status?.toLowerCase() || 'new';
         const needsRestock = !safeToDeleteStatus.includes(currentStatus);
 
         if (needsRestock && orderToDelete) {
@@ -273,6 +271,14 @@ export default function OrdersPage() {
 
   const selectClass = "w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white/50 text-xs font-bold outline-none cursor-pointer focus:border-brand-gold/50 focus:ring-2 focus:ring-brand-gold/20 transition-all appearance-none";
 
+  const getStatusBadgeStyle = (status) => {
+    if (['Shipped', 'Delivered', 'Billed'].includes(status)) return 'bg-emerald-50 text-emerald-600 border-emerald-200';
+    if (['Hold', 'Cancelled'].includes(status)) return 'bg-rose-50 text-rose-600 border-rose-200';
+    if (status === 'Picked') return 'bg-indigo-50 text-indigo-600 border-indigo-200';
+    if (status === 'New') return 'bg-blue-50 text-blue-600 border-blue-200';
+    return 'bg-amber-50 text-amber-600 border-amber-200'; // Default (Pending)
+  };
+
   return (
     <div className="relative h-full p-6 space-y-6 animate-fade-in max-w-[1600px] mx-auto pb-32">
       
@@ -289,9 +295,9 @@ export default function OrdersPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'Total Orders', val: ordersData.length, color: 'text-slate-900' },
-          { label: 'Awaiting Shipment', val: ordersData.filter(o => ['Pending', 'Processing'].includes(o.status)).length, color: 'text-rose-600' },
-          { label: 'Ready to Ship', val: ordersData.filter(o => o.status === 'Ready to Ship').length, color: 'text-indigo-600' },
-          { label: 'Shipped / Complete', val: ordersData.filter(o => ['Shipped', 'Delivered'].includes(o.status)).length, color: 'text-emerald-600' },
+          { label: 'Awaiting Action', val: ordersData.filter(o => ['New', 'Pending'].includes(o.status)).length, color: 'text-rose-600' },
+          { label: 'Picked / Ready', val: ordersData.filter(o => o.status === 'Picked').length, color: 'text-indigo-600' },
+          { label: 'Shipped / Billed', val: ordersData.filter(o => ['Shipped', 'Delivered', 'Billed'].includes(o.status)).length, color: 'text-emerald-600' },
         ].map((stat, i) => (
           <div key={i} className="bg-white/50 border border-white/60 p-4 rounded-2xl backdrop-blur-md shadow-sm transition-all hover:bg-white/70">
             <p className="text-[10px] uppercase font-black text-slate-400">{stat.label}</p>
@@ -352,13 +358,14 @@ export default function OrdersPage() {
             <Filter className="absolute left-3 top-2.5 text-brand-gold" size={14} />
             <select className={selectClass} value={filters.status} onChange={(e) => setFilters({...filters, status: e.target.value})}>
               <option value="All">All Statuses</option>
+              <option value="New">New</option>
               <option value="Pending">Pending</option>
-              <option value="Processing">Processing</option>
-              <option value="Ready to Ship">Ready to Ship</option>
+              <option value="Picked">Picked</option>
               <option value="Shipped">Shipped</option>
-              <option value="Delivered">Delivered</option>
-              <option value="On Hold">On Hold</option>
+              <option value="Hold">Hold</option>
               <option value="Cancelled">Cancelled</option>
+              <option value="Delivered">Delivered</option>
+              <option value="Billed">Billed</option>
             </select>
           </div>
 
@@ -468,13 +475,8 @@ export default function OrdersPage() {
                           <span className="bg-slate-100 border border-slate-200 px-2 py-1 rounded text-slate-600 font-black">{order.items?.length || 0}</span>
                         </td>
                         <td className="p-5">
-                          <span className={`px-2.5 py-1 text-[9px] uppercase tracking-wider rounded border shadow-sm font-black ${
-                            order.status === 'Shipped' || order.status === 'Delivered' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
-                            order.status === 'On Hold' || order.status === 'Cancelled' ? 'bg-rose-50 text-rose-600 border-rose-200' :
-                            order.status === 'Ready to Ship' ? 'bg-indigo-50 text-indigo-600 border-indigo-200' :
-                            'bg-amber-50 text-amber-600 border-amber-200'
-                          }`}>
-                            {order.status || 'Pending'}
+                          <span className={`px-2.5 py-1 text-[9px] uppercase tracking-wider rounded border shadow-sm font-black ${getStatusBadgeStyle(order.status || 'New')}`}>
+                            {order.status || 'New'}
                           </span>
                         </td>
                         <td className="p-5 text-right pr-6" onClick={(e) => e.stopPropagation()}>
@@ -581,13 +583,14 @@ export default function OrdersPage() {
                     onChange={(e) => setEditingOrder({...editingOrder, status: e.target.value})}
                     disabled={isSubmitting}
                   >
+                    <option value="New">New</option>
                     <option value="Pending">Pending</option>
-                    <option value="Processing">Processing</option>
-                    <option value="Ready to Ship">Ready to Ship</option>
+                    <option value="Picked">Picked</option>
                     <option value="Shipped">Shipped</option>
-                    <option value="Delivered">Delivered</option>
-                    <option value="On Hold">On Hold</option>
+                    <option value="Hold">Hold</option>
                     <option value="Cancelled">Cancelled</option>
+                    <option value="Delivered">Delivered</option>
+                    <option value="Billed">Billed</option>
                   </select>
                 </div>
 
