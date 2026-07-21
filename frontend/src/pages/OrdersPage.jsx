@@ -5,9 +5,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, MapPin, Package, Loader2, Filter, X, 
   Calendar, Building2, User, Plus, FileText, Truck,
-  Layers, Edit2, Trash2, Save, Briefcase
+  Layers, Edit2, Trash2, Save, Briefcase, Printer, CheckSquare
 } from 'lucide-react';
 import { toast } from 'sonner';
+
+// --- PDF LIBRARIES ---
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 import PageHeader from '../components/PageHeader';
 import { useConfirm } from '../providers/ConfirmProvider';
@@ -44,6 +48,10 @@ export default function OrdersPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // --- Bulk Fulfillment Modal State ---
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [isGeneratingDocs, setIsGeneratingDocs] = useState(false);
 
   useEffect(() => {
     dispatch(fetchOrders({})); 
@@ -264,10 +272,279 @@ export default function OrdersPage() {
     }
   };
 
+  // --- BULK FULFILLMENT & PRINTING LOGIC ---
+  const handleBulkPrintAndFulfill = async () => {
+    setIsGeneratingDocs(true);
+    try {
+      const selectedOrderObjects = ordersData.filter(o => selectedOrders.includes(o._id));
+      const doc = new jsPDF();
+      
+      // ==========================================
+      // 1. MASTER PICKING LIST (Page 1)
+      // ==========================================
+      doc.setFontSize(18);
+      doc.setTextColor(15, 23, 42);
+      doc.setFont('helvetica', 'bold');
+      doc.text("MASTER PICKING LIST", 14, 20);
+      
+      // Header underline
+      doc.setLineWidth(0.5);
+      doc.setDrawColor(0, 0, 0);
+      doc.line(14, 22, 196, 22);
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(50, 50, 50);
+      doc.text(`Orders Count: ${selectedOrderObjects.length}`, 14, 28);
+      doc.text(`Date Printed: ${new Date().toLocaleDateString('en-GB', {day: '2-digit', month: 'short', year: 'numeric'})}`, 14, 33);
+
+      // Aggregate items across all selected orders & find bin locations
+      const itemMap = {};
+      selectedOrderObjects.forEach(order => {
+        order.items?.forEach(item => {
+          if (!itemMap[item.sku]) {
+            // Locate the item in inventory data
+            const invItem = inventoryData.find(inv => inv.sku === item.sku);
+            
+            // Extract location(s) based on image_f15681.png structure
+            let locationStr = '';
+            if (invItem?.locations && Array.isArray(invItem.locations) && invItem.locations.length > 0) {
+               // Map through locations array and get 'designation', join with commas
+               locationStr = invItem.locations.map(loc => loc.designation).filter(Boolean).join(', ');
+            }
+            
+            // Fallback to locationString if locations array is empty or undefined
+            if (!locationStr && invItem?.locationString) {
+               locationStr = invItem.locationString;
+            }
+
+            itemMap[item.sku] = { 
+              name: item.name, 
+              sku: item.sku, 
+              qty: 0, 
+              location: locationStr || '' 
+            };
+          }
+          itemMap[item.sku].qty += Number(item.quantity || 0); 
+        });
+      });
+      
+      const pickingRows = Object.values(itemMap).map(i => [
+        " [    ] ", 
+        i.location,
+        i.sku,
+        i.name,
+        i.qty.toString()
+      ]);
+
+      autoTable(doc, {
+        startY: 40,
+        head: [["Picked", "Location", "SKU", "Item Description", "Total Qty Required"]],
+        body: pickingRows,
+        theme: 'grid',
+        headStyles: { fillColor: [240, 240, 240], textColor: 20, fontStyle: 'bold', lineWidth: 0.1 },
+        columnStyles: { 
+          0: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
+          1: { cellWidth: 30, halign: 'center' },
+          4: { halign: 'center', fontStyle: 'bold' }
+        },
+        styles: { fontSize: 9, cellPadding: 4, textColor: 20, font: 'helvetica' },
+      });
+
+      // ==========================================
+      // 2. INDIVIDUAL PACKING SLIPS (Iterate through orders)
+      // ==========================================
+      selectedOrderObjects.forEach((order) => {
+        doc.addPage();
+        
+        const customerName = order.customer?.customerName || 'Customer Order';
+        const orderNo = order.orderNumber || 'N/A';
+        const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-GB', {day: '2-digit', month: 'short', year: 'numeric'}) : 'N/A';
+        const shipVia = `${order.shippingDetails?.carrierType || ''} ${order.shippingDetails?.serviceCode || ''}`.trim() || 'UPS - Ground';
+        
+        const address = order.shippingAddress || {};
+        const phone = address.phone || order.customer?.contactNumber || '';
+        const notes = order.notes || '';
+
+        // --- TOP HEADER ---
+        // Top Left: Customer Name
+        doc.setFontSize(14);
+        doc.setTextColor(0, 0, 0);
+        doc.setFont('helvetica', 'bold');
+        doc.text(customerName.toUpperCase(), 14, 20);
+
+        // Top Center: Service Center (MI-KRO)
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        doc.text("Service Center", 105, 20, { align: 'center' });
+        doc.text("MI-KRO Industries", 105, 24, { align: 'center' });
+        doc.text("1509 RT 38 Unit 9", 105, 28, { align: 'center' });
+        doc.text("Hainesport, NJ 08036 US", 105, 32, { align: 'center' });
+        doc.text("609-694-0521", 105, 36, { align: 'center' });
+        doc.text("mike@mi-krologistics.com", 105, 40, { align: 'center' });
+
+        // Top Right: Order Information block (Right-aligned keys, Left-aligned values)
+        const rightColKeyX = 160;
+        const rightColValX = 162;
+        let rightY = 20;
+
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Order ID:`, rightColKeyX, rightY, { align: 'right' });
+        doc.setFont('helvetica', 'normal');
+        doc.text(orderNo, rightColValX, rightY);
+        rightY += 5;
+
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Order Type:`, rightColKeyX, rightY, { align: 'right' });
+        doc.setFont('helvetica', 'normal');
+        doc.text('WEBORD', rightColValX, rightY);
+        rightY += 5;
+
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Ordered:`, rightColKeyX, rightY, { align: 'right' });
+        doc.setFont('helvetica', 'normal');
+        doc.text(orderDate, rightColValX, rightY);
+        rightY += 5;
+
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Ship Via:`, rightColKeyX, rightY, { align: 'right' });
+        doc.setFont('helvetica', 'normal');
+        doc.text(shipVia, rightColValX, rightY);
+
+        // --- SHIP FROM & SHIP TO ADDRESS BLOCKS ---
+        const addressBlockY = 55;
+        doc.setFontSize(10);
+        
+        // SHIP FROM (Left Block)
+        doc.setFont('helvetica', 'bold');
+        doc.text("SHIP FROM:", 14, addressBlockY);
+        doc.setFont('helvetica', 'normal');
+        doc.text(customerName.toUpperCase(), 40, addressBlockY);
+        doc.text("c/o MI-KRO Industries", 40, addressBlockY + 5);
+        doc.text("1509 RT 38, Unit 9", 40, addressBlockY + 10);
+        doc.text("Hainesport, NJ 08036 US", 40, addressBlockY + 15);
+        doc.text("Phone: 609-694-0521", 40, addressBlockY + 20);
+        doc.text("Email: mike@mi-krologistics.com", 40, addressBlockY + 25);
+
+        // SHIP TO (Right Block)
+        doc.setFont('helvetica', 'bold');
+        doc.text("SHIP TO:", 110, addressBlockY);
+        doc.setFont('helvetica', 'normal');
+        doc.text(address.recipientName || 'N/A', 130, addressBlockY);
+        doc.text(`${address.line1 || ''} ${address.line2 || ''}`.trim(), 130, addressBlockY + 5);
+        doc.text(`${address.city || ''}, ${address.state || ''} ${address.zip || ''}`.trim(), 130, addressBlockY + 10);
+        doc.text(address.country || 'US', 130, addressBlockY + 15);
+
+        if (phone) {
+           doc.setFont('helvetica', 'bold');
+           doc.text("Phone:", 110, addressBlockY + 20);
+           doc.setFont('helvetica', 'normal');
+           doc.text(phone, 130, addressBlockY + 20);
+        }
+
+        // --- COMMENTS BLOCK ---
+        let commentsY = 95;
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'bold');
+        doc.text("Comments:", 14, commentsY);
+        
+        if (notes) {
+            doc.setFont('helvetica', 'normal');
+            const splitNotes = doc.splitTextToSize(notes, 150);
+            doc.text(splitNotes, 40, commentsY);
+            commentsY += (splitNotes.length * 5);
+        } else {
+            commentsY += 5; // minimal spacing if no notes
+        }
+
+        // --- ITEMS TABLE (No Loc Column) ---
+        const tableRows = (order.items || []).map(item => {
+            const qtyStr = (item.quantity || 0).toString();
+            return [
+                item.sku,
+                item.name,
+                "",     // Qty Picked (Left blank for manual fill)
+                qtyStr, // Qty Ordered
+                qtyStr  // Qty Shipped
+            ];
+        });
+
+        autoTable(doc, {
+            startY: commentsY + 5,
+            head: [["Item Code / Lot(s) #", "Description", "Qty.\nPicked", "Qty.\nOrdered", "Qty.\nShipped"]],
+            body: tableRows,
+            theme: 'plain',
+            headStyles: { 
+              fontStyle: 'bold', 
+              textColor: 0, 
+              halign: 'left', 
+              borderBottomColor: 0, 
+              borderBottomWidth: 0.5 
+            },
+            styles: { fontSize: 9, cellPadding: 3, textColor: 20, font: 'helvetica' },
+            columnStyles: {
+                0: { cellWidth: 45 },
+                1: { cellWidth: 'auto' },
+                2: { cellWidth: 20, halign: 'center' },
+                3: { cellWidth: 20, halign: 'center' },
+                4: { cellWidth: 20, halign: 'center' }
+            },
+            // Custom drawing to recreate the faint line separators
+            willDrawCell: function(data) {
+                if (data.row.section === 'body') {
+                    doc.setDrawColor(200, 200, 200);
+                    doc.setLineWidth(0.1);
+                    doc.line(
+                        data.cell.x, 
+                        data.cell.y + data.cell.height, 
+                        data.cell.x + data.cell.width, 
+                        data.cell.y + data.cell.height
+                    );
+                }
+            }
+        });
+
+        // --- FOOTER BOX ---
+        const finalY = doc.lastAutoTable.finalY + 15;
+        doc.setDrawColor(0);
+        doc.setLineWidth(0.5);
+        doc.rect(55, finalY, 100, 8); // Centered bounding box
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.text("*** THANK YOU FOR YOUR ORDER! ***", 105, finalY + 5.5, { align: 'center' });
+
+        // Bottom heavy border line to mimic the document base
+        doc.setLineWidth(1.5);
+        doc.line(14, 280, 196, 280);
+      });
+
+      doc.autoPrint();
+      const blobUrl = doc.output('bloburl');
+      window.open(blobUrl, '_blank');
+
+      // 3. BULK UPDATE STATUS TO "PICKED"
+      await Promise.all(
+        selectedOrderObjects.map(order => 
+           dispatch(updateOrder({ id: order._id, updateData: { status: 'Picked' } })).unwrap()
+        )
+      );
+
+      toast.success(`Successfully processed ${selectedOrderObjects.length} orders. Status updated to Picked.`);
+      setSelectedOrders([]);
+      setIsPrintModalOpen(false);
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to generate documents or update orders.");
+    } finally {
+      setIsGeneratingDocs(false);
+    }
+  };
+
   useEffect(() => {
-    document.body.style.overflow = isEditModalOpen ? 'hidden' : 'unset';
+    document.body.style.overflow = isEditModalOpen || isPrintModalOpen ? 'hidden' : 'unset';
     return () => { document.body.style.overflow = 'unset'; };
-  }, [isEditModalOpen]);
+  }, [isEditModalOpen, isPrintModalOpen]);
 
   const selectClass = "w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white/50 text-xs font-bold outline-none cursor-pointer focus:border-brand-gold/50 focus:ring-2 focus:ring-brand-gold/20 transition-all appearance-none";
 
@@ -544,9 +821,10 @@ export default function OrdersPage() {
             
             <div className="flex gap-2">
               <button 
-                className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                onClick={() => setIsPrintModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg"
               >
-                <Truck size={14} /> Update Status
+                <Printer size={14} /> Print Slips & Pick
               </button>
               <button 
                 onClick={handleBulkExport}
@@ -556,6 +834,54 @@ export default function OrdersPage() {
               </button>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Bulk Print & Fulfill Modal */}
+      <AnimatePresence>
+        {isPrintModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }} 
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
+              onClick={() => !isGeneratingDocs && setIsPrintModalOpen(false)} 
+            />
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }} 
+              animate={{ scale: 1, opacity: 1 }} 
+              exit={{ scale: 0.95, opacity: 0 }} 
+              className="relative w-full max-w-md bg-white/95 backdrop-blur-xl border border-white/50 p-6 rounded-3xl shadow-2xl text-center"
+            >
+              <div className="w-16 h-16 bg-brand-gold/10 text-brand-gold rounded-full flex items-center justify-center mx-auto mb-4 border border-brand-gold/20">
+                 <CheckSquare size={32} />
+              </div>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight mb-2">Process {selectedOrders.length} Orders</h2>
+              <p className="text-sm font-medium text-slate-500 mb-6">
+                This will generate a master picking list along with individual packing slips. Once generated, all selected orders will be marked as <strong className="text-indigo-600 bg-indigo-50 px-1 rounded">Picked</strong>.
+              </p>
+
+              <div className="flex gap-3">
+                <button 
+                  type="button" 
+                  onClick={() => setIsPrintModalOpen(false)} 
+                  disabled={isGeneratingDocs} 
+                  className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="button" 
+                  onClick={handleBulkPrintAndFulfill}
+                  disabled={isGeneratingDocs} 
+                  className="flex-[2] flex justify-center items-center gap-2 px-4 py-3 bg-brand-gold hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-brand-gold/20 transition-all disabled:opacity-70"
+                >
+                  {isGeneratingDocs ? <Loader2 size={16} className="animate-spin" /> : <><Printer size={16} /> Generate & Pick</>}
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
