@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 
 const cartItemSchema = new mongoose.Schema({
+  product: { type: mongoose.Schema.Types.ObjectId, ref: 'Inventory', required: true },
   sku: { type: String, required: true },
   name: { type: String, required: true },
   quantity: { type: Number, required: true, min: 1, default: 1 },
@@ -9,14 +10,12 @@ const cartItemSchema = new mongoose.Schema({
 
 const cartSchema = new mongoose.Schema(
   {
-    // The Shopper/End-Consumer (Who owns the cart)
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: [true, 'Cart must belong to an end-user'],
-      unique: true // Strictly enforces one persistent cart per shopper
+      required: [true, 'Cart must belong to an end-user']
+      // REMOVED: unique: true (Moved to compound index below)
     },
-    // The 3PL Client/Brand (Whose products are in the cart)
     customer: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Customer',
@@ -24,7 +23,8 @@ const cartSchema = new mongoose.Schema(
     },
     division: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Division'
+      ref: 'Division',
+      required: [true, 'Cart must belong to a specific division']
     },
     items: [cartItemSchema],
     cartTotal: {
@@ -38,7 +38,6 @@ const cartSchema = new mongoose.Schema(
   }
 );
 
-// Auto-calculate the cart total right before saving
 cartSchema.pre('save', function() {
   if (this.items && this.items.length > 0) {
     this.cartTotal = this.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0);
@@ -47,6 +46,7 @@ cartSchema.pre('save', function() {
   }
 });
 
-cartSchema.index({ user: 1 });
+// CRITICAL FIX: Compound Index ensures a user can only have ONE cart per DIVISION.
+cartSchema.index({ user: 1, division: 1 }, { unique: true });
 
 export default mongoose.model('Cart', cartSchema);

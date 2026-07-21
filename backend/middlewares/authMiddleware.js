@@ -7,6 +7,7 @@ import AppError from '../utils/AppError.js';
 export const protect = catchAsync(async (req, res, next) => {
   // console.log(req.headers)
   
+  
   let token;
 
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {

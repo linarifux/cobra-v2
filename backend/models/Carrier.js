@@ -75,7 +75,6 @@ const Carrier = mongoose.model('Carrier', carrierSchema);
 // CRITICAL FIX FOR E11000 DUPLICATE KEY ERROR
 // ==========================================
 Carrier.syncIndexes()
-  .then(() => console.log('✅ Carrier indexes synced successfully! Old global unique constraints removed.'))
   .catch((err) => console.error('❌ Carrier index sync error:', err));
 
 export default Carrier;

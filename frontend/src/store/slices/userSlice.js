@@ -49,7 +49,6 @@ export const updateUser = createAsyncThunk(
       return response.data.data.user || response.data.data;
     } catch (error) {
       console.log(error);
-      
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to update user');
     }
   }
@@ -68,11 +67,26 @@ export const deleteUser = createAsyncThunk(
   }
 );
 
+// 5. Get Single User
+export const fetchUserById = createAsyncThunk(
+  'users/fetchUserById',
+  async (id, { rejectWithValue }) => {
+    try {
+      const response = await api.get(`/users/${id}`);
+      return response.data.data.user || response.data.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch user');
+    }
+  }
+);
+
 const userSlice = createSlice({
   name: 'users',
   initialState: {
     items: [],
+    currentUser: null, // <-- ADDED: Holds the single fetched user
     status: 'idle', 
+    detailsStatus: 'idle', // <-- ADDED: Tracks loading state for a single user fetch
     createStatus: 'idle',
     error: null
   },
@@ -80,11 +94,15 @@ const userSlice = createSlice({
     clearUserErrors: (state) => {
       state.error = null;
       state.createStatus = 'idle';
+    },
+    clearCurrentUser: (state) => { // <-- ADDED: Clears data when unmounting profile page
+      state.currentUser = null;
+      state.detailsStatus = 'idle';
     }
   },
   extraReducers: (builder) => {
     builder
-      // Fetch
+      // --- Fetch All ---
       .addCase(fetchUsers.pending, (state) => {
         state.status = 'loading';
       })
@@ -97,7 +115,21 @@ const userSlice = createSlice({
         state.error = action.payload;
       })
       
-      // Create
+      // --- Fetch Single User ---
+      .addCase(fetchUserById.pending, (state) => {
+        state.detailsStatus = 'loading';
+        state.error = null;
+      })
+      .addCase(fetchUserById.fulfilled, (state, action) => {
+        state.detailsStatus = 'succeeded';
+        state.currentUser = action.payload;
+      })
+      .addCase(fetchUserById.rejected, (state, action) => {
+        state.detailsStatus = 'failed';
+        state.error = action.payload;
+      })
+
+      // --- Create ---
       .addCase(createUser.pending, (state) => {
         state.createStatus = 'loading';
         state.error = null;
@@ -111,7 +143,7 @@ const userSlice = createSlice({
         state.error = action.payload;
       })
       
-      // Update
+      // --- Update ---
       .addCase(updateUser.pending, (state) => {
         state.createStatus = 'loading';
         state.error = null;
@@ -122,18 +154,26 @@ const userSlice = createSlice({
         state.items = state.items.map(user => 
           user._id === action.payload._id ? action.payload : user
         );
+        // Also update currentUser if we are currently editing/viewing them
+        if (state.currentUser && state.currentUser._id === action.payload._id) {
+          state.currentUser = action.payload;
+        }
       })
       .addCase(updateUser.rejected, (state, action) => {
         state.createStatus = 'failed';
         state.error = action.payload;
       })
 
-      // Delete
+      // --- Delete ---
       .addCase(deleteUser.fulfilled, (state, action) => {
         state.items = state.items.filter(u => u._id !== action.payload);
+        // Clear currentUser if the deleted user was the one currently loaded
+        if (state.currentUser && state.currentUser._id === action.payload) {
+          state.currentUser = null;
+        }
       });
   }
 });
 
-export const { clearUserErrors } = userSlice.actions;
+export const { clearUserErrors, clearCurrentUser } = userSlice.actions; 
 export default userSlice.reducer;

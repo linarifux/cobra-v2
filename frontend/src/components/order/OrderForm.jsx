@@ -1,22 +1,26 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { toast } from 'sonner'; 
 import { 
   ArrowLeft, MapPin, CreditCard, 
   Trash2, Plus, MessageSquare, 
-  PackageCheck, Save, Loader2, Box, Building2, User, Briefcase
+  PackageCheck, Save, Loader2, Box, Building2, User, Briefcase, Truck
 } from 'lucide-react';
+import { toast } from 'sonner';
 
-import { fetchOrderById, updateOrder, createOrder, clearCurrentOrder } from '../../store/slices/orderSlice'; 
-import { fetchInventory } from '../../store/slices/inventorySlice'; 
-import { fetchUsers } from '../../store/slices/userSlice'; 
-import { fetchCustomers } from '../../store/slices/customerSlice'; 
-import { fetchDivisions } from '../../store/slices/divisionSlice'; 
 import NotFoundPage from '../../pages/NotFoundPage';
+
+// Redux Actions
+import { fetchOrderById, updateOrder, createOrder, clearCurrentOrder } from '../../store/slices/orderSlice';
+import { fetchCustomers } from '../../store/slices/customerSlice';
+import { fetchDivisions } from '../../store/slices/divisionSlice';
+import { fetchInventory } from '../../store/slices/inventorySlice';
+import { fetchUsers } from '../../store/slices/userSlice';
+import { fetchCarriers } from '../../store/slices/carrierSlice'; // <-- Imported Carrier Slice
 
 // --- Utilities ---
 const generateLocalId = () => `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+const generateAutoOrderNumber = () => `ORD-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
 
 export default function OrderForm() {
   const { id } = useParams();
@@ -33,6 +37,7 @@ export default function OrderForm() {
   const { items: usersData = [], status: usersStatus } = useSelector((state) => state.users || {}); 
   const { items: customersData = [], status: customersStatus } = useSelector((state) => state.customers || {}); 
   const { items: divisionsData = [], status: divisionsStatus } = useSelector((state) => state.divisions || {}); 
+  const { items: carriersData = [], status: carrierStatus } = useSelector((state) => state.carriers || {}); // <-- Carrier State
   
   // --- Form State ---
   // Core Identifiers
@@ -42,7 +47,7 @@ export default function OrderForm() {
   const [userId, setUserId] = useState(''); 
 
   const [orderStatus, setOrderStatus] = useState('Pending');
-  const [shipping, setShipping] = useState({ carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0 });
+  const [shipping, setShipping] = useState({ carrierId: '', carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0 });
   const [address, setAddress] = useState({ name: '', email: '', phone: '', street: '', line2: '', city: '', state: '', zip: '', country: 'US' });
   const [items, setItems] = useState([]);
   const [notes, setNotes] = useState('');
@@ -56,7 +61,7 @@ export default function OrderForm() {
   const tax = subtotal * 0.08; 
   const grandTotal = subtotal + shippingCost + tax;
 
-  // --- Initialize Data ---
+  // --- Initialize Global Data ---
   useEffect(() => {
     if (isEditMode && isValidMongoId) {
         dispatch(fetchOrderById(id));
@@ -71,6 +76,13 @@ export default function OrderForm() {
     };
   }, [id, isEditMode, isValidMongoId, inventoryStatus, usersStatus, customersStatus, divisionsStatus, dispatch]);
 
+  // --- Fetch Division Carriers ---
+  useEffect(() => {
+    if (divisionId) {
+      dispatch(fetchCarriers(divisionId));
+    }
+  }, [divisionId, dispatch]);
+
   const availableInventories = useMemo(() => {
     return inventoryData.map(inv => ({
       id: inv._id,
@@ -81,7 +93,28 @@ export default function OrderForm() {
     }));
   }, [inventoryData]);
 
-  // Dynamically filter divisions belonging to the selected Customer
+  // Dynamically flatten carriers into selectable options
+  const shippingOptions = useMemo(() => {
+    if (!Array.isArray(carriersData)) return [];
+    
+    const options = [];
+    carriersData.forEach(carrier => {
+      if (carrier.isActive !== false && carrier.enabledServices) {
+        carrier.enabledServices.forEach(service => {
+          if (service.isActive !== false) {
+            options.push({
+              carrierId: carrier._id,
+              carrierType: carrier.carrierType,
+              serviceCode: service.serviceCode,
+              label: `${carrier.carrierType} - ${service.serviceName || service.serviceCode}`
+            });
+          }
+        });
+      }
+    });
+    return options;
+  }, [carriersData]);
+
   const contextualDivisions = useMemo(() => {
     if (!customerId) return divisionsData;
     return divisionsData.filter(d => {
@@ -90,40 +123,30 @@ export default function OrderForm() {
     });
   }, [divisionsData, customerId]);
 
-  // FIX: Properly handling the `divisions` array structure found in your user model
   const contextualUsers = useMemo(() => {
     if (!usersData?.length) return [];
     if (!divisionId && !customerId) return [];
     
     const filtered = usersData.filter(u => {
       let isMatch = true;
-      
-      // 1. Check Customer Level
       if (customerId) {
         const uCustId = String(u.customer?._id || u.customer || '');
         isMatch = isMatch && (uCustId === String(customerId));
       }
-      
-      // 2. Check Division Level (Iterating through the user's "divisions" array)
       if (divisionId) {
         if (Array.isArray(u.divisions) && u.divisions.length > 0) {
           const userHasDivision = u.divisions.some(d => String(d._id || d) === String(divisionId));
           isMatch = isMatch && userHasDivision;
         } else {
-          // If a division is selected but the user has NO divisions array, they fail the filter
           isMatch = false;
         }
       }
-      
       return isMatch;
     });
 
-    // Fallback: If no users are strictly linked to this customer/division in the DB yet,
-    // return all non-admin users so the list doesn't appear totally empty/broken.
     if (filtered.length === 0) {
       return usersData.filter(u => u.portal !== 'admin' && u.role !== 'admin');
     }
-
     return filtered;
   }, [usersData, divisionId, customerId]);
 
@@ -137,6 +160,7 @@ export default function OrderForm() {
       
       setOrderStatus(currentOrder.status || 'Pending');
       setShipping({ 
+        carrierId: currentOrder.shippingDetails?.carrierId?._id || currentOrder.shippingDetails?.carrierId || '',
         carrierType: currentOrder.shippingDetails?.carrierType || '', 
         serviceCode: currentOrder.shippingDetails?.serviceCode || '', 
         trackingNumber: currentOrder.shippingDetails?.trackingNumber || '',
@@ -174,13 +198,15 @@ export default function OrderForm() {
   // --- Handlers ---
   const handleCustomerChange = (e) => {
     setCustomerId(e.target.value);
-    setDivisionId(''); // Reset division when customer changes
-    setUserId('');     // Reset user when customer changes
+    setDivisionId(''); 
+    setUserId('');     
+    setShipping({...shipping, carrierId: '', carrierType: '', serviceCode: ''}); // Reset shipping when context changes
   };
 
   const handleDivisionChange = (e) => {
     setDivisionId(e.target.value);
-    setUserId('');     // Reset user when division changes
+    setUserId('');     
+    setShipping({...shipping, carrierId: '', carrierType: '', serviceCode: ''}); // Reset shipping when context changes
   };
 
   const handleInventoryChange = (e) => {
@@ -203,8 +229,8 @@ export default function OrderForm() {
   };
 
   const handleSaveOrder = async () => {
-    if (!orderNumber || !customerId || !divisionId) {
-        return toast.warning("Order Number, Customer, and Division are required.");
+    if (!customerId || !divisionId) {
+        return toast.warning("Customer and Division are required.");
     }
     if (!address.name || !address.street || !address.city || !address.state || !address.zip) {
       return toast.warning("Please fill out all required shipping address fields.");
@@ -216,7 +242,7 @@ export default function OrderForm() {
     setIsSaving(true);
 
     const payload = {
-      orderNumber,
+      orderNumber: orderNumber.trim() || generateAutoOrderNumber(),
       customer: customerId,
       division: divisionId,
       user: userId || null, 
@@ -229,8 +255,11 @@ export default function OrderForm() {
       },
       shippingDetails: {
         ...(isEditMode ? currentOrder.shippingDetails : {}),
-        carrierType: shipping.carrierType, serviceCode: shipping.serviceCode,
-        trackingNumber: shipping.trackingNumber, shippingCost: Number(shipping.shippingCost)
+        carrierId: shipping.carrierId || null,
+        carrierType: shipping.carrierType, 
+        serviceCode: shipping.serviceCode,
+        trackingNumber: shipping.trackingNumber, 
+        shippingCost: Number(shipping.shippingCost)
       },
       items: items.map(item => ({
         sku: item.sku, name: item.name, quantity: Number(item.qty),
@@ -254,6 +283,9 @@ export default function OrderForm() {
       setIsSaving(false);
     }
   };
+
+  // Prevent missing option selection in edit mode if carrier was removed globally
+  const isLegacyShippingService = shipping.serviceCode && !shippingOptions.some(opt => opt.serviceCode === shipping.serviceCode);
 
   if (isEditMode && !isValidMongoId) return <NotFoundPage />;
   if (isEditMode && (orderLoadStatus === 'failed' || orderError)) return <NotFoundPage />;
@@ -310,24 +342,25 @@ export default function OrderForm() {
                 {/* Routing & Identity Fields */}
                 <div className="grid grid-cols-2 gap-3">
                     <div className="col-span-2">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 flex items-center gap-1.5">Order Number *</label>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 flex items-center gap-1.5">
+                          Order Number <span className="normal-case tracking-normal font-medium text-slate-400 ml-1">(Auto-generates if left blank)</span>
+                        </label>
                         <input 
                             className="w-full bg-white p-3 rounded-xl text-xs font-bold border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all" 
                             value={orderNumber} 
                             onChange={(e) => setOrderNumber(e.target.value)} 
                             placeholder="e.g. ORD-998822"
-                            disabled={isEditMode} // Usually order numbers shouldn't change once created
+                            disabled={isEditMode}
                         />
                     </div>
 
-                    {/* DYNAMIC CUSTOMER DROPDOWN */}
                     <div className="col-span-2 md:col-span-1">
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 flex items-center gap-1.5"><Briefcase size={12}/> 3PL Customer (Brand) *</label>
                         <select 
                             className={`w-full p-3 rounded-xl text-xs font-bold border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all cursor-pointer ${isEditMode ? 'bg-slate-50 text-slate-500' : 'bg-white'}`}
                             value={customerId} 
                             onChange={handleCustomerChange}
-                            disabled={isEditMode} // Locking customer on edit prevents database corruption
+                            disabled={isEditMode}
                         >
                             <option value="" disabled>Select Brand...</option>
                             {customersData.map(c => (
@@ -336,7 +369,6 @@ export default function OrderForm() {
                         </select>
                     </div>
 
-                    {/* DYNAMIC DIVISION DROPDOWN */}
                     <div className="col-span-2 md:col-span-1">
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 flex items-center gap-1.5"><Building2 size={12}/> Division *</label>
                         <select 
@@ -352,7 +384,6 @@ export default function OrderForm() {
                         </select>
                     </div>
 
-                    {/* DYNAMIC SHOPPER DROPDOWN */}
                     <div className="col-span-2">
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 flex items-center gap-1.5">
                             <User size={12} /> Shopper (End-User)
@@ -393,35 +424,49 @@ export default function OrderForm() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Carrier</label>
-                        <input 
-                            className="w-full bg-white p-3 rounded-xl text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all" 
-                            value={shipping.carrierType} 
-                            onChange={(e) => setShipping({...shipping, carrierType: e.target.value})} 
-                            placeholder="e.g. UPS" 
-                        />
+                    <div className="col-span-2">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 flex justify-between">
+                            <span className="flex items-center gap-1.5"><Truck size={12}/> Shipping Service</span>
+                            {carrierStatus === 'loading' && <Loader2 size={12} className="animate-spin text-brand-gold" />}
+                        </label>
+                        <select 
+                            className="w-full bg-white p-3 rounded-xl text-xs font-bold border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all cursor-pointer" 
+                            value={shipping.serviceCode ? `${shipping.carrierId}|${shipping.carrierType}|${shipping.serviceCode}` : ''} 
+                            onChange={(e) => {
+                                const [cId, cType, sCode] = e.target.value.split('|');
+                                setShipping({...shipping, carrierId: cId || '', carrierType: cType || '', serviceCode: sCode || ''});
+                            }}
+                            disabled={!divisionId || carrierStatus === 'loading'}
+                        >
+                            <option value="" disabled>
+                                {!divisionId ? 'Select a division first...' : 'Select carrier service...'}
+                            </option>
+                            
+                            {isLegacyShippingService && (
+                                <option value={`${shipping.carrierId}|${shipping.carrierType}|${shipping.serviceCode}`}>
+                                    {shipping.carrierType} - {shipping.serviceCode} (Legacy)
+                                </option>
+                            )}
+
+                            {shippingOptions.map(opt => (
+                                <option key={`${opt.carrierId}|${opt.serviceCode}`} value={`${opt.carrierId}|${opt.carrierType}|${opt.serviceCode}`}>
+                                    {opt.label}
+                                </option>
+                            ))}
+                        </select>
                     </div>
-                    <div>
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Service Code</label>
+                    
+                    <div className="col-span-2">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Tracking Number</label>
                         <input 
                             className="w-full bg-white p-3 rounded-xl text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all" 
-                            value={shipping.serviceCode} 
-                            onChange={(e) => setShipping({...shipping, serviceCode: e.target.value})} 
-                            placeholder="e.g. ups_ground" 
+                            value={shipping.trackingNumber} 
+                            onChange={(e) => setShipping({...shipping, trackingNumber: e.target.value})} 
+                            placeholder="Tracking ID" 
                         />
                     </div>
                 </div>
 
-                <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Tracking Number</label>
-                    <input 
-                        className="w-full bg-white p-3 rounded-xl text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all" 
-                        value={shipping.trackingNumber} 
-                        onChange={(e) => setShipping({...shipping, trackingNumber: e.target.value})} 
-                        placeholder="Tracking ID" 
-                    />
-                </div>
             </div>
           </div>
 

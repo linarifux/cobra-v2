@@ -102,3 +102,20 @@ export const deleteUser = catchAsync(async (req, res, next) => {
     data: null
   });
 });
+
+// @desc    Get a single user
+// @route   GET /api/v1/users/:id
+export const getUser = catchAsync(async (req, res, next) => {
+  const user = await User.findById(req.params.id)
+    .populate('customer', 'customerName')
+    .populate('divisions', 'divisionName divisionCode status'); 
+
+  if (!user) {
+    return next(new AppError('No user found with that ID', 404));
+  }
+
+  res.status(200).json({
+    status: 'success',
+    data: { user }
+  });
+});

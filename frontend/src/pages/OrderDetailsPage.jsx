@@ -19,7 +19,7 @@ import api from '../utils/api';
 // Redux Actions
 import { fetchOrderById, updateOrder, clearCurrentOrder, generateOrderLabel, downloadPurchasedLabel } from '../store/slices/orderSlice'; 
 import { fetchInventory, updateInventory } from '../store/slices/inventorySlice'; 
-import { fetchUsers } from '../store/slices/userSlice'; // <-- NEW IMPORT
+import { fetchUsers } from '../store/slices/userSlice'; 
 
 import NotFoundPage from './NotFoundPage';
 
@@ -46,11 +46,11 @@ export default function OrderDetailsPage() {
   // --- REDUX STATE ---
   const { currentOrder, status: orderLoadStatus, error: orderError } = useSelector((state) => state.orders || {});
   const { items: inventoryData = [], status: inventoryStatus } = useSelector((state) => state.inventory || {});
-  const { items: usersData = [], status: usersStatus } = useSelector((state) => state.users || {}); // <-- NEW STATE
+  const { items: usersData = [], status: usersStatus } = useSelector((state) => state.users || {}); 
   
   // --- FORM STATE ---
   const [orderStatus, setOrderStatus] = useState('Pending');
-  const [selectedUserId, setSelectedUserId] = useState(''); // <-- NEW STATE FOR ASSIGNING USER
+  const [selectedUserId, setSelectedUserId] = useState(''); 
   const [shipping, setShipping] = useState({ carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0 });
   const [address, setAddress] = useState({ name: '', email: '', phone: '', street: '', line2: '', city: '', state: '', zip: '', country: '' });
   const [items, setItems] = useState([]);
@@ -101,6 +101,15 @@ export default function OrderDetailsPage() {
   const totalItemWeightOz = items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
   const totalPackageWeightOz = packages.reduce((acc, pkg) => acc + Number(pkg.weightInOunces || 0), 0);
   const isWeightMismatched = Math.abs(totalItemWeightOz - totalPackageWeightOz) > 1;
+
+  // --- Identify Order Creator ---
+  const orderUserId = currentOrder?.user?._id || currentOrder?.user;
+  const orderCreator = useMemo(() => {
+    if (!orderUserId || usersData.length === 0) return null;
+    return usersData.find(u => u._id === orderUserId);
+  }, [orderUserId, usersData]);
+  
+  const orderCreatorName = orderCreator ? (orderCreator.name || orderCreator.firstName || orderCreator.email) : null;
 
   // --- API DATA FETCHING ---
   useEffect(() => {
@@ -159,7 +168,7 @@ export default function OrderDetailsPage() {
   useEffect(() => {
     if (currentOrder) {
       setOrderStatus(currentOrder.status || 'Pending');
-      setSelectedUserId(currentOrder.user?._id || currentOrder.user || ''); // Hook user state
+      setSelectedUserId(currentOrder.user?._id || currentOrder.user || ''); 
       
       setShipping({ 
         carrierType: currentOrder.shippingDetails?.carrierType || '', 
@@ -343,7 +352,7 @@ export default function OrderDetailsPage() {
 
       const tableColumn = ["Picked", "SKU", "Item Description", "Qty Required"];
       const tableRows = items.map(item => [
-        " [   ] ", 
+        " [    ] ", 
         item.sku,
         item.name,
         item.qty.toString()
@@ -420,7 +429,7 @@ export default function OrderDetailsPage() {
         const stockItem = inventoryData.find(inv => inv.sku === item.sku);
         if (stockItem) {
           const currentStock = Number(stockItem.unitsOnHand) || Number(stockItem.available) || 0;
-          const restoredStock = currentStock + Number(item.qty);
+          const restoredStock = currentStock + Number(item.quantity);
           const updatedData = { ...stockItem, unitsOnHand: restoredStock, available: restoredStock };
           await dispatch(updateInventory({ id: stockItem._id, inventoryData: updatedData })).unwrap();
         }
@@ -434,7 +443,7 @@ export default function OrderDetailsPage() {
 
     const payload = {
       status: orderStatus,
-      user: selectedUserId || null, // Include user assignment
+      user: selectedUserId || null,
       notes: notes,
       shippingAddress: {
         recipientName: address.name, email: address.email, phone: address.phone,
@@ -842,6 +851,11 @@ export default function OrderDetailsPage() {
             <div>
               <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Order Reference</span>
               <span className="text-xl font-black text-slate-900 tracking-tight">{currentOrder.orderNumber}</span>
+              {orderCreatorName && (
+                <p className="text-[10px] font-bold text-slate-500 mt-1 flex items-center gap-1.5">
+                  <User size={12} className="text-brand-gold" /> Order Placed by {orderCreatorName}
+                </p>
+              )}
             </div>
             <span className="px-3 py-1.5 text-[10px] uppercase font-black tracking-widest bg-slate-900 text-white rounded-lg shadow-md flex items-center gap-1.5">
               <Clock size={12} /> {creationDate}
@@ -921,60 +935,6 @@ export default function OrderDetailsPage() {
                    <p className="text-slate-400 text-[9px] font-medium mt-1 uppercase tracking-wider">Calculated from items</p>
                 </div>
             </div>
-          </div>
-
-          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
-             <div className="flex justify-between items-center mb-4 border-b border-white/60 pb-3">
-                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                   <Box size={14}/> ShipStation Fulfillment Details
-                </h3>
-                {ssOrderId && (
-                    <span className="px-2 py-1 bg-emerald-50 text-emerald-600 rounded-md text-[9px] font-black uppercase tracking-widest border border-emerald-100 flex items-center gap-1">
-                       <CheckCircle2 size={10} /> Synced
-                    </span>
-                )}
-             </div>
-             
-             {ssData || ssOrderId ? (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-center">
-                   <div>
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">ShipStation ID</p>
-                      <p className="text-xs font-bold text-slate-900">{ssOrderId || 'N/A'}</p>
-                   </div>
-                   <div>
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">SS Status</p>
-                      <p className="text-xs font-bold text-slate-900 capitalize">
-                        {(ssData?.orderStatus || ssData?.status || 'N/A').replace('_', ' ')}
-                      </p>
-                   </div>
-                   <div>
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Order Key</p>
-                      <p className="text-xs font-bold text-slate-900">{ssData?.orderKey || 'N/A'}</p>
-                   </div>
-                   <div className="flex justify-end">
-                      {ssOrderId && (
-                        <a 
-                          href={`https://ship.shipstation.com/orders/details/${ssOrderId}`} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-[10px] font-bold shadow-md transition-colors"
-                        >
-                          View in SS <ExternalLink size={12} />
-                        </a>
-                      )}
-                   </div>
-                </div>
-             ) : (
-                <div className="flex flex-col items-center justify-center py-4 text-center">
-                   <p className="text-xs font-bold text-slate-500 mb-3">Order hasn't been pushed to ShipStation yet.</p>
-                   <button 
-                      onClick={() => setFulfillOpen(true)}
-                      className="bg-brand-gold text-white px-4 py-2 rounded-xl text-[11px] font-black shadow-lg shadow-brand-gold/20 hover:scale-105 transition-all duration-200"
-                   >
-                      Configure Fulfillment
-                   </button>
-                </div>
-             )}
           </div>
 
           <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
