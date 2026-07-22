@@ -1,15 +1,16 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
+import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner'; 
 import { 
   ArrowLeft, Truck, MapPin, User, CreditCard, 
   Trash2, Edit2, Check, Plus, MessageSquare, 
   Mail, Phone, X, Weight, Loader2, Save, ExternalLink, 
-  CloudUpload, FileText, CheckCircle2, PackageCheck, AlertTriangle, Clock,
-  Box, Printer
+  CloudUpload, CheckCircle2, PackageCheck, AlertTriangle, Clock, Printer, ChevronDown, Search
 } from 'lucide-react';
 
+import axios from 'axios';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -31,6 +32,56 @@ const generateTrackingLink = (carrier, trackingNumber) => {
   if (c.includes('dhl')) return `https://www.dhl.com/global-en/home/tracking/tracking-express.html?submit=1&tracking-id=${trackingNumber}`;
   return `https://www.google.com/search?q=track+package+${trackingNumber}`;
 };
+
+// --- Helper: Robust PDF Download ---
+const downloadBase64PDF = (base64Data, filename) => {
+  try {
+    const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
+    const byteCharacters = atob(cleanBase64);
+    
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    
+    const blob = new Blob([byteArray], { type: 'application/pdf' });
+    const url = window.URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    
+    document.body.removeChild(link);
+    setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+  } catch (error) {
+    console.error("Failed to decode Base64 PDF:", error);
+    throw new Error("Invalid PDF data format.");
+  }
+};
+
+// --- Static Data ---
+const US_STATES = [
+  { name: 'Alabama', code: 'AL' }, { name: 'Alaska', code: 'AK' }, { name: 'Arizona', code: 'AZ' },
+  { name: 'Arkansas', code: 'AR' }, { name: 'California', code: 'CA' }, { name: 'Colorado', code: 'CO' },
+  { name: 'Connecticut', code: 'CT' }, { name: 'Delaware', code: 'DE' }, { name: 'Florida', code: 'FL' },
+  { name: 'Georgia', code: 'GA' }, { name: 'Hawaii', code: 'HI' }, { name: 'Idaho', code: 'ID' },
+  { name: 'Illinois', code: 'IL' }, { name: 'Indiana', code: 'IN' }, { name: 'Iowa', code: 'IA' },
+  { name: 'Kansas', code: 'KS' }, { name: 'Kentucky', code: 'KY' }, { name: 'Louisiana', code: 'LA' },
+  { name: 'Maine', code: 'ME' }, { name: 'Maryland', code: 'MD' }, { name: 'Massachusetts', code: 'MA' },
+  { name: 'Michigan', code: 'MI' }, { name: 'Minnesota', code: 'MN' }, { name: 'Mississippi', code: 'MS' },
+  { name: 'Missouri', code: 'MO' }, { name: 'Montana', code: 'MT' }, { name: 'Nebraska', code: 'NE' },
+  { name: 'Nevada', code: 'NV' }, { name: 'New Hampshire', code: 'NH' }, { name: 'New Jersey', code: 'NJ' },
+  { name: 'New Mexico', code: 'NM' }, { name: 'New York', code: 'NY' }, { name: 'North Carolina', code: 'NC' },
+  { name: 'North Dakota', code: 'ND' }, { name: 'Ohio', code: 'OH' }, { name: 'Oklahoma', code: 'OK' },
+  { name: 'Oregon', code: 'OR' }, { name: 'Pennsylvania', code: 'PA' }, { name: 'Rhode Island', code: 'RI' },
+  { name: 'South Carolina', code: 'SC' }, { name: 'South Dakota', code: 'SD' }, { name: 'Tennessee', code: 'TN' },
+  { name: 'Texas', code: 'TX' }, { name: 'Utah', code: 'UT' }, { name: 'Vermont', code: 'VT' },
+  { name: 'Virginia', code: 'VA' }, { name: 'Washington', code: 'WA' }, { name: 'West Virginia', code: 'WV' },
+  { name: 'Wisconsin', code: 'WI' }, { name: 'Wyoming', code: 'WY' }
+];
 
 export default function OrderDetailsPage() {
   const { id } = useParams();
@@ -58,13 +109,11 @@ export default function OrderDetailsPage() {
   const [isPushingShipment, setIsPushingShipment] = useState(false);
   const [isGeneratingLabel, setIsGeneratingLabel] = useState(false);
   const [isDownloadingLabel, setIsDownloadingLabel] = useState(false);
+  const [isGeneratingDocs, setIsGeneratingDocs] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const [warehouses, setWarehouses] = useState([]);
   const [isLoadingWarehouses, setIsLoadingWarehouses] = useState(false);
-
-  const [packingSlipDownloaded, setPackingSlipDownloaded] = useState(false);
-  const [pickingListDownloaded, setPickingListDownloaded] = useState(false);
 
   const [fulfillmentData, setFulfillmentData] = useState({
     shipFromId: '', 
@@ -75,14 +124,34 @@ export default function OrderDetailsPage() {
     { id: generateLocalId(), weightInOunces: 16, length: 10, width: 10, height: 10 }
   ]);
 
+  const [isStateDropdownOpen, setIsStateDropdownOpen] = useState(false);
+  const [stateSearch, setStateSearch] = useState('');
+  const stateDropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (stateDropdownRef.current && !stateDropdownRef.current.contains(event.target)) {
+        setIsStateDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredStates = US_STATES.filter(s => 
+    s.name.toLowerCase().includes(stateSearch.toLowerCase()) || 
+    s.code.toLowerCase().includes(stateSearch.toLowerCase())
+  );
+
   const ssData = currentOrder?.shipstationDetails || currentOrder?.shipstationOrder || currentOrder?.shipstation || null;
   const ssOrderId = ssData?.orderId || currentOrder?.shipstationOrderId || null;
   const ssLabelId = ssData?.labelId || null;
 
-  const isShipmentCreated = !!ssOrderId;
   const isLabelPurchased = !!ssLabelId || !!shipping.trackingNumber;
-  const isPackingSlipDone = packingSlipDownloaded || isLabelPurchased;
-  const isPickingListDone = pickingListDownloaded || isLabelPurchased;
+  const isPickingListDone = ['Picked', 'Shipped', 'Delivered', 'Billed'].includes(orderStatus);
+  const isPackingSlipDone = isPickingListDone;
+  const isShipmentCreated = isPickingListDone || !!ssOrderId;
+  const canManageLabel = ['Picked', 'Shipped', 'Delivered', 'Billed'].includes(orderStatus);
 
   const subtotal = items.reduce((acc, item) => acc + (Number(item.price) * Number(item.qty)), 0);
   const shippingCost = Number(shipping.shippingCost) || 0;
@@ -120,7 +189,8 @@ export default function OrderDetailsPage() {
           setFulfillmentData(p => ({ ...p, shipFromId: fetchedWarehouses[0].warehouse_id }));
         }
       } catch (err) {
-        console.error("Failed to fetch warehouses:", err);
+        console.warn("ShipStation API Error:", err);
+        toast.error("Could not load origin warehouses from ShipStation.");
       } finally {
         setIsLoadingWarehouses(false);
       }
@@ -137,18 +207,6 @@ export default function OrderDetailsPage() {
       weight: inv.weight || 0
     }));
   }, [inventoryData]);
-
-  const contextualUsers = useMemo(() => {
-    if (!currentOrder) return [];
-    const divId = currentOrder.division?._id || currentOrder.division;
-    const custId = currentOrder.customer?._id || currentOrder.customer;
-    
-    return usersData.filter(u => {
-      const uDivId = u.division?._id || u.division;
-      const uCustId = u.customer?._id || u.customer;
-      return (uDivId && uDivId === divId) || (uCustId && uCustId === custId);
-    });
-  }, [usersData, currentOrder]);
 
   useEffect(() => {
     if (currentOrder) {
@@ -210,162 +268,225 @@ export default function OrderDetailsPage() {
   }, [availableInventories]);
 
 
-  const handlePrintPackingSlip = () => {
+  // --- COMBINED PDF PRINT & PICK LOGIC ---
+  const handlePrintDocsAndPick = async () => {
+    setIsGeneratingDocs(true);
     try {
       const doc = new jsPDF();
       
-      const selectedWarehouse = warehouses.find(w => w.warehouse_id === fulfillmentData.shipFromId);
-      const origin = selectedWarehouse?.origin_address || {};
-      
-      const divisionName = currentOrder?.division?.name || 'Warehouse Fulfillment'; 
-      const customerName = currentOrder?.customer?.customerName || address.name || 'Valued Customer';
-      const orderDate = currentOrder?.createdAt ? new Date(currentOrder.createdAt).toLocaleDateString() : 'N/A';
-
-      doc.setFontSize(22);
-      doc.setTextColor(15, 23, 42); 
-      doc.text("PACKING SLIP", 196, 22, { align: 'right' }); 
-      
+      // ==========================================
+      // 1. PICKING LIST
+      // ==========================================
       doc.setFontSize(16);
+      doc.setTextColor(0, 0, 0);
       doc.setFont('helvetica', 'bold');
-      doc.text(divisionName, 14, 22);
+      doc.text("PICKING LIST", 14, 20);
+      
+      doc.setLineWidth(0.5);
+      doc.setDrawColor(0, 0, 0);
+      doc.line(14, 22, 196, 22);
 
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
-      doc.setTextColor(100, 116, 139);
-      
-      doc.text(`Order Ref: ${currentOrder.orderNumber || 'N/A'}`, 14, 32);
-      doc.text(`Order Date: ${orderDate}`, 14, 38);
-      if (ssOrderId) doc.text(`ShipStation ID: ${ssOrderId}`, 14, 44);
+      doc.setTextColor(50, 50, 50);
+      doc.text(`Order Ref: ${currentOrder.orderNumber}`, 14, 28);
+      doc.text(`Date Printed: ${new Date().toLocaleDateString('en-GB', {day: '2-digit', month: 'short', year: 'numeric'})}`, 14, 33);
 
-      doc.text(`Printed On: ${new Date().toLocaleDateString()}`, 196, 32, { align: 'right' });
-      if (shipping.carrierType || shipping.serviceCode) {
-         doc.text(`Shipping Method: ${shipping.carrierType.toUpperCase()} ${shipping.serviceCode || ''}`, 196, 38, { align: 'right' });
-      }
-      if (shipping.trackingNumber) {
-         doc.text(`Tracking: ${shipping.trackingNumber}`, 196, 44, { align: 'right' });
-      }
-      
-      doc.setFontSize(11);
-      doc.setTextColor(15, 23, 42);
-      doc.setFont('helvetica', 'bold');
-      doc.text("Ship From:", 14, 58);
-      
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(71, 85, 105);
-      
-      if (origin.name || origin.company_name) {
-        doc.text(origin.company_name || origin.name, 14, 64);
-        doc.text(`${origin.address_line1 || ''} ${origin.address_line2 || ''}`.trim(), 14, 70);
-        doc.text(`${origin.city_locality || ''}, ${origin.state_province || ''} ${origin.postal_code || ''}`.trim(), 14, 76);
-        doc.text(origin.country_code || 'US', 14, 82);
-      } else {
-        doc.text("Origin Warehouse (Pending)", 14, 64);
-      }
+      const pickingRows = items.map(item => {
+        const invItem = inventoryData.find(inv => inv.sku === item.sku);
+        let locationStr = '';
+        if (invItem?.locations && Array.isArray(invItem.locations) && invItem.locations.length > 0) {
+           locationStr = invItem.locations.map(loc => loc.designation).filter(Boolean).join(', ');
+        }
+        if (!locationStr && invItem?.locationString) {
+           locationStr = invItem.locationString;
+        }
 
-      doc.setFontSize(11);
-      doc.setTextColor(15, 23, 42);
-      doc.setFont('helvetica', 'bold');
-      doc.text("Ship To:", 110, 58);
-      
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(71, 85, 105);
-      
-      doc.text(address.name || 'N/A', 110, 64);
-      doc.text(`${address.street || ''} ${address.line2 || ''}`.trim(), 110, 70);
-      doc.text(`${address.city || ''}, ${address.state || ''} ${address.zip || ''}`.trim(), 110, 76);
-      doc.text(address.country || 'US', 110, 82);
-
-      let currentY = 96;
-      if (notes) {
-        doc.setFont('helvetica', 'italic');
-        doc.setTextColor(51, 65, 85);
-        doc.text(`Customer Notes: ${notes}`, 14, currentY);
-        currentY += 8;
-      }
-
-      const tableColumn = ["Item Description", "SKU", "Qty", "Weight"];
-      const tableRows = items.map(item => [
-        item.name,
-        item.sku,
-        item.qty.toString(),
-        `${(Number(item.weight) / 16).toFixed(2)} lbs`
-      ]);
-
-      autoTable(doc, {
-        startY: currentY,
-        head: [tableColumn],
-        body: tableRows,
-        theme: 'striped',
-        headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold' },
-        styles: { fontSize: 10, cellPadding: 5 },
-        columnStyles: { 2: { halign: 'center' }, 3: { halign: 'right' } }
+        return [
+          " [    ] ", 
+          locationStr || '',
+          item.sku,
+          item.name,
+          item.qty.toString()
+        ];
       });
 
-      doc.setFontSize(10);
-      doc.setTextColor(148, 163, 184);
-      doc.text("Thank you for your business!", 105, doc.lastAutoTable.finalY + 15, { align: 'center' });
-
-      doc.autoPrint();
-      const blobUrl = doc.output('bloburl');
-      window.open(blobUrl, '_blank');
-      
-      setPackingSlipDownloaded(true);
-      toast.success("Packing slip opened for printing.");
-    } catch(err) {
-      console.error(err);
-      toast.error("Failed to generate PDF. Make sure jspdf is installed.");
-    }
-  };
-
-  const handlePrintPickingList = () => {
-    try {
-      const doc = new jsPDF();
-      
-      doc.setFontSize(22);
-      doc.setTextColor(15, 23, 42);
-      doc.text("WAREHOUSE PICKING LIST", 14, 22);
-      
-      doc.setFontSize(10);
-      doc.setTextColor(100, 116, 139);
-      doc.text(`Order Ref: ${currentOrder.orderNumber}`, 14, 32);
-      doc.text(`Date Printed: ${new Date().toLocaleDateString()}`, 14, 38);
-      if (ssOrderId) doc.text(`ShipStation ID: ${ssOrderId}`, 120, 32);
-
-      const tableColumn = ["Picked", "SKU", "Item Description", "Qty Required"];
-      const tableRows = items.map(item => [
-        " [    ] ", 
-        item.sku,
-        item.name,
-        item.qty.toString()
-      ]);
-
       autoTable(doc, {
-        startY: 50,
-        head: [tableColumn],
-        body: tableRows,
+        startY: 40,
+        head: [["Picked", "Location", "SKU", "Item Description", "Qty Required"]],
+        body: pickingRows,
         theme: 'grid',
-        headStyles: { fillColor: [15, 23, 42], textColor: 255 },
+        headStyles: { fillColor: [240, 240, 240], textColor: 20, fontStyle: 'bold', lineWidth: 0.1 },
         columnStyles: { 
           0: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
-          3: { halign: 'center', fontStyle: 'bold' }
+          1: { cellWidth: 30, halign: 'center' },
+          4: { halign: 'center', fontStyle: 'bold' }
         },
-        styles: { fontSize: 10, cellPadding: 5 },
+        styles: { fontSize: 9, cellPadding: 4, textColor: 20, font: 'helvetica' },
       });
 
-      doc.setFontSize(10);
-      doc.text("Packed By: ___________________________    Date: ______________", 14, doc.lastAutoTable.finalY + 30);
+      // ==========================================
+      // 2. PACKING SLIP
+      // ==========================================
+      doc.addPage();
+      
+      const orderNo = currentOrder.orderNumber || 'N/A';
+      const orderDate = currentOrder.createdAt ? new Date(currentOrder.createdAt).toLocaleDateString('en-GB', {day: '2-digit', month: 'short', year: 'numeric'}) : 'N/A';
+      const shipVia = `${shipping.carrierType || ''} ${shipping.serviceCode || ''}`.trim() || 'UPS - Ground';
+      const phone = address.phone || currentOrder.customer?.contactNumber || '';
+    
 
+      // Top Header
+      doc.setFontSize(14);
+      doc.setTextColor(0, 0, 0);
+      doc.setFont('helvetica', 'bold');
+      doc.text(currentOrder?.customer?.customerName, 14, 20);
+
+      // Top Right
+      const rightColKeyX = 160;
+      const rightColValX = 162;
+      let rightY = 20;
+
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Order ID:`, rightColKeyX, rightY, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
+      doc.text(orderNo, rightColValX, rightY);
+      rightY += 5;
+
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Order Type:`, rightColKeyX, rightY, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
+      doc.text('WEBORD', rightColValX, rightY);
+      rightY += 5;
+
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Ordered:`, rightColKeyX, rightY, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
+      doc.text(orderDate, rightColValX, rightY);
+      rightY += 5;
+
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Ship Via:`, rightColKeyX, rightY, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
+      doc.text(shipVia, rightColValX, rightY);
+
+      // Address Blocks
+      const addressBlockY = 55;
+      doc.setFontSize(10);
+      
+      doc.setFont('helvetica', 'bold');
+      doc.text("SHIP FROM:", 14, addressBlockY);
+      doc.setFont('helvetica', 'normal');
+      doc.text("MI-KRO Industries", 40, addressBlockY);
+      doc.text("1509 RT 38, Unit 9", 40, addressBlockY + 5);
+      doc.text("Hainesport, NJ 08036 US", 40, addressBlockY + 10);
+      doc.text("Phone: 609-694-0521", 40, addressBlockY + 15);
+      doc.text("Email: mike@mi-krologistics.com", 40, addressBlockY + 20);
+
+      doc.setFont('helvetica', 'bold');
+      doc.text("SHIP TO:", 110, addressBlockY);
+      doc.setFont('helvetica', 'normal');
+      doc.text(address.name || 'N/A', 130, addressBlockY);
+      doc.text(`${address.street || ''} ${address.line2 || ''}`.trim(), 130, addressBlockY + 5);
+      doc.text(`${address.city || ''}, ${address.state || ''} ${address.zip || ''}`.trim(), 130, addressBlockY + 10);
+      doc.text(address.country || 'US', 130, addressBlockY + 15);
+
+      if (phone) {
+         doc.setFont('helvetica', 'bold');
+         doc.text("Phone:", 110, addressBlockY + 20);
+         doc.setFont('helvetica', 'normal');
+         doc.text(phone, 130, addressBlockY + 20);
+      }
+
+      // Comments
+      let commentsY = 90;
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.text("Comments:", 14, commentsY);
+      
+      if (notes) {
+          doc.setFont('helvetica', 'normal');
+          const splitNotes = doc.splitTextToSize(notes, 150);
+          doc.text(splitNotes, 40, commentsY);
+          commentsY += (splitNotes.length * 5);
+      } else {
+          commentsY += 5;
+      }
+
+      // Table
+      const tableRows = items.map(item => {
+          const qtyStr = (item.qty || 0).toString();
+          return [
+              item.sku,
+              item.name,
+              "",     
+              qtyStr, 
+              qtyStr  
+          ];
+      });
+
+      autoTable(doc, {
+          startY: commentsY + 5,
+          head: [["Item Code / Lot(s) #", "Description", "Qty.\nPicked", "Qty.\nOrdered", "Qty.\nShipped"]],
+          body: tableRows,
+          theme: 'plain',
+          headStyles: { 
+            fontStyle: 'bold', 
+            textColor: 0, 
+            halign: 'left', 
+            borderBottomColor: 0, 
+            borderBottomWidth: 0.5 
+          },
+          styles: { fontSize: 9, cellPadding: 3, textColor: 20, font: 'helvetica' },
+          columnStyles: {
+              0: { cellWidth: 45 },
+              1: { cellWidth: 'auto' },
+              2: { cellWidth: 20, halign: 'center' },
+              3: { cellWidth: 20, halign: 'center' },
+              4: { cellWidth: 20, halign: 'center' }
+          },
+          willDrawCell: function(data) {
+              if (data.row.section === 'body') {
+                  doc.setDrawColor(200, 200, 200);
+                  doc.setLineWidth(0.1);
+                  doc.line(
+                      data.cell.x, 
+                      data.cell.y + data.cell.height, 
+                      data.cell.x + data.cell.width, 
+                      data.cell.y + data.cell.height
+                  );
+              }
+          }
+      });
+
+      // Footer
+      const finalY = doc.lastAutoTable.finalY + 15;
+      doc.setDrawColor(0);
+      doc.setLineWidth(0.5);
+      doc.rect(55, finalY, 100, 8); 
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text("*** THANK YOU FOR YOUR ORDER! ***", 105, finalY + 5.5, { align: 'center' });
+
+      doc.setLineWidth(1.5);
+      doc.line(14, 280, 196, 280);
+
+      // Print
       doc.autoPrint();
       const blobUrl = doc.output('bloburl');
       window.open(blobUrl, '_blank');
 
-      setPickingListDownloaded(true);
-      toast.success("Picking list opened for printing.");
-    } catch(err) {
-      console.error(err);
-      toast.error("Failed to generate PDF. Make sure jspdf is installed.");
+      // 3. Update Order Status
+      await dispatch(updateOrder({ id: currentOrder._id, updateData: { status: 'Picked' } })).unwrap();
+      setOrderStatus('Picked');
+      toast.success("Documents generated and order marked as Picked.");
+
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to generate documents or update order.");
+    } finally {
+      setIsGeneratingDocs(false);
     }
   };
 
@@ -423,6 +544,11 @@ export default function OrderDetailsPage() {
     setIsSaving(true);
     const isChangingToCancelled = orderStatus === 'Cancelled' && currentOrder?.status !== 'Cancelled';
 
+    if (address.state.trim().length !== 2) {
+      setIsSaving(false);
+      return toast.error("State must be exactly a 2-character code (e.g., NY, CA). Please use the dropdown selector.");
+    }
+
     const payload = {
       status: orderStatus,
       ...(selectedUserId ? { user: selectedUserId } : { user: null }), // Only send user if explicitly selected
@@ -430,7 +556,8 @@ export default function OrderDetailsPage() {
       shippingAddress: {
         recipientName: address.name, email: address.email, phone: address.phone,
         line1: address.street, line2: address.line2, city: address.city,
-        state: address.state, zip: address.zip, country: address.country
+        state: address.state.toUpperCase().trim(),
+        zip: address.zip, country: address.country
       },
       shippingDetails: {
         ...currentOrder.shippingDetails,
@@ -506,8 +633,8 @@ export default function OrderDetailsPage() {
         height: Number(p.height)
       })),
       shipFrom: {
-        name: originAddress.name || "Fulfillment Center",
-        company_name: originAddress.company_name || "DSM Logistics",
+        name: "MI-KRO Industries",
+        company_name: "MI-KRO Industries",
         phone: originAddress.phone || "",
         email: originAddress.email || "",
         address_line1: originAddress.address_line1 || "",
@@ -551,9 +678,9 @@ export default function OrderDetailsPage() {
         height: Number(p.height)
       })),
       shipFrom: {
-        name: originAddress.name || "Fulfillment Center",
+        name: "MI-KRO Industries",
         phone: originAddress.phone || "",
-        company_name: originAddress.company_name || "DSM Logistics",
+        company_name: "", // Forced blank to hide brand context from ShipFrom lines if needed
         address_line1: originAddress.address_line1 || "",
         address_line2: originAddress.address_line2 || "",
         city_locality: originAddress.city_locality || "",
@@ -572,18 +699,56 @@ export default function OrderDetailsPage() {
       const response = await dispatch(generateOrderLabel({ orderId: currentOrder._id, fulfillmentData: payload })).unwrap();
       setFulfillOpen(false);
 
+      let labelDownloaded = false;
+
       if (response.labelData) {
-        const pdfWindow = window.open("");
-        pdfWindow.document.write(`<iframe width='100%' height='100%' style='border:none;' src='data:application/pdf;base64,${encodeURI(response.labelData)}'></iframe>`);
-      } else if (response.labelUrl) {
-        window.open(response.labelUrl, "_blank");
+        try {
+          downloadBase64PDF(response.labelData, `Label_${currentOrder.orderNumber || 'Order'}.pdf`);
+          labelDownloaded = true;
+        } catch (e) {
+          console.error("Failed standard decode, falling back.");
+        }
+      } 
+      
+      // Fallback 1: URL provided directly in generate response
+      if (!labelDownloaded && response.labelUrl) {
+        const link = document.createElement('a');
+        link.href = response.labelUrl;
+        link.target = "_blank";
+        link.download = `Label_${currentOrder.orderNumber || 'Order'}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        labelDownloaded = true;
+      }
+      
+      // Fallback 2: Force explicit fetch immediately if it didn't come attached
+      if (!labelDownloaded) {
+        try {
+          const fetchRes = await dispatch(downloadPurchasedLabel(currentOrder._id)).unwrap();
+          if (fetchRes.labelData) {
+             downloadBase64PDF(fetchRes.labelData, `Label_${currentOrder.orderNumber || 'Order'}.pdf`);
+             labelDownloaded = true;
+          } else if (fetchRes.labelUrl) {
+             window.open(fetchRes.labelUrl, "_blank");
+             labelDownloaded = true;
+          }
+        } catch (fallbackErr) {
+           console.error("Fallback download failed:", fallbackErr);
+        }
       }
       
       if (response.trackingNumber) {
         setShipping(prev => ({ ...prev, trackingNumber: response.trackingNumber }));
         setOrderStatus('Shipped');
       }
-      toast.success('Label Purchased!', { description: `Tracking Number: ${response.trackingNumber}`});
+
+      if (labelDownloaded) {
+        toast.success('Label Purchased & Downloaded!', { description: `Tracking Number: ${response.trackingNumber || 'N/A'}`});
+      } else {
+        toast.warning('Label Purchased, but failed to automatically download.', { description: 'Try downloading manually using the button below.' });
+      }
+
     } catch (error) {
       toast.error(`Label Generation Failed`, { description: typeof error === 'string' ? error : error.message });
     } finally { setIsGeneratingLabel(false); }
@@ -597,19 +762,17 @@ export default function OrderDetailsPage() {
       const labelData = response.labelData;
 
       if (labelUrl) {
-        window.open(labelUrl, "_blank");
-        toast.success("Label opened for printing.");
+        const link = document.createElement('a');
+        link.href = labelUrl;
+        link.target = "_blank";
+        link.download = `Label_${currentOrder.orderNumber || 'Order'}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success("Label downloaded.");
       } else if (labelData) {
-        const binary = atob(labelData);
-        const array = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-          array[i] = binary.charCodeAt(i);
-        }
-        const blob = new Blob([array], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-        
-        window.open(url, "_blank");
-        toast.success("Label ready for printing.");
+        downloadBase64PDF(labelData, `Label_${currentOrder.orderNumber || 'Order'}.pdf`);
+        toast.success("Label downloaded.");
       } else {
         toast.error("Label URL not found in response.");
       }
@@ -657,29 +820,39 @@ export default function OrderDetailsPage() {
           <div className="w-px h-6 bg-slate-300/60 mx-1"></div>
 
           <button 
+            onClick={handlePrintDocsAndPick}
+            disabled={isGeneratingDocs || isSaving}
+            className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-600 text-white rounded-xl text-[11px] font-black shadow-lg hover:bg-emerald-500 transition-all duration-200 disabled:opacity-70"
+          >
+            {isGeneratingDocs ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />} Print & Pick
+          </button>
+
+          <button 
             onClick={handleSaveOrder}
             disabled={isSaving || isDeleting}
             className="flex items-center gap-1.5 px-4 py-1.5 bg-slate-900 text-white rounded-xl text-[11px] font-black shadow-lg hover:bg-slate-800 transition-all duration-200 disabled:opacity-70"
           >
             {isSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save Changes
           </button>
+
           <button 
             onClick={() => setFulfillOpen(true)}
-            className="flex items-center gap-1.5 bg-brand-gold text-white px-4 py-1.5 rounded-xl text-[11px] font-black shadow-lg shadow-brand-gold/20 hover:scale-105 transition-all duration-200"
+            disabled={!canManageLabel}
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-[11px] font-black shadow-lg transition-all duration-200 ${!canManageLabel ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-brand-gold text-white shadow-brand-gold/20 hover:scale-105'}`}
           >
-            <CloudUpload size={14} /> Fulfill Order
+            <CheckCircle2 size={14} /> {isLabelPurchased ? 'View Label' : 'Generate Label'}
           </button>
         </div>
       </div>
 
-      {/* Slide-over Drawer for Fulfillment */}
+      {/* Slide-over Drawer for Label Generation Configuration */}
       <div className={`fixed inset-0 z-50 flex justify-end transition-opacity duration-300 ${fulfillOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
         <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setFulfillOpen(false)} />
         <div className={`relative w-full max-w-[400px] bg-white/95 backdrop-blur-2xl border-l border-white/50 p-6 shadow-2xl h-full overflow-y-auto transition-transform duration-300 ease-in-out flex flex-col ${fulfillOpen ? 'translate-x-0' : 'translate-x-full'}`}>
           <div className="flex justify-between items-center mb-6 shrink-0 border-b border-slate-200 pb-4">
             <div className="flex items-center gap-3">
               <h2 className="font-black uppercase tracking-wider text-sm text-slate-800 flex items-center gap-2">
-                <PackageCheck size={18} className="text-brand-gold"/> Fulfillment Pipeline
+                <PackageCheck size={18} className="text-brand-gold"/> Generate Shipping Label
               </h2>
             </div>
             <button onClick={() => setFulfillOpen(false)} className="text-slate-500 hover:text-slate-900 bg-slate-100 p-1.5 rounded-full transition-colors"><X size={16}/></button>
@@ -773,37 +946,13 @@ export default function OrderDetailsPage() {
             </div>
           </div>
           
-          {/* FULFILLMENT ACTION WORKFLOW BUTTONS */}
+          {/* LABEL PURCHASE ACTIONS */}
           <div className="mt-4 pt-4 border-t border-slate-200 shrink-0 bg-white/95">
-            {!isShipmentCreated ? (
-              <button 
-                onClick={handlePushShipment}
-                disabled={isPushingShipment || !fulfillmentData.shipFromId}
-                className="w-full flex justify-center items-center gap-2 bg-slate-900 text-white py-3.5 rounded-xl text-xs font-black shadow-xl hover:bg-slate-800 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-              >
-                {isPushingShipment ? <Loader2 size={16} className="animate-spin" /> : <CloudUpload size={16} />}
-                {isPushingShipment ? 'Creating Shipment...' : 'Create Shipment to Fulfill'}
-              </button>
-            ) : (
-              <div className="space-y-3">
-                 <button 
-                   onClick={handlePrintPackingSlip}
-                   className="w-full flex justify-center items-center gap-2 border py-3.5 rounded-xl text-xs font-black shadow-sm transition-all bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200"
-                 >
-                   <Printer size={16} /> Print Packing Slip
-                 </button>
-
-                 <button 
-                   onClick={handlePrintPickingList}
-                   className="w-full flex justify-center items-center gap-2 border py-3.5 rounded-xl text-xs font-black shadow-sm transition-all bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200"
-                 >
-                   <Printer size={16} /> Print Picking List
-                 </button>
-                 
+             <div className="space-y-3">
                  {!isLabelPurchased ? (
                    <button 
                      onClick={handleGenerateLabel}
-                     disabled={isGeneratingLabel}
+                     disabled={isGeneratingLabel || !fulfillmentData.shipFromId}
                      className="w-full flex justify-center items-center gap-2 text-white py-3.5 rounded-xl text-xs font-black shadow-md transition-all bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
                    >
                      {isGeneratingLabel ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
@@ -816,11 +965,10 @@ export default function OrderDetailsPage() {
                      className="w-full flex justify-center items-center gap-2 text-white py-3.5 rounded-xl text-xs font-black shadow-md transition-all bg-slate-800 hover:bg-slate-700 disabled:opacity-50"
                    >
                      {isDownloadingLabel ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
-                     Print Purchased Label
+                     Download Purchased Label
                    </button>
                  )}
               </div>
-            )}
           </div>
 
         </div>
@@ -920,7 +1068,9 @@ export default function OrderDetailsPage() {
             </div>
           </div>
 
-          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
+          {/* CRITICAL FIX: Z-Index explicitly increased here to stay above the order notes */}
+          {/* Shipping Address Form */}
+          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] relative z-20">
             <div className="flex justify-between items-center mb-4 border-b border-white/60 pb-3">
                 <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2"><MapPin size={14}/> Shipping Address</h3>
                 <button onClick={() => setEditing({...editing, address: !editing.address})} className="text-slate-400 hover:text-brand-gold transition-colors duration-200 shrink-0 bg-white/50 p-1.5 rounded-md border border-slate-100">
@@ -935,9 +1085,66 @@ export default function OrderDetailsPage() {
                     <input className="col-span-2 bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm" value={address.street} onChange={(e) => setAddress({...address, street: e.target.value})} placeholder="Address Line 1" />
                     <input className="col-span-2 bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm" value={address.line2} onChange={(e) => setAddress({...address, line2: e.target.value})} placeholder="Address Line 2 (Optional)" />
                     <input className="bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm" value={address.city} onChange={(e) => setAddress({...address, city: e.target.value})} placeholder="City" />
-                    <div className="flex gap-3">
-                        <input className="w-full bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none min-w-0 shadow-sm" value={address.state} onChange={(e) => setAddress({...address, state: e.target.value})} placeholder="ST" />
-                        <input className="w-full bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none min-w-0 shadow-sm" value={address.zip} onChange={(e) => setAddress({...address, zip: e.target.value})} placeholder="Zip" />
+                    
+                    <div className="col-span-1 flex gap-3 relative z-50">
+                        {/* CUSTOM SEARCHABLE STATE DROPDOWN */}
+                        <div className="w-1/2 relative" ref={stateDropdownRef}>
+                          <div 
+                            className="w-full bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus-within:border-brand-gold shadow-sm flex items-center justify-between cursor-pointer"
+                            onClick={() => setIsStateDropdownOpen(!isStateDropdownOpen)}
+                          >
+                            <span className={address.state ? "text-slate-900 font-bold" : "text-slate-400"}>
+                              {address.state || "Select..."}
+                            </span>
+                            <ChevronDown size={14} className="text-slate-400" />
+                          </div>
+
+                          <AnimatePresence>
+                            {isStateDropdownOpen && (
+                              <motion.div 
+                                initial={{ opacity: 0, y: -5 }} 
+                                animate={{ opacity: 1, y: 0 }} 
+                                exit={{ opacity: 0, y: -5 }}
+                                className="absolute z-[100] w-full md:w-48 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
+                              >
+                                <div className="p-2 border-b border-slate-100 flex items-center gap-2">
+                                  <Search size={14} className="text-slate-400" />
+                                  <input 
+                                    autoFocus
+                                    className="w-full text-xs outline-none font-medium text-slate-700" 
+                                    placeholder="Search state..." 
+                                    value={stateSearch} 
+                                    onChange={(e) => setStateSearch(e.target.value)} 
+                                  />
+                                </div>
+                                <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                                  {filteredStates.length > 0 ? (
+                                    filteredStates.map(s => (
+                                      <div 
+                                        key={s.code} 
+                                        className="px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer flex justify-between items-center transition-colors"
+                                        onClick={() => {
+                                          setAddress({ ...address, state: s.code });
+                                          setIsStateDropdownOpen(false);
+                                          setStateSearch('');
+                                        }}
+                                      >
+                                        <span>{s.name}</span>
+                                        <span className="text-slate-400 font-bold text-[10px] bg-slate-100 px-1.5 py-0.5 rounded">{s.code}</span>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <div className="p-3 text-xs text-slate-400 text-center">No state found</div>
+                                  )}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+
+                        <div className="w-1/2">
+                            <input className="w-full bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all" value={address.zip} onChange={(e) => setAddress({...address, zip: e.target.value})} placeholder="Zip Code" />
+                        </div>
                     </div>
                 </div>
             ) : (
@@ -963,182 +1170,130 @@ export default function OrderDetailsPage() {
             )}
           </div>
 
-          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
-            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-5 flex items-center gap-2 border-b border-white/60 pb-3">
-              <PackageCheck size={14} /> Manifest Items
-            </h3>
-            
-            <div className="overflow-x-auto">
-              <table className="w-full table-fixed min-w-[600px]">
-                <thead className="text-left text-[9px] uppercase font-black tracking-widest text-slate-400 border-b border-slate-200/50">
-                  <tr>
-                    <th className="pb-3 w-[35%] pl-2">Item</th>
-                    <th className="pb-3 w-[15%]">SKU</th>
-                    <th className="pb-3 w-[10%] text-center">Qty</th>
-                    <th className="pb-3 w-[12%] text-right">Unit Wt</th>
-                    <th className="pb-3 w-[15%] text-right">Price</th>
-                    <th className="pb-3 w-[5%]"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100/50 text-xs">
-                  {items.map((item) => (
-                    <tr key={item.id} className="transition-colors duration-200 hover:bg-white/50 group">
-                      <td className="py-3.5 font-bold text-slate-900 break-words pr-2 pl-2 tracking-tight">{item.name}</td>
-                      <td className="py-3.5 font-mono text-[10px] text-slate-500 break-all pr-2">{item.sku}</td>
-                      <td className="py-3.5">
-                        <div className="bg-white border border-slate-200 rounded-lg text-center font-bold py-1 w-12 mx-auto shadow-sm">
-                          {item.qty}
-                        </div>
-                      </td>
-                      <td className="py-3.5 font-medium text-slate-500 text-right">{(Number(item.weight) / 16).toFixed(2)} lbs</td>
-                      <td className="py-3.5 font-black text-slate-800 text-right">${Number(item.price).toFixed(2)}</td>
-                      <td className="py-3.5 text-right">
-                         <button onClick={() => setItems(items.filter(i => i.id !== item.id))} className="text-slate-300 hover:text-red-500 transition-colors duration-200 p-1 opacity-0 group-hover:opacity-100">
-                           <Trash2 size={14}/>
-                         </button>
-                      </td>
-                    </tr>
-                  ))}
-                  
-                  <tr className="bg-slate-50/50">
-                    <td className="py-3 pl-2 pr-2">
-                      <select 
-                        className="w-full bg-white p-2.5 rounded-lg text-xs font-bold border border-slate-200 outline-none focus:border-brand-gold text-slate-700 cursor-pointer transition-all shadow-sm"
-                        value={availableInventories.find(i => i.name === newItem.name)?.id || ''}
-                        onChange={handleInventoryChange}
-                        disabled={inventoryStatus === 'loading'}
-                      >
-                        <option className="text-slate-400" value="">{inventoryStatus === 'loading' ? 'Loading Catalog...' : 'Select Item to Add...'}</option>
-                        {availableInventories.map(inv => (
-                          <option key={inv.id} value={inv.id}>{inv.name}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="py-3 pr-2">
-                      <input className="w-full bg-slate-100 p-2.5 rounded-lg text-xs font-mono text-slate-500 border border-slate-200 outline-none shadow-inner" placeholder="SKU" value={newItem.sku} readOnly disabled />
-                    </td>
-                    <td className="py-3 pr-2">
-                      <input type="number" min="1" className="w-full bg-white p-2.5 rounded-lg text-xs font-bold border border-slate-200 text-center outline-none focus:border-brand-gold shadow-sm" value={newItem.qty} onChange={(e) => setNewItem({...newItem, qty: e.target.value})} />
-                    </td>
-                    <td className="py-3 pr-2 text-right">
-                      <span className="text-slate-400 font-medium text-[10px] uppercase tracking-wider">{newItem.weight ? `${(Number(newItem.weight) / 16).toFixed(2)} lbs` : '-'}</span>
-                    </td>
-                    <td className="py-3 pr-2">
-                      <div className="w-full bg-slate-50 p-2.5 rounded-lg text-xs font-black border border-slate-200 text-right text-slate-400 cursor-not-allowed select-none shadow-inner">
-                        {newItem.price ? `$${Number(newItem.price).toFixed(2)}` : '$0.00'}
-                      </div>
-                    </td>
-                    <td className="py-3 text-right pr-2">
-                      <button onClick={handleAddItem} className="bg-slate-900 text-white p-2.5 rounded-lg hover:bg-slate-800 transition-all shadow-md active:scale-95"><Plus size={14}/></button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <div className="xl:col-span-1 space-y-6 w-full min-w-0">
-          
-          <div className="bg-white/80 backdrop-blur-xl p-6 rounded-3xl shadow-[0_8px_30px_rgba(0,0,0,0.06)] border border-white/60">
-             <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-5 flex items-center gap-2 border-b border-slate-100 pb-3">
-               <Truck size={14}/> Activity Log
-             </h3>
-             
-             <div className="space-y-6 relative before:absolute before:inset-0 before:ml-[11px] before:-translate-x-px md:before:ml-[11px] md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-emerald-200 before:via-slate-200 before:to-transparent">
-               
-               <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                 <div className={`flex items-center justify-center w-6 h-6 rounded-full border-4 border-white shrink-0 z-10 ${isShipmentCreated ? 'bg-emerald-500' : 'bg-slate-200 text-slate-400'}`}>
-                   {isShipmentCreated && <Check size={10} className="text-white" strokeWidth={4}/>}
-                 </div>
-                 <div className="w-[calc(100%-2.5rem)] md:w-[calc(50%-2.5rem)] pl-3">
-                   <span className={`text-[11px] font-bold uppercase tracking-wider block ${isShipmentCreated ? 'text-slate-900' : 'text-slate-400'}`}>Shipment Created</span>
-                   {isShipmentCreated && <span className="text-[9px] text-slate-400 mt-0.5 block">Pushed to fulfillment</span>}
-                 </div>
-               </div>
-               
-               <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                 <div className={`flex items-center justify-center w-6 h-6 rounded-full border-4 border-white shrink-0 z-10 ${isPackingSlipDone ? 'bg-emerald-500' : 'bg-slate-200 text-slate-400'}`}>
-                   {isPackingSlipDone && <Check size={10} className="text-white" strokeWidth={4}/>}
-                 </div>
-                 <div className="w-[calc(100%-2.5rem)] md:w-[calc(50%-2.5rem)] pl-3">
-                   <span className={`text-[11px] font-bold uppercase tracking-wider block ${isPackingSlipDone ? 'text-slate-900' : 'text-slate-400'}`}>Packing Slip</span>
-                 </div>
-               </div>
-
-               <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                 <div className={`flex items-center justify-center w-6 h-6 rounded-full border-4 border-white shrink-0 z-10 ${isPickingListDone ? 'bg-emerald-500' : 'bg-slate-200 text-slate-400'}`}>
-                   {isPickingListDone && <Check size={10} className="text-white" strokeWidth={4}/>}
-                 </div>
-                 <div className="w-[calc(100%-2.5rem)] md:w-[calc(50%-2.5rem)] pl-3">
-                   <span className={`text-[11px] font-bold uppercase tracking-wider block ${isPickingListDone ? 'text-slate-900' : 'text-slate-400'}`}>Picking List</span>
-                 </div>
-               </div>
-
-               <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                 <div className={`flex items-center justify-center w-6 h-6 rounded-full border-4 border-white shrink-0 z-10 ${isLabelPurchased ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]' : 'bg-slate-200 text-slate-400'}`}>
-                   {isLabelPurchased && <Check size={10} className="text-white" strokeWidth={4}/>}
-                 </div>
-                 <div className="w-[calc(100%-2.5rem)] md:w-[calc(50%-2.5rem)] pl-3">
-                   <span className={`text-[11px] font-bold uppercase tracking-wider block ${isLabelPurchased ? 'text-emerald-600' : 'text-slate-400'}`}>Label Purchased</span>
-                   {isLabelPurchased && <span className="text-[9px] text-slate-400 mt-0.5 block">Ready for carrier</span>}
-                 </div>
-               </div>
-             </div>
-          </div>
-
-          <div className="bg-slate-950 text-white p-6 rounded-3xl shadow-xl border border-slate-900 relative overflow-hidden">
-             <div className="absolute -right-8 -top-8 w-32 h-32 bg-brand-gold/10 rounded-full blur-2xl pointer-events-none"></div>
-             <div className="flex justify-between items-start gap-4 mb-5 pb-4 border-b border-white/10 relative z-10">
-                <div className="min-w-0">
-                    <h3 className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Billed To</h3>
-                    <p className="font-black text-xl tracking-tight text-white truncate" title={currentOrder.customer?.customerName}>
-                      {currentOrder.customer?.customerName || 'Unknown Customer'}
-                    </p>
-                </div>
-                <div className="w-12 h-12 bg-gradient-to-br from-brand-gold to-amber-500 text-slate-950 rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-brand-gold/20">
-                  <User size={22} strokeWidth={2.5}/>
-                </div>
-             </div>
-             
-             <div className="space-y-3 text-xs font-medium relative z-10">
-                {currentOrder.customer?.contactEmail && (
-                  <div className="flex items-center gap-3 min-w-0 bg-white/5 p-3 rounded-xl border border-white/5 hover:bg-white/10 transition-colors">
-                    <Mail size={14} className="text-brand-gold shrink-0"/> 
-                    <span className="break-all select-all text-slate-200 tracking-wide">{currentOrder.customer.contactEmail}</span>
-                  </div>
-                )}
-                {currentOrder.customer?.contactNumber && (
-                  <div className="flex items-center gap-3 min-w-0 bg-white/5 p-3 rounded-xl border border-white/5 hover:bg-white/10 transition-colors">
-                    <Phone size={14} className="text-brand-gold shrink-0"/> 
-                    <span className="truncate text-slate-200 tracking-wide">{currentOrder.customer.contactNumber}</span>
-                  </div>
-                )}
-             </div>
-          </div>
-
-          <div className="bg-amber-50/80 border border-amber-200/60 p-6 rounded-3xl transition-all duration-300 shadow-sm backdrop-blur-xl">
+          {/* Order Notes - relative z-10 so dropdown flows over it */}
+          <div className="bg-amber-50/80 border border-amber-200/60 p-6 rounded-3xl shadow-sm backdrop-blur-xl relative z-10">
              <h3 className="text-[10px] font-black uppercase tracking-widest text-amber-800 mb-3 flex items-center gap-2"><MessageSquare size={14}/> Order Notes</h3>
              <textarea 
                value={notes} 
                onChange={(e) => setNotes(e.target.value)}
-               className="w-full bg-white border border-amber-200/60 rounded-xl p-4 text-xs font-medium text-slate-700 focus:border-amber-400 outline-none resize-none min-h-[120px] shadow-inner"
+               className="w-full bg-white border border-amber-200/60 rounded-xl p-4 text-xs font-medium text-slate-700 focus:border-amber-400 outline-none resize-none min-h-[100px] shadow-inner"
                placeholder="Add internal notes or customer requests here..."
              />
           </div>
 
-          <div className="bg-white/60 backdrop-blur-xl p-6 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgba(0,0,0,0.06)]">
-             <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2 mb-4 border-b border-slate-100 pb-3"><CreditCard size={14}/> Invoice Summary</h3>
-             <div className="text-sm font-bold space-y-3">
-               <div className="flex justify-between text-slate-500"><span>Subtotal</span> <span className="font-mono text-slate-700">${subtotal.toFixed(2)}</span></div>
-               <div className="flex justify-between text-slate-500"><span>Shipping</span> <span className="font-mono text-slate-700">${shippingCost.toFixed(2)}</span></div>
-               <div className="flex justify-between text-slate-500"><span>Estimated Tax</span> <span className="font-mono text-slate-700">${tax.toFixed(2)}</span></div>
-               <div className="flex justify-between border-t pt-4 mt-2 border-slate-200 text-slate-900 items-end">
+        </div>
+
+        {/* Right Column: Manifest & Totals */}
+        <div className="space-y-6">
+            
+          {/* Manifest Form */}
+          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-5 flex items-center gap-2 border-b border-white/60 pb-3">
+              <PackageCheck size={14} /> Edit Manifest Items
+            </h3>
+            
+            <div className="space-y-4">
+                {items.length === 0 && (
+                    <div className="text-center py-6 text-slate-400 text-xs font-bold border-2 border-dashed border-slate-200 rounded-xl">
+                        No items added to this order yet.
+                    </div>
+                )}
+                
+                {items.map((item) => (
+                    <div key={item.id} className="flex items-center gap-3 bg-white/60 p-3 rounded-xl border border-slate-100 group">
+                        <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold text-slate-900 truncate">{item.name}</p>
+                            <p className="text-[10px] font-mono text-slate-500 truncate">{item.sku}</p>
+                        </div>
+                        <div className="w-16 shrink-0">
+                            <input 
+                                type="number" 
+                                min="1" 
+                                className="w-full bg-white border border-slate-200 rounded-lg text-center text-xs font-bold py-1.5 outline-none focus:border-brand-gold shadow-sm"
+                                value={item.qty}
+                                onChange={(e) => {
+                                    const newQty = parseInt(e.target.value) || 1;
+                                    setItems(items.map(i => i.id === item.id ? { ...i, qty: newQty } : i));
+                                }}
+                            />
+                        </div>
+                        <div className="w-20 shrink-0 text-right">
+                            <p className="text-xs font-black text-slate-800">${(item.price * item.qty).toFixed(2)}</p>
+                        </div>
+                        <button 
+                            onClick={() => setItems(items.filter(i => i.id !== item.id))} 
+                            className="text-slate-300 hover:text-red-500 transition-colors duration-200 p-1 shrink-0"
+                        >
+                            <Trash2 size={16}/>
+                        </button>
+                    </div>
+                ))}
+
+                {/* Add Item Row */}
+                <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 shadow-inner space-y-3 mt-4">
+                    <h4 className="text-[9px] font-black uppercase tracking-widest text-slate-500">Add Product</h4>
+                    <select 
+                        className="w-full bg-white p-2.5 rounded-lg text-xs font-bold border border-slate-200 outline-none focus:border-brand-gold text-slate-700 cursor-pointer shadow-sm transition-all"
+                        value={availableInventories.find(i => i.name === newItem.name)?.id || ''}
+                        onChange={handleInventoryChange}
+                        disabled={inventoryStatus === 'loading'}
+                    >
+                        <option className="text-slate-400" value="">{inventoryStatus === 'loading' ? 'Loading Catalog...' : 'Select Item from Catalog...'}</option>
+                        {availableInventories.map(inv => (
+                            <option key={inv.id} value={inv.id}>{inv.name} (SKU: {inv.sku})</option>
+                        ))}
+                    </select>
+
+                    <div className="flex gap-2">
+                        <input 
+                            type="number" 
+                            min="1" 
+                            className="w-20 bg-white p-2.5 rounded-lg text-xs font-bold border border-slate-200 text-center outline-none focus:border-brand-gold shadow-sm" 
+                            value={newItem.qty} 
+                            onChange={(e) => setNewItem({...newItem, qty: e.target.value})} 
+                        />
+                        <div className="flex-1 bg-slate-100 p-2.5 rounded-lg text-xs font-black border border-slate-200 flex items-center justify-end text-slate-400 shadow-inner cursor-not-allowed">
+                            {newItem.price ? `$${Number(newItem.price).toFixed(2)}` : '$0.00'}
+                        </div>
+                        <button 
+                            onClick={handleAddItem} 
+                            className="bg-slate-900 text-white px-4 rounded-lg hover:bg-slate-800 transition-all shadow-md active:scale-95 flex items-center justify-center"
+                        >
+                            <Plus size={16}/>
+                        </button>
+                    </div>
+                </div>
+            </div>
+          </div>
+
+          {/* Invoice Summary Preview */}
+          <div className="bg-slate-950 text-white p-6 rounded-3xl shadow-xl border border-slate-900 relative overflow-hidden">
+             <div className="absolute -right-8 -top-8 w-32 h-32 bg-brand-gold/10 rounded-full blur-2xl pointer-events-none"></div>
+             <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2 mb-4 border-b border-white/10 pb-3 relative z-10">
+                 <CreditCard size={14}/> Invoice Preview
+             </h3>
+             <div className="text-sm font-medium space-y-3 relative z-10 text-slate-300">
+               <div className="flex justify-between"><span>Subtotal</span> <span className="font-mono text-white">${subtotal.toFixed(2)}</span></div>
+               <div className="flex justify-between items-center">
+                   <span>Shipping Cost</span> 
+                   <div className="flex items-center border border-white/20 rounded-lg overflow-hidden bg-white/5 w-24">
+                       <span className="px-2 text-xs text-slate-400">$</span>
+                       <input 
+                           type="number" 
+                           className="w-full bg-transparent text-white font-mono outline-none py-1 text-right pr-2 text-sm" 
+                           value={shipping.shippingCost} 
+                           onChange={(e) => setShipping({...shipping, shippingCost: e.target.value})} 
+                       />
+                   </div>
+               </div>
+               <div className="flex justify-between"><span>Estimated Tax</span> <span className="font-mono text-white">${tax.toFixed(2)}</span></div>
+               <div className="flex justify-between border-t pt-4 mt-2 border-white/10 text-white items-end">
                  <span className="text-xs uppercase tracking-widest font-black text-slate-400">Total</span> 
                  <span className="font-mono text-3xl font-black text-brand-gold tracking-tight">${grandTotal.toFixed(2)}</span>
                </div>
              </div>
           </div>
+
         </div>
       </div>
     </div>

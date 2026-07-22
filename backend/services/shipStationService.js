@@ -1,4 +1,6 @@
 import axios from 'axios';
+import {configDotenv} from 'dotenv'
+configDotenv()
 
 // 1. Extract and securely clean environment variables
 const baseURL = (process.env.SHIPSTATION_API_URL || '').replace(/\/+$/, '');
@@ -86,6 +88,8 @@ export const createLabel = async (labelPayload) => {
 
 export const createShipment = async (shipmentPayload) => {
   try {
+    console.log('ship to', shipmentPayload?.ship_to)
+    console.log('ship from', shipmentPayload?.ship_from)
     const response = await shipStationAPI.post('/shipments', shipmentPayload);
     return response.data;
   } catch (error) { 

@@ -24,6 +24,21 @@ const normalizeCountry = (countryStr) => {
   return countryStr.substring(0, 2).toUpperCase(); 
 };
 
+// --- HELPER: Standardized Ship From Address ---
+const getMIKROShipFrom = () => ({
+  name: "MI-KRO Industries",
+  company_name: "MI-KRO Industries",
+  address_line1: "1509 RT 38",
+  address_line2: "Unit 9",
+  city_locality: "Hainesport",
+  state_province: "NJ",
+  postal_code: originZip,
+  country_code: "US",
+  phone: "6096940521",
+  email: "mike@mi-krologistics.com",
+  address_residential_indicator: "no"
+});
+
 // --- HELPER: Map Frontend Packages ---
 const mapPackages = (packages, totalWeightInOunces = 16) => {
   if (packages && packages.length > 0) {
@@ -47,6 +62,131 @@ const mapPackages = (packages, totalWeightInOunces = 16) => {
     dimensions: { unit: "inch", length: 10, width: 10, height: 10 }
   }];
 };
+
+// =====================================================================
+// CENTRALIZED CORE LOGIC FOR CREATING SHIPMENTS (USED BY ROUTES & AUTO-CREATE)
+// =====================================================================
+export const executeShipmentCreation = async (order, packages = [], isResidential = false, carrierCodeOverride = null, serviceCodeOverride = null) => {
+  const displayId = order.orderNumber || order._id.toString();
+  const { recipientName, line1, city, state, zip, country } = order.shippingAddress || {};
+  
+  if (!recipientName || !line1 || !city || !state || !zip) throw new Error('Incomplete destination address.');
+  
+  const finalCarrierType = carrierCodeOverride || order.shippingDetails?.carrierType;
+  const finalServiceCode = serviceCodeOverride || order.shippingDetails?.serviceCode;
+
+  if (!finalCarrierType || !finalServiceCode) throw new Error('Shipping carrier and service code must be selected.');
+
+  const divisionId = order.division._id || order.division;
+  const carrier = await Carrier.findOne({ carrierType: finalCarrierType, division: divisionId, isActive: true });
+  if (!carrier) throw new Error(`Carrier configuration not found for ${finalCarrierType}.`);
+
+  const shipToCountry = normalizeCountry(country);
+  const shipFromCountry = "US"; // Forced via MIKRO helper
+  const isInternational = shipToCountry !== shipFromCountry;
+
+  // Calculate dynamic weight if no explicit packages provided
+  const totalWeight = order.items?.reduce((acc, item) => acc + (Number(item.weight || 0) * Number(item.quantity || 1)), 0) || 16;
+  const finalPackages = (packages && packages.length > 0) ? mapPackages(packages) : mapPackages([], totalWeight);
+
+  const shipmentPayload = {
+    shipments: [
+      {
+        validate_address: "no_validation",
+        external_shipment_id: displayId, 
+        external_order_id: displayId,
+        create_sales_order: true, 
+        shipment_number: displayId,    
+        shipment_status: "pending",    
+        carrier_id: carrier.shipStationId, 
+        requested_shipment_service: finalServiceCode, 
+        ship_date: new Date().toISOString().split('T')[0] + "T00:00:00.000Z", 
+        ship_to: {
+          name: recipientName,
+          phone: order.shippingAddress.phone || "",
+          email: order.shippingAddress.email || "",
+          company_name: "", // Purposely left blank so the Brand doesn't show up on ShipTo
+          address_line1: line1,
+          address_line2: order.shippingAddress.line2 || "",
+          city_locality: city,
+          state_province: state,
+          postal_code: zip,
+          country_code: shipToCountry,
+          address_residential_indicator: isResidential ? "yes" : "no"
+        },
+        ship_from: getMIKROShipFrom(),
+        packages: finalPackages,
+        items: order.items.map(item => ({
+          name: item.name ? item.name.substring(0, 200) : "Merchandise",
+          sku: item.sku || "UNKNOWN",
+          quantity: item.quantity || 1,
+          weight: { value: item.weight || 0, unit: "ounce" }
+        })),
+        ...(isInternational && {
+          customs: {
+            contents: "merchandise",
+            non_delivery: "return_to_sender",
+            customs_items: order.items.map(item => ({
+              description: item.name ? item.name.substring(0, 50) : "Merchandise",
+              quantity: item.quantity || 1,
+              value: { currency: "USD", amount: item.unitPrice || 1 },
+              country_of_origin: shipFromCountry
+            }))
+          }
+        })
+      }
+    ]
+  };
+
+  const shipmentResponse = await createShipment(shipmentPayload);
+  
+  if (shipmentResponse?.hasErrors || shipmentResponse?.has_errors) {
+    const failedItem = shipmentResponse.shipments?.[0] || shipmentResponse.results?.[0];
+    const errorMessage = failedItem?.errors?.[0] || failedItem?.errorMessage || "ShipStation rejected the fulfillment criteria.";
+    throw new Error(errorMessage);
+  }
+
+  const processedShipment = shipmentResponse?.shipments?.[0] || shipmentResponse?.results?.[0] || shipmentResponse;
+  if (!processedShipment || (!processedShipment.shipment_id && !processedShipment.shipmentId)) {
+      throw new Error('ShipStation failed to return a valid shipment ID.');
+  }
+
+  // Update DB states exclusively to processing
+  order.status = 'Processing';
+  order.shippingDetails.carrierType = finalCarrierType;
+  order.shippingDetails.serviceCode = finalServiceCode;
+  
+  order.shipstationDetails = {
+    orderId: processedShipment.shipment_id || processedShipment.shipmentId,
+    orderKey: processedShipment.external_order_id || processedShipment.orderKey || '',
+    orderStatus: processedShipment.shipment_status || processedShipment.shipmentStatus || 'pending',
+    externalShipmentId: displayId 
+  };
+  await order.save();
+
+  let shipmentTracker = await Shipment.findOne({ order: order._id });
+  if (!shipmentTracker) {
+    shipmentTracker = new Shipment({
+      order: order._id,
+      division: divisionId,
+      currentStatus: 'Shipment Created',
+      isShipmentCreated: true,
+      statusHistory: [{ status: 'Shipment Created', notes: 'Pushed to fulfillment dashboard.' }]
+    });
+  } else {
+    shipmentTracker.isShipmentCreated = true;
+    shipmentTracker.currentStatus = 'Shipment Created';
+    shipmentTracker.statusHistory.push({ status: 'Shipment Created', notes: 'Pushed to fulfillment dashboard.' });
+  }
+  await shipmentTracker.save();
+
+  return { shipment: processedShipment, order };
+};
+
+
+// =====================================================================
+// API ROUTE HANDLERS
+// =====================================================================
 
 export const fetchWarehouses = catchAsync(async (req, res, next) => {
   try {
@@ -89,7 +229,7 @@ export const fetchLiveRates = catchAsync(async (req, res, next) => {
         name: address.firstName ? `${address.firstName} ${address.lastName}`.trim() : (address.name || "Customer"),
         phone: address.contactPhone || address.phone || "",
         email: address.contactEmail || address.email || "",
-        company_name: address.company || address.company_name || "",
+        company_name: "", // Explicitly blank
         address_line1: address.street1 || address.line1 || "123 Main St", 
         address_line2: address.street2 || address.line2 || "",
         city_locality: address.city || address.city_locality,
@@ -98,16 +238,7 @@ export const fetchLiveRates = catchAsync(async (req, res, next) => {
         country_code: normalizeCountry(address.country || address.country_code),
         address_residential_indicator: address.isResidential ? "yes" : "no"
       },
-      ship_from: {
-        name: "Origin Warehouse",
-        company_name: "DSM Logistics",
-        address_line1: "Warehouse St",
-        city_locality: "Origin City",
-        state_province: "Origin State",
-        postal_code: originZip,
-        country_code: "US",
-        address_residential_indicator: "no"
-      },
+      ship_from: getMIKROShipFrom(),
       packages: mapPackages([], totalWeightInOunces)
     },
     rate_options: { carrier_ids: [carrier.shipStationId] }
@@ -149,7 +280,7 @@ export const getCheckoutRates = catchAsync(async (req, res, next) => {
             name: address.firstName ? `${address.firstName} ${address.lastName}`.trim() : "Customer",
             phone: address.contactPhone || "",
             email: address.contactEmail || "",
-            company_name: address.company || "",
+            company_name: "", // Explicitly blank
             address_line1: address.street1 || address.street || "123 Main St",
             address_line2: address.street2 || "",
             city_locality: address.city,
@@ -158,16 +289,7 @@ export const getCheckoutRates = catchAsync(async (req, res, next) => {
             country_code: normalizeCountry(address.country),
             address_residential_indicator: "yes" 
           },
-          ship_from: {
-            name: "Origin Warehouse",
-            company_name: "DSM Logistics",
-            address_line1: "Warehouse St",
-            city_locality: "Origin City",
-            state_province: "Origin State",
-            postal_code: originZip,
-            country_code: "US",
-            address_residential_indicator: "no"
-          },
+          ship_from: getMIKROShipFrom(),
           packages: mapPackages([], totalWeightInOunces)
         },
         rate_options: { carrier_ids: [carrier.shipStationId] }
@@ -207,7 +329,7 @@ export const getCheckoutRates = catchAsync(async (req, res, next) => {
 
 export const generateOrderLabel = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
-  const { packages, weightInOunces, dimensions, isResidential, shipFrom, carrierCode, serviceCode, externalShipmentId, orderNumber } = req.body; 
+  const { packages, weightInOunces, dimensions, isResidential, carrierCode, serviceCode, externalShipmentId, orderNumber } = req.body; 
 
   const order = await Order.findById(orderId).populate('division customer');
   if (!order) return next(new AppError('Order not found', 404));
@@ -222,7 +344,7 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
   if (!carrier) return next(new AppError(`Carrier configuration not found.`, 404));
 
   const shipToCountry = normalizeCountry(order.shippingAddress.country);
-  const shipFromCountry = normalizeCountry(shipFrom?.country_code || "US");
+  const shipFromCountry = "US"; // Forced via MIKRO helper
   const isInternational = shipToCountry !== shipFromCountry;
 
   let formattedPackages = [];
@@ -255,7 +377,7 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
         name: order.shippingAddress.recipientName || "Customer",
         phone: order.shippingAddress.phone || "",
         email: order.shippingAddress.email || "",
-        company_name: order.customer?.customerName || "",
+        company_name: "", // Explicitly blank
         address_line1: order.shippingAddress.line1 || "123 Main St", 
         address_line2: order.shippingAddress.line2 || "",
         city_locality: order.shippingAddress.city,
@@ -264,19 +386,7 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
         country_code: shipToCountry,
         address_residential_indicator: isResidential ? "yes" : "no"
       },
-      ship_from: {
-        name: shipFrom?.name || "Fulfillment Center",
-        company_name: shipFrom?.company_name || "DSM Logistics",
-        phone: shipFrom?.phone || "",
-        email: shipFrom?.email || "",
-        address_line1: shipFrom?.address_line1 || "123 Warehouse St",
-        address_line2: shipFrom?.address_line2 || "",
-        city_locality: shipFrom?.city_locality || "Origin City",
-        state_province: shipFrom?.state_province || "NY",
-        postal_code: shipFrom?.postal_code || originZip,
-        country_code: shipFromCountry,
-        address_residential_indicator: shipFrom?.address_residential_indicator || "no"
-      },
+      ship_from: getMIKROShipFrom(),
       packages: formattedPackages,
       ...(isInternational && {
         customs: {
@@ -309,7 +419,7 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
         ...order.shipstationDetails,
         orderId: labelResponse.order_id || labelResponse.orderId || labelResponse.shipment_id || labelResponse.shipmentId || order.shipstationDetails?.orderId,
         labelId: labelResponse.label_id || labelResponse.labelId,
-        externalShipmentId: displayId // SAVE EXTERNAL ID FOR DOWNLOADING 
+        externalShipmentId: displayId 
     };
     await order.save();
 
@@ -343,153 +453,33 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
   } catch (error) { return next(new AppError(`ShipStation Label Error: ${error.message}`, 502)); }
 });
 
+// Used manually by users through the dashboard (Fallback if Auto-Create fails or if they want to adjust parameters)
 export const createOrderShipment = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
-  const { packages, isResidential, shipFrom, carrierCode, serviceCode, externalShipmentId, orderNumber } = req.body;
+  const { packages, isResidential, carrierCode, serviceCode } = req.body;
 
   const order = await Order.findById(orderId).populate('division customer');
   if (!order) return next(new AppError('Order not found in database.', 404));
 
-  const displayId = externalShipmentId || orderNumber || order.orderNumber || order._id.toString();
-  const { recipientName, line1, city, state, zip, country } = order.shippingAddress || {};
-  
-  if (!recipientName || !line1 || !city || !state || !zip) return next(new AppError('Incomplete destination address.', 400));
-  if (!shipFrom || !shipFrom.postal_code || !shipFrom.address_line1) return next(new AppError('A valid Ship-From (Origin) location is required.', 400));
-  if (!packages || !Array.isArray(packages) || packages.length === 0) return next(new AppError('Packages array is required to construct shipment.', 400));
-
-  const finalCarrierType = carrierCode || order.shippingDetails?.carrierType;
-  const finalServiceCode = serviceCode || order.shippingDetails?.serviceCode;
-
-  if (!finalCarrierType || !finalServiceCode) return next(new AppError('Carrier and service code are required.', 400));
-
-  const carrier = await Carrier.findOne({ carrierType: finalCarrierType, division: order.division._id, isActive: true });
-  if (!carrier) return next(new AppError(`Carrier not found for ${finalCarrierType}.`, 404));
-
-  const shipToCountry = normalizeCountry(country);
-  const shipFromCountry = normalizeCountry(shipFrom.country_code);
-  const isInternational = shipToCountry !== shipFromCountry;
-
-  const shipmentPayload = {
-    shipments: [
-      {
-        validate_address: "no_validation",
-        external_shipment_id: displayId, 
-        external_order_id: displayId,
-        create_sales_order: true, 
-        shipment_number: displayId,    
-        shipment_status: "pending",    
-        carrier_id: carrier.shipStationId, 
-        requested_shipment_service: finalServiceCode, 
-        ship_date: new Date().toISOString().split('T')[0] + "T00:00:00.000Z", 
-        ship_to: {
-          name: recipientName,
-          phone: order.shippingAddress.phone || "",
-          email: order.shippingAddress.email || order.customer?.contactEmail || "",
-          company_name: order.customer?.customerName || "",
-          address_line1: line1,
-          address_line2: order.shippingAddress.line2 || "",
-          city_locality: city,
-          state_province: state,
-          postal_code: zip,
-          country_code: shipToCountry,
-          address_residential_indicator: isResidential ? "yes" : "no"
-        },
-        ship_from: {
-          name: shipFrom.name || "Fulfillment Center",
-          phone: shipFrom.phone || "",
-          email: shipFrom.email || "",
-          company_name: shipFrom.company_name || shipFrom.name,
-          address_line1: shipFrom.address_line1,
-          address_line2: shipFrom.address_line2 || "",
-          city_locality: shipFrom.city_locality,
-          state_province: shipFrom.state_province,
-          postal_code: shipFrom.postal_code,
-          country_code: shipFromCountry,
-          address_residential_indicator: shipFrom.address_residential_indicator || "no"
-        },
-        packages: mapPackages(packages),
-        items: order.items.map(item => ({
-          name: item.name ? item.name.substring(0, 200) : "Merchandise",
-          sku: item.sku || "UNKNOWN",
-          quantity: item.quantity || 1,
-          weight: { value: item.weight || 0, unit: "ounce" }
-        })),
-        ...(isInternational && {
-          customs: {
-            contents: "merchandise",
-            non_delivery: "return_to_sender",
-            customs_items: order.items.map(item => ({
-              description: item.name ? item.name.substring(0, 50) : "Merchandise",
-              quantity: item.quantity || 1,
-              value: { currency: "USD", amount: item.unitPrice || 1 },
-              country_of_origin: shipFromCountry
-            }))
-          }
-        })
-      }
-    ]
-  };
-
   try {
-    const shipmentResponse = await createShipment(shipmentPayload);
-    
-    if (shipmentResponse?.hasErrors || shipmentResponse?.has_errors) {
-      const failedItem = shipmentResponse.shipments?.[0] || shipmentResponse.results?.[0];
-      const errorMessage = failedItem?.errors?.[0] || failedItem?.errorMessage || "ShipStation rejected the fulfillment criteria.";
-      return next(new AppError(`ShipStation Rejected: ${errorMessage}`, 400));
-    }
-
-    const processedShipment = shipmentResponse?.shipments?.[0] || shipmentResponse?.results?.[0] || shipmentResponse;
-    if (!processedShipment || (!processedShipment.shipment_id && !processedShipment.shipmentId)) {
-        return next(new AppError('ShipStation failed to return a valid shipment ID.', 502));
-    }
-
-    order.status = 'Processing';
-    order.shippingDetails.carrierType = finalCarrierType;
-    order.shippingDetails.serviceCode = finalServiceCode;
-    
-    order.shipstationDetails = {
-      orderId: processedShipment.shipment_id || processedShipment.shipmentId,
-      orderKey: processedShipment.external_order_id || processedShipment.orderKey || '',
-      orderStatus: processedShipment.shipment_status || processedShipment.shipmentStatus || 'pending',
-      externalShipmentId: displayId // SAVE EXTERNAL ID FOR DOWNLOADING
-    };
-    await order.save();
-
-    let shipmentTracker = await Shipment.findOne({ order: order._id });
-    if (!shipmentTracker) {
-      shipmentTracker = new Shipment({
-        order: order._id,
-        division: order.division._id,
-        currentStatus: 'Shipment Created',
-        isShipmentCreated: true,
-        statusHistory: [{ status: 'Shipment Created', notes: 'Pushed to fulfillment dashboard.' }]
-      });
-    } else {
-      shipmentTracker.isShipmentCreated = true;
-      shipmentTracker.currentStatus = 'Shipment Created';
-      shipmentTracker.statusHistory.push({ status: 'Shipment Created', notes: 'Pushed to fulfillment dashboard.' });
-    }
-    await shipmentTracker.save();
-
-    res.status(200).json({ status: 'success', message: 'Shipment pushed to ShipStation.', data: { shipment: processedShipment, order } });
-  } catch (error) { return next(new AppError(`ShipStation API Error: ${error.message}`, 502)); }
+    const result = await executeShipmentCreation(order, packages, isResidential, carrierCode, serviceCode);
+    res.status(200).json({ status: 'success', message: 'Shipment pushed to ShipStation.', data: result });
+  } catch (error) {
+    return next(new AppError(`ShipStation Rejected: ${error.message}`, 400));
+  }
 });
 
-// @desc    Download an existing label PDF for an order via external_shipment_id
 export const downloadOrderLabel = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
 
   const order = await Order.findById(orderId);
   if (!order) return next(new AppError('Order not found', 400));
 
-  // Retrieve the externalShipmentId we safely recorded during creation, or fallback to standard logic
   const externalId = order.shipstationDetails?.externalShipmentId || order.orderNumber || order._id.toString();
 
   try {
     const labelResponse = await getLabelByExternalId(externalId);
 
-    // Shipstation JSON mapping for download link
     const pdfUrl = labelResponse?.label_download?.pdf || labelResponse?.label_download?.href || labelResponse?.download_url;
 
     if (pdfUrl) {

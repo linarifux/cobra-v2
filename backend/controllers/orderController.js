@@ -2,6 +2,7 @@ import Order from '../models/Order.js';
 import Customer from '../models/Customer.js';
 import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
+import { executeShipmentCreation } from './shipStationController.js'; 
 
 // Helper to determine the user's access tier
 const getAccessLevel = (user) => {
@@ -14,7 +15,7 @@ const getAccessLevel = (user) => {
   return 'standard_user';
 };
 
-// @desc    Create a new order
+// @desc    Create a new order & immediately push to ShipStation
 // @route   POST /api/v1/orders
 export const createOrder = catchAsync(async (req, res, next) => {
   if (!req.body.customer && req.params.customerId) req.body.customer = req.params.customerId;
@@ -24,8 +25,35 @@ export const createOrder = catchAsync(async (req, res, next) => {
   // This allows the frontend to explicitly submit unassigned/guest checkout orders.
   if (!req.body.user && req.params.userId) req.body.user = req.params.userId;
 
-  const order = await Order.create(req.body);
+  // STRICT CHECK: Ensure shipping info exists because we MUST create a shipment immediately
+  if (!req.body.shippingDetails?.carrierType || !req.body.shippingDetails?.serviceCode) {
+    return next(new AppError('Shipping carrier and service code are required to process and create the order.', 400));
+  }
 
+  // Fetch customer to safely pass the brand name to the ShipStation helper (for Ship From address)
+  const customer = await Customer.findById(req.body.customer);
+  if (!customer) return next(new AppError('Customer not found.', 404));
+
+  // Create an unsaved Mongoose document instance
+  // This instantly generates an `_id` to be used as the ShipStation external_order_id
+  let order = new Order(req.body);
+  
+  // Temporarily attach the customer object so the ShipStation helper can read `order.customer.customerName`
+  order.customer = customer;
+
+  try {
+    // Attempt to create the shipment in ShipStation BEFORE saving the order to the database.
+    // executeShipmentCreation handles calling `order.save()` internally ONLY if the ShipStation API call is successful.
+    // It also handles changing `order.status` to 'Processing'.
+    const shipmentResult = await executeShipmentCreation(order);
+    order = shipmentResult.order;
+  } catch (error) {
+    // If ShipStation fails, an error is thrown, `order.save()` is NEVER reached, and the DB remains clean.
+    return next(new AppError(`Order discarded. ShipStation rejected the shipment: ${error.message}`, 400));
+  }
+
+  // If we got here, the shipment was successful and the order was saved.
+  // Fully populate it for the frontend response.
   await order.populate([
     { path: 'customer', select: 'customerName contactEmail' },
     { path: 'division', select: 'divisionName divisionCode' },

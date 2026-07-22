@@ -94,6 +94,7 @@ export const generateOrderLabel = createAsyncThunk(
   "orders/generateLabel",
   async ({ orderId, fulfillmentData }, { rejectWithValue }) => {
     try {
+      console.log(fulfillmentData)
       const response = await api.post(`/shipstation/label/${orderId}`, fulfillmentData);
       return response.data.data; 
     } catch (error) {
