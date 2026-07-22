@@ -420,7 +420,7 @@ export default function OrderDetailsPage() {
           return [
               item.sku,
               item.name,
-              "",     
+              qtyStr,     
               qtyStr, 
               qtyStr  
           ];
