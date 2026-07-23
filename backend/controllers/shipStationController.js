@@ -152,7 +152,7 @@ export const executeShipmentCreation = async (order, packages = [], isResidentia
   }
 
   // Update DB states exclusively to processing
-  order.status = 'Processing';
+  order.status = 'New';
   order.shippingDetails.carrierType = finalCarrierType;
   order.shippingDetails.serviceCode = finalServiceCode;
   
