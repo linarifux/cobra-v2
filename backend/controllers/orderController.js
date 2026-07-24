@@ -3,6 +3,7 @@ import Customer from '../models/Customer.js';
 import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 import { executeShipmentCreation } from './shipStationController.js'; 
+import { cancelShipment, voidLabel } from '../services/shipStationService.js'; 
 
 // Helper to determine the user's access tier
 const getAccessLevel = (user) => {
@@ -21,39 +22,25 @@ export const createOrder = catchAsync(async (req, res, next) => {
   if (!req.body.customer && req.params.customerId) req.body.customer = req.params.customerId;
   if (!req.body.division && req.params.divisionId) req.body.division = req.params.divisionId;
   
-  // NOTE: We no longer auto-assign req.user._id if req.body.user is missing or null.
-  // This allows the frontend to explicitly submit unassigned/guest checkout orders.
   if (!req.body.user && req.params.userId) req.body.user = req.params.userId;
 
-  // STRICT CHECK: Ensure shipping info exists because we MUST create a shipment immediately
   if (!req.body.shippingDetails?.carrierType || !req.body.shippingDetails?.serviceCode) {
     return next(new AppError('Shipping carrier and service code are required to process and create the order.', 400));
   }
 
-  // Fetch customer to safely pass the brand name to the ShipStation helper (for Ship From address)
   const customer = await Customer.findById(req.body.customer);
   if (!customer) return next(new AppError('Customer not found.', 404));
 
-  // Create an unsaved Mongoose document instance
-  // This instantly generates an `_id` to be used as the ShipStation external_order_id
   let order = new Order(req.body);
-  
-  // Temporarily attach the customer object so the ShipStation helper can read `order.customer.customerName`
   order.customer = customer;
 
   try {
-    // Attempt to create the shipment in ShipStation BEFORE saving the order to the database.
-    // executeShipmentCreation handles calling `order.save()` internally ONLY if the ShipStation API call is successful.
-    // It also handles changing `order.status` to 'Processing'.
     const shipmentResult = await executeShipmentCreation(order);
     order = shipmentResult.order;
   } catch (error) {
-    // If ShipStation fails, an error is thrown, `order.save()` is NEVER reached, and the DB remains clean.
     return next(new AppError(`Order discarded. ShipStation rejected the shipment: ${error.message}`, 400));
   }
 
-  // If we got here, the shipment was successful and the order was saved.
-  // Fully populate it for the frontend response.
   await order.populate([
     { path: 'customer', select: 'customerName contactEmail' },
     { path: 'division', select: 'divisionName divisionCode' },
@@ -68,17 +55,14 @@ export const createOrder = catchAsync(async (req, res, next) => {
 export const getAllOrders = catchAsync(async (req, res, next) => {
   let filter = {};
   
-  // 1. Process nested route params if they exist
   if (req.params.customerId) filter.customer = req.params.customerId;
   if (req.params.divisionId) filter.division = req.params.divisionId;
 
-  // 2. Safely apply frontend query filters (Ignore 'All' defaults from UI)
   if (req.query.customer && req.query.customer !== 'All') filter.customer = req.query.customer;
   if (req.query.division && req.query.division !== 'All') filter.division = req.query.division;
   if (req.query.user && req.query.user !== 'All') filter.user = req.query.user;
   if (req.query.status && req.query.status !== 'All') filter.status = req.query.status;
   
-  // Apply Search Logic
   if (req.query.search) {
     filter.$or = [
       { orderNumber: { $regex: req.query.search, $options: 'i' } },
@@ -86,30 +70,20 @@ export const getAllOrders = catchAsync(async (req, res, next) => {
     ];
   }
 
-  // --- 3-TIER ROLE-BASED ACCESS CONTROL (RBAC) ---
   const accessLevel = getAccessLevel(req.user);
 
   if (accessLevel === 'standard_user') {
-    // Standard user: Forcefully scope to their own orders, ignoring any other user query
     filter.user = req.user._id;
-
   } else if (accessLevel === 'division_admin') {
-    // Super User: Scope to their assigned divisions
     const userDivisions = req.user.divisions ? req.user.divisions.map(d => String(d._id || d)) : [];
     
     if (filter.division) {
-      // If a specific division is requested, verify they have access to it
       if (!userDivisions.includes(String(filter.division))) {
         return next(new AppError('You do not have permission to view orders for this division', 403));
       }
     } else {
-      // If no division is specified, return orders from ALL their assigned divisions
       filter.division = { $in: userDivisions };
     }
-  } else {
-    // Global Admin: Do nothing extra. 
-    // If they didn't specifically filter by division or user, the filter stays empty 
-    // and fetches ALL orders across the entire database.
   }
 
   const orders = await Order.find(filter)
@@ -135,7 +109,6 @@ export const getOrder = catchAsync(async (req, res, next) => {
 
   const accessLevel = getAccessLevel(req.user);
   
-  // Prevent unauthorized ID guessing
   if (accessLevel !== 'global_admin') {
     const orderUserId = String(order.user?._id || order.user);
     const orderDivisionId = String(order.division?._id || order.division);
@@ -146,7 +119,6 @@ export const getOrder = catchAsync(async (req, res, next) => {
         return next(new AppError('You do not have permission to view orders outside your assigned divisions', 403));
       }
     } else {
-      // Check if order belongs to the standard user (Guest checkouts won't be accessible by standard users)
       if (orderUserId !== String(req.user._id)) {
         return next(new AppError('You do not have permission to view this order', 403));
       }
@@ -178,6 +150,17 @@ export const updateOrder = catchAsync(async (req, res, next) => {
       if (orderUserId !== String(req.user._id)) {
         return next(new AppError('You do not have permission to update this order', 403));
       }
+    }
+  }
+
+  if (req.body.status === 'Cancelled' && order.status !== 'Cancelled') {
+    const labelId = order.shipstationDetails?.labelId;
+    const shipmentId = order.shipstationDetails?.orderId;
+    try {
+      if (labelId) await voidLabel(labelId);
+      else if (shipmentId) await cancelShipment(shipmentId);
+    } catch(e) {
+       console.warn(`Failed to selectively void ShipStation records for cancelled order ${order._id}:`, e.message);
     }
   }
 
@@ -213,6 +196,16 @@ export const deleteOrder = catchAsync(async (req, res, next) => {
         return next(new AppError('You do not have permission to delete this order', 403));
       }
     }
+  }
+
+  const labelId = order.shipstationDetails?.labelId;
+  const shipmentId = order.shipstationDetails?.orderId;
+  
+  try {
+    if (labelId) await voidLabel(labelId);
+    else if (shipmentId) await cancelShipment(shipmentId);
+  } catch(e) {
+    console.warn(`Failed to cleanup ShipStation records for deleted order ${order._id}:`, e.message);
   }
 
   await Order.findByIdAndDelete(req.params.id);

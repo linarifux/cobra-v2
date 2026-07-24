@@ -8,19 +8,19 @@ import {
 } from '../controllers/orderController.js';
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
-// mergeParams: true allows access to :customerId from nested customerRoutes
+// mergeParams: true allows access to :customerId or :divisionId from nested parent routes
 const router = express.Router({ mergeParams: true });
 
-// Uncomment when auth is ready
+// Enforce authentication for all order operations
 router.use(protect);
 
 router.route('/')
   .get(getAllOrders)
-  .post(createOrder);
+  .post(createOrder); 
 
 router.route('/:id')
   .get(getOrder)
   .put(updateOrder)
-  .delete(restrictTo('admin', 'super_admin', 'staff'), deleteOrder);
+  .delete(restrictTo('admin', 'super_admin', 'staff'), deleteOrder); 
 
 export default router;

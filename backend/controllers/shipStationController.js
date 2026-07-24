@@ -6,7 +6,9 @@ import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 import { 
   getRates, getWarehouses, getCarriers, 
-  createLabel, createShipment, getLabelByExternalId 
+  createLabel, createShipment, getLabelByExternalId,
+  cancelShipment, voidLabel,
+  createLabelForShipment, fetchLabelBufferAsBase64
 } from '../services/shipStationService.js';
 
 // Fallback to 08036 if not set in .env
@@ -24,7 +26,7 @@ const normalizeCountry = (countryStr) => {
   return countryStr.substring(0, 2).toUpperCase(); 
 };
 
-// --- HELPER: Standardized Ship From Address ---
+// --- HELPER: Strictly Pure Ship From Address (No Brand Names or c/o) ---
 const getMIKROShipFrom = () => ({
   name: "MI-KRO Industries",
   company_name: "MI-KRO Industries",
@@ -68,7 +70,7 @@ const mapPackages = (packages, totalWeightInOunces = 16) => {
 // =====================================================================
 export const executeShipmentCreation = async (order, packages = [], isResidential = false, carrierCodeOverride = null, serviceCodeOverride = null) => {
   const displayId = order.orderNumber || order._id.toString();
-  const { recipientName, line1, city, state, zip, country } = order.shippingAddress || {};
+  const { recipientName, line1, line2, city, state, zip, country, phone } = order.shippingAddress || {};
   
   if (!recipientName || !line1 || !city || !state || !zip) throw new Error('Incomplete destination address.');
   
@@ -82,10 +84,6 @@ export const executeShipmentCreation = async (order, packages = [], isResidentia
   if (!carrier) throw new Error(`Carrier configuration not found for ${finalCarrierType}.`);
 
   const shipToCountry = normalizeCountry(country);
-  const shipFromCountry = "US"; // Forced via MIKRO helper
-  const isInternational = shipToCountry !== shipFromCountry;
-
-  // Calculate dynamic weight if no explicit packages provided
   const totalWeight = order.items?.reduce((acc, item) => acc + (Number(item.weight || 0) * Number(item.quantity || 1)), 0) || 16;
   const finalPackages = (packages && packages.length > 0) ? mapPackages(packages) : mapPackages([], totalWeight);
 
@@ -103,11 +101,11 @@ export const executeShipmentCreation = async (order, packages = [], isResidentia
         ship_date: new Date().toISOString().split('T')[0] + "T00:00:00.000Z", 
         ship_to: {
           name: recipientName,
-          phone: order.shippingAddress.phone || "",
-          email: order.shippingAddress.email || "",
+          phone: phone || "",
+          email: order.shippingAddress.email || order.customer?.contactEmail || "",
           company_name: "", // Purposely left blank so the Brand doesn't show up on ShipTo
           address_line1: line1,
-          address_line2: order.shippingAddress.line2 || "",
+          address_line2: line2 || "",
           city_locality: city,
           state_province: state,
           postal_code: zip,
@@ -122,7 +120,7 @@ export const executeShipmentCreation = async (order, packages = [], isResidentia
           quantity: item.quantity || 1,
           weight: { value: item.weight || 0, unit: "ounce" }
         })),
-        ...(isInternational && {
+        ...(shipToCountry !== 'US' && {
           customs: {
             contents: "merchandise",
             non_delivery: "return_to_sender",
@@ -130,7 +128,7 @@ export const executeShipmentCreation = async (order, packages = [], isResidentia
               description: item.name ? item.name.substring(0, 50) : "Merchandise",
               quantity: item.quantity || 1,
               value: { currency: "USD", amount: item.unitPrice || 1 },
-              country_of_origin: shipFromCountry
+              country_of_origin: "US"
             }))
           }
         })
@@ -182,7 +180,6 @@ export const executeShipmentCreation = async (order, packages = [], isResidentia
 
   return { shipment: processedShipment, order };
 };
-
 
 // =====================================================================
 // API ROUTE HANDLERS
@@ -327,84 +324,46 @@ export const getCheckoutRates = catchAsync(async (req, res, next) => {
   }
 });
 
+// --- FIX: Restructured completely to avoid duplicates ("1 of 2") and handle authenticated 404 links ---
 export const generateOrderLabel = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
-  const { packages, weightInOunces, dimensions, isResidential, carrierCode, serviceCode, externalShipmentId, orderNumber } = req.body; 
+  const { packages, weightInOunces, carrierCode, serviceCode } = req.body; 
 
   const order = await Order.findById(orderId).populate('division customer');
   if (!order) return next(new AppError('Order not found', 404));
 
-  const displayId = externalShipmentId || orderNumber || order.orderNumber || order._id.toString();
   const finalCarrierType = carrierCode || order.shippingDetails?.carrierType;
   const finalServiceCode = serviceCode || order.shippingDetails?.serviceCode;
 
   if (!finalCarrierType || !finalServiceCode) return next(new AppError('Shipping carrier and service code must be selected.', 400));
   
-  const carrier = await Carrier.findOne({ carrierType: finalCarrierType, division: order.division._id, isActive: true });
-  if (!carrier) return next(new AppError(`Carrier configuration not found.`, 404));
+  // 1. EXTRACT EXISTING SHIPMENT ID (Prevents Duplication)
+  const shipmentId = order.shipstationDetails?.orderId;
+  if (!shipmentId) return next(new AppError('No active ShipStation shipment found for this order.', 400));
 
-  const shipToCountry = normalizeCountry(order.shippingAddress.country);
-  const shipFromCountry = "US"; // Forced via MIKRO helper
-  const isInternational = shipToCountry !== shipFromCountry;
-
-  let formattedPackages = [];
+  let totalWeight = weightInOunces || 16;
   if (packages && packages.length > 0) {
-    formattedPackages = mapPackages(packages);
-  } else {
-    formattedPackages = mapPackages([], weightInOunces);
-    if (dimensions) {
-      formattedPackages[0].dimensions = {
-        unit: "inch",
-        length: Number(dimensions.length) || 10,
-        width: Number(dimensions.width) || 10,
-        height: Number(dimensions.height) || 10
-      };
-    }
+    totalWeight = packages.reduce((acc, p) => acc + Number(p.weightInOunces || 0), 0);
   }
 
+  // 2. USE THE EXACT SNIPPET PAYLOAD (With Carrier/Weight overrides included to ensure UI changes sync)
   const labelPayload = {
-    test_label: carrier.activeEnvironment === 'test',
-    validate_address: "no_validation",
-    label_format: "pdf",
-    label_layout: "4x6",
-    shipment: {
-      carrier_id: carrier.shipStationId, 
-      service_code: finalServiceCode,
-      external_shipment_id: displayId,
-      external_order_id: displayId,
-      ship_date: new Date().toISOString().split('T')[0] + "T00:00:00.000Z", 
-      ship_to: {
-        name: order.shippingAddress.recipientName || "Customer",
-        phone: order.shippingAddress.phone || "",
-        email: order.shippingAddress.email || "",
-        company_name: "", // Explicitly blank
-        address_line1: order.shippingAddress.line1 || "123 Main St", 
-        address_line2: order.shippingAddress.line2 || "",
-        city_locality: order.shippingAddress.city,
-        state_province: order.shippingAddress.state,
-        postal_code: order.shippingAddress.zip,
-        country_code: shipToCountry,
-        address_residential_indicator: isResidential ? "yes" : "no"
-      },
-      ship_from: getMIKROShipFrom(),
-      packages: formattedPackages,
-      ...(isInternational && {
-        customs: {
-          contents: "merchandise",
-          non_delivery: "return_to_sender",
-          customs_items: order.items.map(item => ({
-            description: item.name ? item.name.substring(0, 50) : "Merchandise",
-            quantity: item.quantity || 1,
-            value: { currency: "USD", amount: item.unitPrice || 1 },
-            country_of_origin: shipFromCountry
-          }))
-        }
-      })
-    }
+    carrierCode: finalCarrierType,
+    serviceCode: finalServiceCode,
+    weight: {
+      value: totalWeight,
+      units: "ounces"
+    },
+    validate_address: 'no_validation',
+    label_layout: '4x6',
+    label_format: 'pdf',
+    label_download_type: 'url',
+    display_scheme: 'label'
   };
 
   try {
-    const labelResponse = await createLabel(labelPayload);
+    // Generates the label directly on the existing Shipment ID
+    const labelResponse = await createLabelForShipment(shipmentId, labelPayload);
 
     if (labelResponse?.hasErrors) {
        const errorMsg = labelResponse.shipments?.[0]?.errorMessage || labelResponse.results?.[0]?.errorMessage || "Failed to generate label.";
@@ -413,13 +372,11 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
 
     order.status = 'Shipped';
     order.shippingDetails.trackingNumber = labelResponse.tracking_number || labelResponse.trackingNumber;
-    order.shippingDetails.shippingCost = labelResponse.shipment_cost?.amount || labelResponse.shipmentCost; 
+    order.shippingDetails.shippingCost = labelResponse.shipment_cost?.amount || labelResponse.shipmentCost || order.shippingDetails.shippingCost; 
     
     order.shipstationDetails = {
         ...order.shipstationDetails,
-        orderId: labelResponse.order_id || labelResponse.orderId || labelResponse.shipment_id || labelResponse.shipmentId || order.shipstationDetails?.orderId,
         labelId: labelResponse.label_id || labelResponse.labelId,
-        externalShipmentId: displayId 
     };
     await order.save();
 
@@ -442,18 +399,30 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
     }
     await shipmentTracker.save();
 
+    let labelData = labelResponse.label_data || labelResponse.labelData;
+    let labelUrl = labelResponse.label_download?.pdf || labelResponse.label_download?.href || labelResponse.download_url || labelResponse.label_url;
+
+    // 3. SECURE PROXY: Intercept authenticated API links to bypass frontend 404s
+    if (!labelData && labelUrl && labelUrl.includes('api.shipstation.com')) {
+       const proxyBase64 = await fetchLabelBufferAsBase64(labelUrl);
+       if (proxyBase64) {
+           labelData = proxyBase64;
+           labelUrl = null; // Force frontend to use the Base64 data string
+       }
+    }
+
     res.status(200).json({
       status: 'success',
       data: {
         order,
-        labelData: labelResponse.label_data || labelResponse.labelData, 
+        labelData: labelData, 
+        labelUrl: labelUrl,
         trackingNumber: labelResponse.tracking_number || labelResponse.trackingNumber
       }
     });
   } catch (error) { return next(new AppError(`ShipStation Label Error: ${error.message}`, 502)); }
 });
 
-// Used manually by users through the dashboard (Fallback if Auto-Create fails or if they want to adjust parameters)
 export const createOrderShipment = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
   const { packages, isResidential, carrierCode, serviceCode } = req.body;
@@ -463,12 +432,13 @@ export const createOrderShipment = catchAsync(async (req, res, next) => {
 
   try {
     const result = await executeShipmentCreation(order, packages, isResidential, carrierCode, serviceCode);
-    res.status(200).json({ status: 'success', message: 'Shipment pushed to ShipStation.', data: result });
+    res.status(200).json({ status: 'success', message: 'Order created in ShipStation.', data: result });
   } catch (error) {
     return next(new AppError(`ShipStation Rejected: ${error.message}`, 400));
   }
 });
 
+// --- FIX: Secure Proxy applied to standalone downloads as well ---
 export const downloadOrderLabel = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
 
@@ -480,24 +450,91 @@ export const downloadOrderLabel = catchAsync(async (req, res, next) => {
   try {
     const labelResponse = await getLabelByExternalId(externalId);
 
-    const pdfUrl = labelResponse?.label_download?.pdf || labelResponse?.label_download?.href || labelResponse?.download_url;
+    let pdfUrl = labelResponse?.label_download?.pdf || labelResponse?.label_download?.href || labelResponse?.download_url;
+    let labelData = labelResponse?.label_data || labelResponse?.labelData;
 
-    if (pdfUrl) {
-      return res.status(200).json({
-        status: 'success',
-        data: { labelUrl: pdfUrl }
-      });
+    // SECURE PROXY: Intercept authenticated API links to bypass frontend 404s
+    if (!labelData && pdfUrl && pdfUrl.includes('api.shipstation.com')) {
+        const proxyBase64 = await fetchLabelBufferAsBase64(pdfUrl);
+        if (proxyBase64) {
+            labelData = proxyBase64;
+            pdfUrl = null;
+        }
     }
 
-    if (labelResponse?.label_data) {
-       return res.status(200).json({
-          status: 'success',
-          data: { labelData: labelResponse.label_data }
-       })
+    if (labelData) {
+       return res.status(200).json({ status: 'success', data: { labelData } });
+    }
+
+    if (pdfUrl) {
+      return res.status(200).json({ status: 'success', data: { labelUrl: pdfUrl } });
     }
 
     return next(new AppError('Label data could not be retrieved from ShipStation.', 400));
   } catch (error) {
     return next(new AppError(`ShipStation API Error: ${error.message}`, 502));
+  }
+});
+
+export const voidOrderLabel = catchAsync(async (req, res, next) => {
+  const { orderId } = req.params;
+  const order = await Order.findById(orderId);
+  if (!order) return next(new AppError('Order not found', 404));
+
+  const labelId = order.shipstationDetails?.labelId;
+  if (!labelId) return next(new AppError('No active label found for this order to void.', 400));
+
+  try {
+    await voidLabel(labelId);
+    
+    order.status = 'New'; // Status updated to New after the label is void
+    order.shippingDetails.trackingNumber = '';
+    order.shippingDetails.shippingCost = 0;
+    
+    order.shipstationDetails.labelId = null;
+    await order.save();
+
+    let shipmentTracker = await Shipment.findOne({ order: order._id });
+    if (shipmentTracker) {
+      shipmentTracker.isLabelPurchased = false;
+      shipmentTracker.currentStatus = 'Label Voided';
+      shipmentTracker.shipStationLabelId = '';
+      shipmentTracker.statusHistory.push({ status: 'Label Voided', notes: 'Label was manually voided.' });
+      await shipmentTracker.save();
+    }
+
+    res.status(200).json({ status: 'success', message: 'Label successfully voided.', data: { order } });
+  } catch (error) {
+    return next(new AppError(`ShipStation Void Label Error: ${error.message}`, 502));
+  }
+});
+
+export const cancelOrderShipment = catchAsync(async (req, res, next) => {
+  const { orderId } = req.params;
+  const order = await Order.findById(orderId);
+  if (!order) return next(new AppError('Order not found', 404));
+
+  const shipmentId = order.shipstationDetails?.orderId; 
+  if (!shipmentId) return next(new AppError('No shipment found for this order to cancel.', 400));
+
+  try {
+    await cancelShipment(shipmentId);
+    
+    order.status = 'Cancelled';
+    order.shipstationDetails.orderId = null;
+    order.shipstationDetails.orderStatus = 'cancelled';
+    await order.save();
+
+    let shipmentTracker = await Shipment.findOne({ order: order._id });
+    if (shipmentTracker) {
+      shipmentTracker.isShipmentCreated = false;
+      shipmentTracker.currentStatus = 'Shipment Cancelled';
+      shipmentTracker.statusHistory.push({ status: 'Shipment Cancelled', notes: 'Shipment was manually cancelled.' });
+      await shipmentTracker.save();
+    }
+
+    res.status(200).json({ status: 'success', message: 'Shipment successfully cancelled.', data: { order } });
+  } catch (error) {
+    return next(new AppError(`ShipStation Cancel Shipment Error: ${error.message}`, 502));
   }
 });

@@ -6,7 +6,9 @@ import {
     fetchCarriers, 
     generateOrderLabel,
     createOrderShipment,
-    downloadOrderLabel 
+    downloadOrderLabel,
+    voidOrderLabel,
+    cancelOrderShipment
 } from '../controllers/shipStationController.js';
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
@@ -29,7 +31,9 @@ router.post('/checkout/rates', getCheckoutRates);
 router.post('/label/:orderId', restrictTo('admin', 'super_admin', 'staff'), generateOrderLabel);
 router.post('/shipments/:orderId', restrictTo('admin', 'super_admin', 'staff'), createOrderShipment);
 
-// --- NEW ROUTE: View/Download Purchased Label ---
+// View/Download/Cancel/Void operations
 router.get('/labels/download/:orderId', restrictTo('admin', 'super_admin', 'staff'), downloadOrderLabel);
+router.put('/labels/void/:orderId', restrictTo('admin', 'super_admin', 'staff'), voidOrderLabel);
+router.put('/shipments/cancel/:orderId', restrictTo('admin', 'super_admin', 'staff'), cancelOrderShipment);
 
 export default router;

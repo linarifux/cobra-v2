@@ -5,17 +5,20 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner'; 
 import { 
   ArrowLeft, Truck, MapPin, User, CreditCard, 
-  Trash2, Edit2, Check, Plus, MessageSquare, 
+  Trash2, Edit2, Check, Plus, MessageSquare, Ban,
   Mail, Phone, X, Weight, Loader2, Save, ExternalLink, 
   CloudUpload, CheckCircle2, PackageCheck, AlertTriangle, Clock, Printer, ChevronDown, Search
 } from 'lucide-react';
 
-import axios from 'axios';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 import api from '../utils/api'; 
-import { fetchOrderById, updateOrder, clearCurrentOrder, generateOrderLabel, downloadPurchasedLabel } from '../store/slices/orderSlice'; 
+import { 
+  fetchOrderById, updateOrder, clearCurrentOrder, 
+  generateOrderLabel, downloadPurchasedLabel,
+  voidOrderLabel, cancelOrderShipment 
+} from '../store/slices/orderSlice'; 
 import { fetchInventory, updateInventory } from '../store/slices/inventorySlice'; 
 import { fetchUsers } from '../store/slices/userSlice'; 
 
@@ -33,12 +36,17 @@ const generateTrackingLink = (carrier, trackingNumber) => {
   return `https://www.google.com/search?q=track+package+${trackingNumber}`;
 };
 
-// --- Helper: Robust PDF Download ---
+// --- FIX: Bulletproof Base64 string decoding to prevent DOMExceptions that triggered the bad fallback ---
 const downloadBase64PDF = (base64Data, filename) => {
   try {
-    const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
-    const byteCharacters = atob(cleanBase64);
+    let cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
     
+    // Automatically pad Base64 string to ensure string length is a multiple of 4
+    while (cleanBase64.length % 4 > 0) {
+      cleanBase64 += '=';
+    }
+    
+    const byteCharacters = atob(cleanBase64);
     const byteNumbers = new Array(byteCharacters.length);
     for (let i = 0; i < byteCharacters.length; i++) {
       byteNumbers[i] = byteCharacters.charCodeAt(i);
@@ -62,7 +70,6 @@ const downloadBase64PDF = (base64Data, filename) => {
   }
 };
 
-// --- Static Data ---
 const US_STATES = [
   { name: 'Alabama', code: 'AL' }, { name: 'Alaska', code: 'AK' }, { name: 'Arizona', code: 'AZ' },
   { name: 'Arkansas', code: 'AR' }, { name: 'California', code: 'CA' }, { name: 'Colorado', code: 'CO' },
@@ -106,11 +113,13 @@ export default function OrderDetailsPage() {
   const [editing, setEditing] = useState({ logistics: false, address: false });
   
   const [isSaving, setIsSaving] = useState(false);
-  const [isPushingShipment, setIsPushingShipment] = useState(false);
   const [isGeneratingLabel, setIsGeneratingLabel] = useState(false);
   const [isDownloadingLabel, setIsDownloadingLabel] = useState(false);
   const [isGeneratingDocs, setIsGeneratingDocs] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isCancellingOrder, setIsCancellingOrder] = useState(false);
+  const [isVoidingLabel, setIsVoidingLabel] = useState(false);
+  const [isCancellingShipment, setIsCancellingShipment] = useState(false);
 
   const [warehouses, setWarehouses] = useState([]);
   const [isLoadingWarehouses, setIsLoadingWarehouses] = useState(false);
@@ -149,7 +158,6 @@ export default function OrderDetailsPage() {
 
   const isLabelPurchased = !!ssLabelId || !!shipping.trackingNumber;
   const isPickingListDone = ['Picked', 'Shipped', 'Delivered', 'Billed'].includes(orderStatus);
-  const isPackingSlipDone = isPickingListDone;
   const isShipmentCreated = isPickingListDone || !!ssOrderId;
   const canManageLabel = ['Picked', 'Shipped', 'Delivered', 'Billed'].includes(orderStatus);
 
@@ -268,15 +276,11 @@ export default function OrderDetailsPage() {
   }, [availableInventories]);
 
 
-  // --- COMBINED PDF PRINT & PICK LOGIC ---
   const handlePrintDocsAndPick = async () => {
     setIsGeneratingDocs(true);
     try {
       const doc = new jsPDF();
       
-      // ==========================================
-      // 1. PICKING LIST
-      // ==========================================
       doc.setFontSize(16);
       doc.setTextColor(0, 0, 0);
       doc.setFont('helvetica', 'bold');
@@ -325,24 +329,28 @@ export default function OrderDetailsPage() {
         styles: { fontSize: 9, cellPadding: 4, textColor: 20, font: 'helvetica' },
       });
 
-      // ==========================================
-      // 2. PACKING SLIP
-      // ==========================================
       doc.addPage();
       
+      const customerName = currentOrder.customer?.customerName || 'Customer Order';
       const orderNo = currentOrder.orderNumber || 'N/A';
       const orderDate = currentOrder.createdAt ? new Date(currentOrder.createdAt).toLocaleDateString('en-GB', {day: '2-digit', month: 'short', year: 'numeric'}) : 'N/A';
       const shipVia = `${shipping.carrierType || ''} ${shipping.serviceCode || ''}`.trim() || 'UPS - Ground';
       const phone = address.phone || currentOrder.customer?.contactNumber || '';
-    
 
-      // Top Header
       doc.setFontSize(14);
       doc.setTextColor(0, 0, 0);
       doc.setFont('helvetica', 'bold');
-      doc.text(currentOrder?.customer?.customerName, 14, 20);
+      doc.text(customerName.toUpperCase(), 14, 20);
 
-      // Top Right
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.text("Service Center", 105, 20, { align: 'center' });
+      doc.text("MI-KRO Industries", 105, 24, { align: 'center' });
+      doc.text("1509 RT 38 Unit 9", 105, 28, { align: 'center' });
+      doc.text("Hainesport, NJ 08036 US", 105, 32, { align: 'center' });
+      doc.text("609-694-0521", 105, 36, { align: 'center' });
+      doc.text("mike@mi-krologistics.com", 105, 40, { align: 'center' });
+
       const rightColKeyX = 160;
       const rightColValX = 162;
       let rightY = 20;
@@ -371,7 +379,6 @@ export default function OrderDetailsPage() {
       doc.setFont('helvetica', 'normal');
       doc.text(shipVia, rightColValX, rightY);
 
-      // Address Blocks
       const addressBlockY = 55;
       doc.setFontSize(10);
       
@@ -399,7 +406,6 @@ export default function OrderDetailsPage() {
          doc.text(phone, 130, addressBlockY + 20);
       }
 
-      // Comments
       let commentsY = 90;
       doc.setFontSize(9);
       doc.setFont('helvetica', 'bold');
@@ -414,16 +420,9 @@ export default function OrderDetailsPage() {
           commentsY += 5;
       }
 
-      // Table
       const tableRows = items.map(item => {
           const qtyStr = (item.qty || 0).toString();
-          return [
-              item.sku,
-              item.name,
-              qtyStr,     
-              qtyStr, 
-              qtyStr  
-          ];
+          return [ item.sku, item.name, qtyStr, qtyStr, qtyStr ];
       });
 
       autoTable(doc, {
@@ -432,35 +431,21 @@ export default function OrderDetailsPage() {
           body: tableRows,
           theme: 'plain',
           headStyles: { 
-            fontStyle: 'bold', 
-            textColor: 0, 
-            halign: 'left', 
-            borderBottomColor: 0, 
-            borderBottomWidth: 0.5 
+            fontStyle: 'bold', textColor: 0, halign: 'left', borderBottomColor: 0, borderBottomWidth: 0.5 
           },
           styles: { fontSize: 9, cellPadding: 3, textColor: 20, font: 'helvetica' },
           columnStyles: {
-              0: { cellWidth: 45 },
-              1: { cellWidth: 'auto' },
-              2: { cellWidth: 20, halign: 'center' },
-              3: { cellWidth: 20, halign: 'center' },
-              4: { cellWidth: 20, halign: 'center' }
+              0: { cellWidth: 45 }, 1: { cellWidth: 'auto' },
+              2: { cellWidth: 20, halign: 'center' }, 3: { cellWidth: 20, halign: 'center' }, 4: { cellWidth: 20, halign: 'center' }
           },
           willDrawCell: function(data) {
               if (data.row.section === 'body') {
-                  doc.setDrawColor(200, 200, 200);
-                  doc.setLineWidth(0.1);
-                  doc.line(
-                      data.cell.x, 
-                      data.cell.y + data.cell.height, 
-                      data.cell.x + data.cell.width, 
-                      data.cell.y + data.cell.height
-                  );
+                  doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.1);
+                  doc.line(data.cell.x, data.cell.y + data.cell.height, data.cell.x + data.cell.width, data.cell.y + data.cell.height);
               }
           }
       });
 
-      // Footer
       const finalY = doc.lastAutoTable.finalY + 15;
       doc.setDrawColor(0);
       doc.setLineWidth(0.5);
@@ -472,12 +457,10 @@ export default function OrderDetailsPage() {
       doc.setLineWidth(1.5);
       doc.line(14, 280, 196, 280);
 
-      // Print
       doc.autoPrint();
       const blobUrl = doc.output('bloburl');
       window.open(blobUrl, '_blank');
 
-      // 3. Update Order Status
       await dispatch(updateOrder({ id: currentOrder._id, updateData: { status: 'Picked' } })).unwrap();
       setOrderStatus('Picked');
       toast.success("Documents generated and order marked as Picked.");
@@ -551,7 +534,7 @@ export default function OrderDetailsPage() {
 
     const payload = {
       status: orderStatus,
-      ...(selectedUserId ? { user: selectedUserId } : { user: null }), // Only send user if explicitly selected
+      ...(selectedUserId ? { user: selectedUserId } : { user: null }),
       notes: notes,
       shippingAddress: {
         recipientName: address.name, email: address.email, phone: address.phone,
@@ -575,7 +558,7 @@ export default function OrderDetailsPage() {
       
       if (isChangingToCancelled) {
         await restoreInventoryStock();
-        toast.success('Order cancelled. Items returned to stock.');
+        toast.success('Order cancelled. Items returned to stock and shipment reversed.');
       } else {
         toast.success('Order saved successfully.');
       }
@@ -585,6 +568,44 @@ export default function OrderDetailsPage() {
       toast.error(`Failed to save order: ${error}`);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleCancelOrder = async () => {
+    if (!window.confirm("Are you sure you want to cancel this entire order? This will restock items and void any labels.")) return;
+    setIsCancellingOrder(true);
+    
+    const payload = {
+      status: 'Cancelled',
+      ...(selectedUserId ? { user: selectedUserId } : { user: null }),
+      notes: notes,
+      shippingAddress: {
+        recipientName: address.name, email: address.email, phone: address.phone,
+        line1: address.street, line2: address.line2, city: address.city,
+        state: address.state.toUpperCase().trim(),
+        zip: address.zip, country: address.country
+      },
+      shippingDetails: {
+        ...currentOrder.shippingDetails,
+        carrierType: shipping.carrierType, serviceCode: shipping.serviceCode,
+        trackingNumber: shipping.trackingNumber, shippingCost: Number(shipping.shippingCost)
+      },
+      items: items.map(item => ({
+        sku: item.sku, name: item.name, quantity: Number(item.qty),
+        unitPrice: Number(item.price), totalPrice: Number(item.qty) * Number(item.price)
+      }))
+    };
+
+    try {
+      await dispatch(updateOrder({ id: currentOrder._id, updateData: payload })).unwrap();
+      await restoreInventoryStock();
+      setOrderStatus('Cancelled');
+      toast.success('Order cancelled. Items returned to stock.');
+      setEditing({ logistics: false, address: false }); 
+    } catch (error) {
+      toast.error(`Failed to cancel order: ${error}`);
+    } finally {
+      setIsCancellingOrder(false);
     }
   };
 
@@ -609,98 +630,31 @@ export default function OrderDetailsPage() {
     }
   };
 
-  const handlePushShipment = async () => {
-    if (!shipping.carrierType || !shipping.serviceCode) {
-      return toast.warning("Please configure shipping carrier and service code on the order before pushing.");
-    }
-    if (!fulfillmentData.shipFromId) {
-      return toast.warning("Please select a Ship From warehouse location.");
-    }
-
-    setIsPushingShipment(true);
-
-    const selectedWarehouse = warehouses.find(w => w.warehouse_id === fulfillmentData.shipFromId);
-    const originAddress = selectedWarehouse?.origin_address || {};
-
-    const payload = {
-      orderNumber: currentOrder.orderNumber, 
-      externalShipmentId: currentOrder.orderNumber, 
-      shipFromId: fulfillmentData.shipFromId,
-      packages: packages.map(p => ({
-        weightInOunces: Number(p.weightInOunces),
-        length: Number(p.length),
-        width: Number(p.width),
-        height: Number(p.height)
-      })),
-      shipFrom: {
-        name: "MI-KRO Industries",
-        company_name: "MI-KRO Industries",
-        phone: originAddress.phone || "",
-        email: originAddress.email || "",
-        address_line1: originAddress.address_line1 || "",
-        address_line2: originAddress.address_line2 || "",
-        city_locality: originAddress.city_locality || "",
-        state_province: originAddress.state_province || "",
-        postal_code: originAddress.postal_code || "",
-        country_code: originAddress.country_code || "US",
-        address_residential_indicator: fulfillmentData.isResidential ? "yes" : "no"
-      },
-      isResidential: fulfillmentData.isResidential,
-      carrierCode: shipping.carrierType,
-      serviceCode: shipping.serviceCode
-    };
-
-    try {
-      const response = await api.post(`/shipstation/shipments/${currentOrder._id}`, payload);
-      toast.success('Pushed to ShipStation', { description: 'Order is now waiting in your ShipStation dashboard.' });
-      if (response.data?.data?.order?.status) setOrderStatus(response.data.data.order.status);
-      dispatch(fetchOrderById(currentOrder._id));
-    } catch (error) {
-      toast.error('ShipStation API Error', { description: error.response?.data?.message || error.message });
-    } finally { setIsPushingShipment(false); }
-  };
-
   const handleGenerateLabel = async () => {
     if (!shipping.carrierType || !shipping.serviceCode) return toast.warning("Please configure shipping carrier and service code on the order before purchasing.");
     if (!fulfillmentData.shipFromId) return toast.warning("Please select a Ship From warehouse location.");
 
     setIsGeneratingLabel(true);
-    const selectedWarehouse = warehouses.find(w => w.warehouse_id === fulfillmentData.shipFromId);
-    const originAddress = selectedWarehouse?.origin_address || {};
-
     const payload = {
-      orderNumber: currentOrder.orderNumber,
-      externalShipmentId: currentOrder.orderNumber, 
       packages: packages.map(p => ({
         weightInOunces: Number(p.weightInOunces),
         length: Number(p.length),
         width: Number(p.width),
         height: Number(p.height)
       })),
-      shipFrom: {
-        name: "MI-KRO Industries",
-        phone: originAddress.phone || "",
-        company_name: "", // Forced blank to hide brand context from ShipFrom lines if needed
-        address_line1: originAddress.address_line1 || "",
-        address_line2: originAddress.address_line2 || "",
-        city_locality: originAddress.city_locality || "",
-        state_province: originAddress.state_province || "",
-        postal_code: originAddress.postal_code || "",
-        country_code: originAddress.country_code || "US",
-        address_residential_indicator: fulfillmentData.isResidential ? "yes" : "no",
-        instructions: originAddress.instructions || ""
-      },
       isResidential: fulfillmentData.isResidential,
       carrierCode: shipping.carrierType,
       serviceCode: shipping.serviceCode
     };
 
     try {
-      const response = await dispatch(generateOrderLabel({ orderId: currentOrder._id, fulfillmentData: payload })).unwrap();
+      const rawRes = await dispatch(generateOrderLabel({ orderId: currentOrder._id, fulfillmentData: payload })).unwrap();
+      const response = rawRes.data || rawRes;
       setFulfillOpen(false);
 
       let labelDownloaded = false;
 
+      // PRIORITY 1: Safe Base64 PDF creation (Does not require ShipStation Auth & avoids 404 links)
       if (response.labelData) {
         try {
           downloadBase64PDF(response.labelData, `Label_${currentOrder.orderNumber || 'Order'}.pdf`);
@@ -710,22 +664,16 @@ export default function OrderDetailsPage() {
         }
       } 
       
-      // Fallback 1: URL provided directly in generate response
+      // Fallback 2: Direct URL Download ONLY if proxy failed
       if (!labelDownloaded && response.labelUrl) {
-        const link = document.createElement('a');
-        link.href = response.labelUrl;
-        link.target = "_blank";
-        link.download = `Label_${currentOrder.orderNumber || 'Order'}.pdf`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        window.open(response.labelUrl, "_blank");
         labelDownloaded = true;
       }
       
-      // Fallback 2: Force explicit fetch immediately if it didn't come attached
       if (!labelDownloaded) {
         try {
-          const fetchRes = await dispatch(downloadPurchasedLabel(currentOrder._id)).unwrap();
+          const fetchRaw = await dispatch(downloadPurchasedLabel(currentOrder._id)).unwrap();
+          const fetchRes = fetchRaw.data || fetchRaw;
           if (fetchRes.labelData) {
              downloadBase64PDF(fetchRes.labelData, `Label_${currentOrder.orderNumber || 'Order'}.pdf`);
              labelDownloaded = true;
@@ -757,21 +705,16 @@ export default function OrderDetailsPage() {
   const handlePrintPurchasedLabel = async () => {
     setIsDownloadingLabel(true);
     try {
-      const response = await dispatch(downloadPurchasedLabel(currentOrder._id)).unwrap();
+      const rawRes = await dispatch(downloadPurchasedLabel(currentOrder._id)).unwrap();
+      const response = rawRes.data || rawRes;
       const labelUrl = response.labelUrl || response.downloadUrl;
       const labelData = response.labelData;
 
-      if (labelUrl) {
-        const link = document.createElement('a');
-        link.href = labelUrl;
-        link.target = "_blank";
-        link.download = `Label_${currentOrder.orderNumber || 'Order'}.pdf`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        toast.success("Label downloaded.");
-      } else if (labelData) {
+      if (labelData) {
         downloadBase64PDF(labelData, `Label_${currentOrder.orderNumber || 'Order'}.pdf`);
+        toast.success("Label downloaded.");
+      } else if (labelUrl) {
+        window.open(labelUrl, "_blank");
         toast.success("Label downloaded.");
       } else {
         toast.error("Label URL not found in response.");
@@ -780,6 +723,37 @@ export default function OrderDetailsPage() {
       toast.error('Print Failed', { description: error || "Failed to fetch label." });
     } finally {
       setIsDownloadingLabel(false);
+    }
+  };
+
+  const handleVoidLabel = async () => {
+    if (!window.confirm("Are you sure you want to void this shipping label? This action cannot be undone.")) return;
+    setIsVoidingLabel(true);
+    try {
+      await dispatch(voidOrderLabel(currentOrder._id)).unwrap();
+      toast.success("Label successfully voided.");
+      setShipping(prev => ({ ...prev, trackingNumber: '', shippingCost: 0 }));
+      setOrderStatus('Processing');
+      setFulfillOpen(false);
+    } catch (err) {
+      toast.error("Failed to void label", { description: typeof err === 'string' ? err : err.message });
+    } finally {
+      setIsVoidingLabel(false);
+    }
+  };
+
+  const handleCancelShipment = async () => {
+    if (!window.confirm("Are you sure you want to cancel the ShipStation shipment?")) return;
+    setIsCancellingShipment(true);
+    try {
+      await dispatch(cancelOrderShipment(currentOrder._id)).unwrap();
+      toast.success("Shipment successfully cancelled.");
+      setOrderStatus('New');
+      setFulfillOpen(false);
+    } catch (err) {
+      toast.error("Failed to cancel shipment", { description: typeof err === 'string' ? err : err.message });
+    } finally {
+      setIsCancellingShipment(false);
     }
   };
 
@@ -803,7 +777,6 @@ export default function OrderDetailsPage() {
   return (
     <div className="h-full flex flex-col gap-5 animate-fade-in max-w-[1400px] mx-auto pb-10 px-4 box-border text-slate-900">
       
-      {/* Header */}
       <div className="flex items-center justify-between bg-white/30 p-3 rounded-2xl border border-white/50 backdrop-blur-xl transition-all duration-300 gap-4 shadow-sm">
         <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors duration-200 shrink-0">
           <ArrowLeft size={16} /> <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">Back to Orders</span>
@@ -811,12 +784,22 @@ export default function OrderDetailsPage() {
         <div className="flex gap-2 shrink-0">
           <button 
             onClick={handleDeleteOrder}
-            disabled={isSaving || isDeleting}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-xl text-[11px] font-black shadow-sm hover:bg-red-100 transition-all duration-200 disabled:opacity-70"
+            disabled={isSaving || isDeleting || isCancellingOrder}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-slate-500 border border-slate-200 rounded-xl text-[11px] font-black shadow-sm hover:bg-slate-100 hover:text-slate-700 transition-all duration-200 disabled:opacity-70"
           >
             {isDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Delete
           </button>
           
+          {orderStatus !== 'Cancelled' && (
+             <button 
+               onClick={handleCancelOrder}
+               disabled={isSaving || isDeleting || isCancellingOrder}
+               className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-xl text-[11px] font-black shadow-sm hover:bg-red-100 transition-all duration-200 disabled:opacity-70"
+             >
+               {isCancellingOrder ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />} Cancel Order
+             </button>
+          )}
+
           <div className="w-px h-6 bg-slate-300/60 mx-1"></div>
 
           <button 
@@ -845,7 +828,6 @@ export default function OrderDetailsPage() {
         </div>
       </div>
 
-      {/* Slide-over Drawer for Label Generation Configuration */}
       <div className={`fixed inset-0 z-50 flex justify-end transition-opacity duration-300 ${fulfillOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
         <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setFulfillOpen(false)} />
         <div className={`relative w-full max-w-[400px] bg-white/95 backdrop-blur-2xl border-l border-white/50 p-6 shadow-2xl h-full overflow-y-auto transition-transform duration-300 ease-in-out flex flex-col ${fulfillOpen ? 'translate-x-0' : 'translate-x-full'}`}>
@@ -860,7 +842,6 @@ export default function OrderDetailsPage() {
           
           <div className="space-y-5 flex-1">
             
-            {/* Warehouse / Ship From Selection */}
             <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-200/60 shadow-sm">
               <label className="text-[10px] uppercase font-bold text-slate-500 mb-2 block flex items-center gap-1.5">
                 <MapPin size={12}/> Origin Warehouse
@@ -894,7 +875,6 @@ export default function OrderDetailsPage() {
 
             <hr className="border-slate-200" />
 
-            {/* Dynamic Packages Array */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-[10px] uppercase font-black text-slate-500 flex items-center gap-1.5">
@@ -946,29 +926,50 @@ export default function OrderDetailsPage() {
             </div>
           </div>
           
-          {/* LABEL PURCHASE ACTIONS */}
           <div className="mt-4 pt-4 border-t border-slate-200 shrink-0 bg-white/95">
              <div className="space-y-3">
                  {!isLabelPurchased ? (
-                   <button 
-                     onClick={handleGenerateLabel}
-                     disabled={isGeneratingLabel || !fulfillmentData.shipFromId}
-                     className="w-full flex justify-center items-center gap-2 text-white py-3.5 rounded-xl text-xs font-black shadow-md transition-all bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                   >
-                     {isGeneratingLabel ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-                     Purchase Label
-                   </button>
+                   <>
+                     <button 
+                       onClick={handleGenerateLabel}
+                       disabled={isGeneratingLabel || !fulfillmentData.shipFromId}
+                       className="w-full flex justify-center items-center gap-2 text-white py-3.5 rounded-xl text-xs font-black shadow-md transition-all bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                     >
+                       {isGeneratingLabel ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                       Purchase Label
+                     </button>
+                     {isShipmentCreated && (
+                       <button
+                         onClick={handleCancelShipment}
+                         disabled={isCancellingShipment}
+                         className="w-full flex justify-center items-center gap-2 text-red-600 bg-red-50 py-3.5 rounded-xl text-xs font-black shadow-sm border border-red-200 transition-all hover:bg-red-100 disabled:opacity-50"
+                       >
+                         {isCancellingShipment ? <Loader2 size={16} className="animate-spin" /> : <X size={16} />}
+                         Cancel Shipment
+                       </button>
+                     )}
+                   </>
                  ) : (
-                   <button 
-                     onClick={handlePrintPurchasedLabel}
-                     disabled={isDownloadingLabel}
-                     className="w-full flex justify-center items-center gap-2 text-white py-3.5 rounded-xl text-xs font-black shadow-md transition-all bg-slate-800 hover:bg-slate-700 disabled:opacity-50"
-                   >
-                     {isDownloadingLabel ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
-                     Download Purchased Label
-                   </button>
+                   <>
+                     <button 
+                       onClick={handlePrintPurchasedLabel}
+                       disabled={isDownloadingLabel}
+                       className="w-full flex justify-center items-center gap-2 text-white py-3.5 rounded-xl text-xs font-black shadow-md transition-all bg-slate-800 hover:bg-slate-700 disabled:opacity-50"
+                     >
+                       {isDownloadingLabel ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
+                       Download Purchased Label
+                     </button>
+                     <button
+                       onClick={handleVoidLabel}
+                       disabled={isVoidingLabel}
+                       className="w-full flex justify-center items-center gap-2 text-white bg-red-600 py-3.5 rounded-xl text-xs font-black shadow-md transition-all hover:bg-red-500 disabled:opacity-50"
+                     >
+                       {isVoidingLabel ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                       Void Label
+                     </button>
+                   </>
                  )}
-              </div>
+             </div>
           </div>
 
         </div>
@@ -1068,8 +1069,6 @@ export default function OrderDetailsPage() {
             </div>
           </div>
 
-          {/* CRITICAL FIX: Z-Index explicitly increased here to stay above the order notes */}
-          {/* Shipping Address Form */}
           <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] relative z-20">
             <div className="flex justify-between items-center mb-4 border-b border-white/60 pb-3">
                 <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2"><MapPin size={14}/> Shipping Address</h3>
@@ -1087,7 +1086,6 @@ export default function OrderDetailsPage() {
                     <input className="bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm" value={address.city} onChange={(e) => setAddress({...address, city: e.target.value})} placeholder="City" />
                     
                     <div className="col-span-1 flex gap-3 relative z-50">
-                        {/* CUSTOM SEARCHABLE STATE DROPDOWN */}
                         <div className="w-1/2 relative" ref={stateDropdownRef}>
                           <div 
                             className="w-full bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus-within:border-brand-gold shadow-sm flex items-center justify-between cursor-pointer"
@@ -1170,7 +1168,6 @@ export default function OrderDetailsPage() {
             )}
           </div>
 
-          {/* Order Notes - relative z-10 so dropdown flows over it */}
           <div className="bg-amber-50/80 border border-amber-200/60 p-6 rounded-3xl shadow-sm backdrop-blur-xl relative z-10">
              <h3 className="text-[10px] font-black uppercase tracking-widest text-amber-800 mb-3 flex items-center gap-2"><MessageSquare size={14}/> Order Notes</h3>
              <textarea 
@@ -1183,10 +1180,8 @@ export default function OrderDetailsPage() {
 
         </div>
 
-        {/* Right Column: Manifest & Totals */}
         <div className="space-y-6">
             
-          {/* Manifest Form */}
           <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
             <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-5 flex items-center gap-2 border-b border-white/60 pb-3">
               <PackageCheck size={14} /> Edit Manifest Items
@@ -1229,7 +1224,6 @@ export default function OrderDetailsPage() {
                     </div>
                 ))}
 
-                {/* Add Item Row */}
                 <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 shadow-inner space-y-3 mt-4">
                     <h4 className="text-[9px] font-black uppercase tracking-widest text-slate-500">Add Product</h4>
                     <select 
@@ -1266,7 +1260,6 @@ export default function OrderDetailsPage() {
             </div>
           </div>
 
-          {/* Invoice Summary Preview */}
           <div className="bg-slate-950 text-white p-6 rounded-3xl shadow-xl border border-slate-900 relative overflow-hidden">
              <div className="absolute -right-8 -top-8 w-32 h-32 bg-brand-gold/10 rounded-full blur-2xl pointer-events-none"></div>
              <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2 mb-4 border-b border-white/10 pb-3 relative z-10">

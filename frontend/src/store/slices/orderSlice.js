@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import api from "../../utils/api"; // Adjust the import path if necessary based on your folder structure
+import api from "../../utils/api";
 
 // --- Thunks ---
 
@@ -10,11 +10,10 @@ export const fetchOrders = createAsyncThunk(
     try {
       const { customerId, divisionId, userId } = params;
       
-      // Dynamically build query parameters based on what is provided
       const queryParams = new URLSearchParams();
       if (customerId) queryParams.append('customer', customerId);
       if (divisionId) queryParams.append('division', divisionId);
-      if (userId) queryParams.append('user', userId); // Intercepted by backend to filter by shopper
+      if (userId) queryParams.append('user', userId); 
 
       const queryString = queryParams.toString();
       const endpoint = queryString ? `/orders?${queryString}` : `/orders`;
@@ -94,7 +93,6 @@ export const generateOrderLabel = createAsyncThunk(
   "orders/generateLabel",
   async ({ orderId, fulfillmentData }, { rejectWithValue }) => {
     try {
-      console.log(fulfillmentData)
       const response = await api.post(`/shipstation/label/${orderId}`, fulfillmentData);
       return response.data.data; 
     } catch (error) {
@@ -105,7 +103,7 @@ export const generateOrderLabel = createAsyncThunk(
   }
 );
 
-// --- NEW: Download/Print Previously Purchased Label ---
+// 7. Download/Print Previously Purchased Label
 export const downloadPurchasedLabel = createAsyncThunk(
   "orders/downloadPurchasedLabel",
   async (orderId, { rejectWithValue }) => {
@@ -120,13 +118,43 @@ export const downloadPurchasedLabel = createAsyncThunk(
   }
 );
 
+// 8. Void Existing Label
+export const voidOrderLabel = createAsyncThunk(
+  "orders/voidLabel",
+  async (orderId, { rejectWithValue }) => {
+    try {
+      const response = await api.put(`/shipstation/labels/void/${orderId}`);
+      return response.data.data.order;
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || error.message || "Failed to void label"
+      );
+    }
+  }
+);
+
+// 9. Cancel Unlabeled Shipment
+export const cancelOrderShipment = createAsyncThunk(
+  "orders/cancelShipment",
+  async (orderId, { rejectWithValue }) => {
+    try {
+      const response = await api.put(`/shipstation/shipments/cancel/${orderId}`);
+      return response.data.data.order;
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || error.message || "Failed to cancel shipment"
+      );
+    }
+  }
+);
+
 // --- Slice Definition ---
 const orderSlice = createSlice({
   name: "orders",
   initialState: {
     items: [],
     currentOrder: null,
-    status: "idle", // 'idle' | 'loading' | 'succeeded' | 'failed'
+    status: "idle",
     error: null,
   },
   reducers: {
@@ -141,7 +169,6 @@ const orderSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // --- Fetch All ---
       .addCase(fetchOrders.pending, (state) => {
         state.status = "loading";
         state.error = null;
@@ -155,7 +182,6 @@ const orderSlice = createSlice({
         state.error = action.payload;
       })
 
-      // --- Fetch Single ---
       .addCase(fetchOrderById.pending, (state) => {
         state.status = "loading";
         state.error = null;
@@ -169,12 +195,10 @@ const orderSlice = createSlice({
         state.error = action.payload;
       })
 
-      // --- Create ---
       .addCase(createOrder.fulfilled, (state, action) => {
         state.items.unshift(action.payload);
       })
 
-      // --- Update ---
       .addCase(updateOrder.fulfilled, (state, action) => {
         const index = state.items.findIndex((o) => String(o._id) === String(action.payload._id));
         if (index !== -1) {
@@ -186,7 +210,6 @@ const orderSlice = createSlice({
         }
       })
 
-      // --- Delete ---
       .addCase(deleteOrder.fulfilled, (state, action) => {
         state.items = state.items.filter((o) => String(o._id) !== String(action.payload));
 
@@ -195,8 +218,6 @@ const orderSlice = createSlice({
         }
       })
 
-      // --- Label Generation ---
-      .addCase(generateOrderLabel.pending, (state) => {})
       .addCase(generateOrderLabel.fulfilled, (state, action) => {
         state.currentOrder = action.payload.order; 
         const index = state.items.findIndex((o) => String(o._id) === String(action.payload.order._id));
@@ -204,12 +225,25 @@ const orderSlice = createSlice({
           state.items[index] = action.payload.order;
         }
       })
-
-      // --- Label Download ---
-      .addCase(downloadPurchasedLabel.pending, (state) => {})
-      .addCase(downloadPurchasedLabel.fulfilled, (state) => {})
+      
       .addCase(downloadPurchasedLabel.rejected, (state, action) => {
         state.error = action.payload;
+      })
+
+      // Update Redux state immediately when voided/cancelled via the new endpoints
+      .addCase(voidOrderLabel.fulfilled, (state, action) => {
+        state.currentOrder = action.payload; 
+        const index = state.items.findIndex((o) => String(o._id) === String(action.payload._id));
+        if (index !== -1) {
+          state.items[index] = action.payload;
+        }
+      })
+      .addCase(cancelOrderShipment.fulfilled, (state, action) => {
+        state.currentOrder = action.payload; 
+        const index = state.items.findIndex((o) => String(o._id) === String(action.payload._id));
+        if (index !== -1) {
+          state.items[index] = action.payload;
+        }
       });
   },
 });

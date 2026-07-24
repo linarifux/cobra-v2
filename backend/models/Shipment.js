@@ -10,7 +10,9 @@ const statusHistorySchema = new mongoose.Schema({
       'Shipment Created',
       'Label Purchased',
       'Packing Slip Downloaded',
-      'Voided'
+      'Voided',
+      'Label Voided',
+      'Shipment Cancelled'
     ]
   },
   notes: {
@@ -67,7 +69,9 @@ const shipmentSchema = new mongoose.Schema({
       'Shipment Created',
       'Label Purchased',
       'Packing Slip Downloaded',
-      'Voided'
+      'Voided',
+      'Label Voided',
+      'Shipment Cancelled'
     ]
   },
   statusHistory: [statusHistorySchema]
