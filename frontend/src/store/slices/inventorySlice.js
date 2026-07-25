@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import api from '../../utils/api'; // Adjust the import path based on your folder structure
+import api from '../../utils/api'; 
 
 // 1. Fetch All Inventory
 export const fetchInventory = createAsyncThunk(
@@ -35,7 +35,6 @@ export const createInventory = createAsyncThunk(
       const response = await api.post('/inventory', inventoryData);
       return response.data.data.inventory;
     } catch (error) {
-      // Cleanly pass the server error message to the component for the Toast notification
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to create inventory item');
     }
   }

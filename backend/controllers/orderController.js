@@ -1,5 +1,6 @@
 import Order from '../models/Order.js';
 import Customer from '../models/Customer.js';
+import Inventory from '../models/Inventory.js'; // Ensure Inventory is imported
 import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 import { executeShipmentCreation } from './shipStationController.js'; 
@@ -34,11 +35,40 @@ export const createOrder = catchAsync(async (req, res, next) => {
   let order = new Order(req.body);
   order.customer = customer;
 
+  // 1. Push to ShipStation
   try {
     const shipmentResult = await executeShipmentCreation(order);
     order = shipmentResult.order;
   } catch (error) {
     return next(new AppError(`Order discarded. ShipStation rejected the shipment: ${error.message}`, 400));
+  }
+
+  // 2. Deduct Inventory Quantities & Append Audit Ledger
+  if (order.items && order.items.length > 0) {
+    try {
+      await Promise.all(order.items.map(async (item) => {
+        const deduction = Number(item.quantity) || 1;
+        await Inventory.findOneAndUpdate(
+          { sku: item.sku, customer: order.customer },
+          { 
+            $inc: { 
+              available: -deduction, 
+              unitsOnHand: -deduction 
+            },
+            $push: { 
+              auditLedger: {
+                event: 'Order Fulfillment',
+                referenceId: order.orderNumber || order._id.toString(),
+                quantityDelta: -deduction
+              }
+            }
+          },
+          { new: true, runValidators: true }
+        );
+      }));
+    } catch (invError) {
+      console.error(`[Inventory Sync Warning] Failed to deduct stock for Order ${order._id}:`, invError.message);
+    }
   }
 
   await order.populate([
@@ -153,14 +183,42 @@ export const updateOrder = catchAsync(async (req, res, next) => {
     }
   }
 
+  // --- AUTOMATED SHIPSTATION & INVENTORY CLEANUP ON CANCELLATION ---
   if (req.body.status === 'Cancelled' && order.status !== 'Cancelled') {
     const labelId = order.shipstationDetails?.labelId;
     const shipmentId = order.shipstationDetails?.orderId;
+    
+    // 1. Clean ShipStation
     try {
       if (labelId) await voidLabel(labelId);
       else if (shipmentId) await cancelShipment(shipmentId);
     } catch(e) {
        console.warn(`Failed to selectively void ShipStation records for cancelled order ${order._id}:`, e.message);
+    }
+
+    // 2. Restock Inventory
+    if (order.items && order.items.length > 0) {
+      try {
+        await Promise.all(order.items.map(async (item) => {
+          const restockQty = Number(item.quantity) || 1;
+          await Inventory.findOneAndUpdate(
+            { sku: item.sku, customer: order.customer },
+            { 
+              $inc: { available: restockQty, unitsOnHand: restockQty },
+              $push: { 
+                auditLedger: {
+                  event: 'Order Cancellation Restock',
+                  referenceId: order.orderNumber || order._id.toString(),
+                  quantityDelta: restockQty
+                }
+              }
+            },
+            { new: true, runValidators: true }
+          );
+        }));
+      } catch (invError) {
+        console.error(`[Inventory Sync Warning] Failed to restock for cancelled Order ${order._id}:`, invError.message);
+      }
     }
   }
 
@@ -198,6 +256,7 @@ export const deleteOrder = catchAsync(async (req, res, next) => {
     }
   }
 
+  // --- AUTOMATED SHIPSTATION CLEANUP ---
   const labelId = order.shipstationDetails?.labelId;
   const shipmentId = order.shipstationDetails?.orderId;
   
@@ -206,6 +265,35 @@ export const deleteOrder = catchAsync(async (req, res, next) => {
     else if (shipmentId) await cancelShipment(shipmentId);
   } catch(e) {
     console.warn(`Failed to cleanup ShipStation records for deleted order ${order._id}:`, e.message);
+  }
+
+  // --- AUTOMATED INVENTORY RESTOCK ON DELETION ---
+  const safeToDeleteStatus = ['shipped', 'delivered', 'cancelled', 'billed'];
+  const currentStatus = order.status?.toLowerCase() || 'new';
+  const needsRestock = !safeToDeleteStatus.includes(currentStatus);
+
+  if (needsRestock && order.items && order.items.length > 0) {
+    try {
+      await Promise.all(order.items.map(async (item) => {
+        const restockQty = Number(item.quantity) || 1;
+        await Inventory.findOneAndUpdate(
+          { sku: item.sku, customer: order.customer },
+          { 
+            $inc: { available: restockQty, unitsOnHand: restockQty },
+            $push: { 
+              auditLedger: {
+                event: 'Order Deletion Restock',
+                referenceId: order.orderNumber || order._id.toString(),
+                quantityDelta: restockQty
+              }
+            }
+          },
+          { new: true, runValidators: true }
+        );
+      }));
+    } catch (invError) {
+      console.error(`[Inventory Sync Warning] Failed to restock for deleted Order ${order._id}:`, invError.message);
+    }
   }
 
   await Order.findByIdAndDelete(req.params.id);

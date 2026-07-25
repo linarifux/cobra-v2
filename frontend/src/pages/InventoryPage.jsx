@@ -38,10 +38,9 @@ export default function InventoryPage() {
   const { items: apiLocations = [], status: locStatus } = useSelector(state => state.locations || {});
   const { items: apiTypePieces = [], status: tpStatus } = useSelector(state => state.typePieces || {});
 
-  console.log(apiInventory)
-  // --- 1. ROBUST FETCHING LOGIC ---
+  // --- 1. ROBUST FETCHING & REAL-TIME SYNC LOGIC ---
   const loadAllData = () => {
-    if (invStatus === 'idle' || invStatus === 'failed') dispatch(fetchInventory());
+    dispatch(fetchInventory());
     if (custStatus === 'idle' || custStatus === 'failed') dispatch(fetchCustomers());
     if (divStatus === 'idle' || divStatus === 'failed') dispatch(fetchDivisions());
     if (catStatus === 'idle' || catStatus === 'failed') dispatch(fetchCategories());
@@ -51,17 +50,39 @@ export default function InventoryPage() {
 
   useEffect(() => {
     loadAllData();
+
+    // REAL-TIME FIX 1: Silent Background Polling
+    // Fetches fresh stock levels every 10 seconds. The UI won't flash because 
+    // isGlobalLoading ignores 'loading' status if items already exist in state.
+    const pollInterval = setInterval(() => {
+      dispatch(fetchInventory());
+    }, 10000);
+
+    // REAL-TIME FIX 2: Tab-Focus Synchronization
+    // Instantly pulls fresh data the exact millisecond the user switches back to this tab
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        dispatch(fetchInventory());
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Cleanup listeners on unmount
+    return () => {
+      clearInterval(pollInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch]);
 
   // --- 2. GLOBAL LOADING & ERROR GATES ---
   const isGlobalLoading = 
-    invStatus === 'idle' || invStatus === 'loading' ||
-    custStatus === 'idle' || custStatus === 'loading' ||
-    divStatus === 'idle' || divStatus === 'loading' ||
-    catStatus === 'idle' || catStatus === 'loading' ||
-    locStatus === 'idle' || locStatus === 'loading' ||
-    tpStatus === 'idle' || tpStatus === 'loading';
+    ((invStatus === 'idle' || invStatus === 'loading') && apiInventory.length === 0) ||
+    ((custStatus === 'idle' || custStatus === 'loading') && apiCustomers.length === 0) ||
+    ((divStatus === 'idle' || divStatus === 'loading') && apiDivisions.length === 0) ||
+    ((catStatus === 'idle' || catStatus === 'loading') && apiCategories.length === 0) ||
+    ((locStatus === 'idle' || locStatus === 'loading') && apiLocations.length === 0) ||
+    ((tpStatus === 'idle' || tpStatus === 'loading') && apiTypePieces.length === 0);
 
   const hasGlobalError = 
     invStatus === 'failed' || custStatus === 'failed' || 
@@ -96,22 +117,18 @@ export default function InventoryPage() {
   };
 
   const handleFormSubmit = (payload, isEdit, id) => {
-    // We strictly return the promise here so the child component (InventoryFormPanel)
-    // can hook it into its `toast.promise` UI.
     const actionPromise = isEdit
       ? dispatch(updateInventory({ id, inventoryData: payload })).unwrap()
       : dispatch(createInventory(payload)).unwrap();
 
-    // Close the panel ONLY if the server request successfully resolves
     actionPromise
       .then(() => setShowFormPanel(false))
-      .catch(() => {}); // Caught silently, the child's toast handles the UI error
+      .catch(() => {}); 
       
     return actionPromise; 
   };
 
   const handleDeleteItem = async (id) => {
-    // Replaced native window.confirm with your custom confirm provider
     const isConfirmed = await confirm({
       title: 'Delete Asset?',
       message: 'Are you sure you want to permanently delete this inventory asset? This action cannot be undone and will remove it from all storage locations.',
@@ -158,10 +175,10 @@ export default function InventoryPage() {
       divisionId: item.division?._id || '',
       category: item.category1?.categoryName || 'Unassigned',
       categoryId: item.category1?._id || '',
-      price: item.price || 0,
-      available: item.available || item.unitsOnHand || 0,
-      onOrder: item.pipelineSupply || item.openOrders || 0,
-      minThreshold: item.min || item.safetyBuffer || 0,
+      price: item.price ?? 0,
+      available: item.available ?? item.unitsOnHand ?? 0,
+      onOrder: item.pipelineSupply ?? item.openOrders ?? 0,
+      minThreshold: item.min ?? item.safetyBuffer ?? 0,
     }));
   }, [apiInventory]);
 
@@ -180,7 +197,6 @@ export default function InventoryPage() {
 
       return matchesSearch && matchesCustomer && matchesDivision && matchesCategory && matchesStock;
     })
-    // FIX: Added alphanumeric sorting by Item Code
     .sort((a, b) => {
       const codeA = a.code || '';
       const codeB = b.code || '';
@@ -225,7 +241,6 @@ export default function InventoryPage() {
     );
   }
 
-  // ONLY render the page once we mathematically guarantee all arrays exist and are loaded.
   return (
     <div className="h-full max-w-[1500px] mx-auto p-6 space-y-6 animate-in fade-in duration-500 pb-20">
       

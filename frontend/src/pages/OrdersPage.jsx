@@ -20,7 +20,7 @@ import { useConfirm } from '../providers/ConfirmProvider';
 import { fetchOrders, updateOrder, deleteOrder } from '../store/slices/orderSlice';
 import { fetchCustomers } from '../store/slices/customerSlice';
 import { fetchDivisions } from '../store/slices/divisionSlice';
-import { fetchInventory, updateInventory } from '../store/slices/inventorySlice';
+import { fetchInventory } from '../store/slices/inventorySlice';
 
 const INITIAL_FILTERS = {
   status: 'New',
@@ -171,30 +171,6 @@ export default function OrdersPage() {
     toast.success('Exporting Data', { description: `Generating CSV for ${selectedOrders.length} orders...` });
   };
 
-  // --- Core Restock Helper ---
-  const restoreInventoryStock = async (itemsToRestock) => {
-    if (!itemsToRestock || itemsToRestock.length === 0) return;
-    try {
-      await Promise.all(itemsToRestock.map(async (item) => {
-        const stockItem = inventoryData.find(inv => inv.sku === item.sku);
-        if (stockItem) {
-          const currentStock = Number(stockItem.unitsOnHand) || Number(stockItem.available) || 0;
-          const restoredStock = currentStock + Number(item.quantity || 0);
-          
-          const updatedData = { 
-            ...stockItem, 
-            unitsOnHand: restoredStock, 
-            available: restoredStock 
-          };
-          
-          await dispatch(updateInventory({ id: stockItem._id, inventoryData: updatedData })).unwrap();
-        }
-      }));
-    } catch (err) {
-      console.error("Failed to restore inventory:", err);
-    }
-  };
-
   // --- Inline Action Handlers ---
   const openQuickEdit = (order) => {
     setEditingOrder({
@@ -218,10 +194,6 @@ export default function OrdersPage() {
         updateData: { status: editingOrder.status, notes: editingOrder.notes } 
       })).unwrap();
       
-      if (isChangingToCancelled) {
-        await restoreInventoryStock(originalOrder?.items);
-      }
-
       toast.promise(actionPromise, {
         loading: 'Updating order...',
         success: isChangingToCancelled ? 'Order cancelled. Items returned to stock.' : 'Order status updated successfully.',
@@ -229,6 +201,13 @@ export default function OrdersPage() {
       });
       
       await actionPromise;
+      
+      // Force UI to sync with the database immediately after successful mutation
+      dispatch(fetchOrders({})); 
+      if (isChangingToCancelled) {
+         dispatch(fetchInventory()); 
+      }
+
       setIsEditModalOpen(false);
       setEditingOrder(null);
     } catch (err) {
@@ -249,22 +228,19 @@ export default function OrdersPage() {
 
     if (isConfirmed) {
       try {
-        const orderToDelete = ordersData.find(o => o._id === id);
-        const safeToDeleteStatus = ['shipped', 'delivered', 'cancelled', 'billed'];
-        const currentStatus = orderToDelete?.status?.toLowerCase() || 'new';
-        const needsRestock = !safeToDeleteStatus.includes(currentStatus);
-
-        if (needsRestock && orderToDelete) {
-          await restoreInventoryStock(orderToDelete.items);
-        }
-
         const actionPromise = dispatch(deleteOrder(id)).unwrap();
         toast.promise(actionPromise, {
           loading: 'Deleting order...',
-          success: needsRestock ? 'Order deleted and items returned to stock.' : 'Order successfully deleted.',
+          success: 'Order successfully deleted and stock adjusted.',
           error: 'Failed to delete order.'
         });
+        
         await actionPromise;
+
+        // Force UI to sync with the database immediately after successful deletion
+        dispatch(fetchOrders({}));
+        dispatch(fetchInventory()); // Always pull fresh stock records
+
       } catch (err) {
         console.error(err);
         toast.error(`Failed to delete order: ${err.message || 'Unknown error'}`);
@@ -306,7 +282,7 @@ export default function OrdersPage() {
             // Locate the item in inventory data
             const invItem = inventoryData.find(inv => inv.sku === item.sku);
             
-            // Extract location(s) based on image_f15681.png structure
+            // Extract location(s) based on structural assignment
             let locationStr = '';
             if (invItem?.locations && Array.isArray(invItem.locations) && invItem.locations.length > 0) {
                // Map through locations array and get 'designation', join with commas
@@ -529,6 +505,9 @@ export default function OrdersPage() {
            dispatch(updateOrder({ id: order._id, updateData: { status: 'Picked' } })).unwrap()
         )
       );
+
+      // Force UI to sync with the database immediately after bulk mutations
+      dispatch(fetchOrders({}));
 
       toast.success(`Successfully processed ${selectedOrderObjects.length} orders. Status updated to Picked.`);
       setSelectedOrders([]);
