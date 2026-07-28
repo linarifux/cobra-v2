@@ -8,11 +8,11 @@ import {
   PackageCheck, Save, Loader2, Box, Building2, User, Briefcase, Truck, ChevronDown, Search
 } from 'lucide-react';
 import { toast } from 'sonner';
-
 import NotFoundPage from '../../pages/NotFoundPage';
 
 // Redux Actions
 import { fetchOrderById, updateOrder, createOrder, clearCurrentOrder } from '../../store/slices/orderSlice';
+
 import { fetchCustomers } from '../../store/slices/customerSlice';
 import { fetchDivisions } from '../../store/slices/divisionSlice';
 import { fetchInventory } from '../../store/slices/inventorySlice';
@@ -66,6 +66,7 @@ export default function OrderForm() {
   const [customerId, setCustomerId] = useState('');
   const [divisionId, setDivisionId] = useState('');
   const [userId, setUserId] = useState('');
+  const [chargeCode, setChargeCode] = useState(''); // NEW STATE
 
   const [orderStatus, setOrderStatus] = useState('New');
   const [shipping, setShipping] = useState({ carrierId: '', carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0 });
@@ -81,11 +82,18 @@ export default function OrderForm() {
   const [stateSearch, setStateSearch] = useState('');
   const stateDropdownRef = useRef(null);
 
-  // Close state dropdown when clicking outside
+  const [isInventoryDropdownOpen, setIsInventoryDropdownOpen] = useState(false);
+  const [inventorySearch, setInventorySearch] = useState('');
+  const inventoryDropdownRef = useRef(null);
+
+  // Close custom dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (stateDropdownRef.current && !stateDropdownRef.current.contains(event.target)) {
         setIsStateDropdownOpen(false);
+      }
+      if (inventoryDropdownRef.current && !inventoryDropdownRef.current.contains(event.target)) {
+        setIsInventoryDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -129,11 +137,18 @@ export default function OrderForm() {
     return inventoryData.map(inv => ({
       id: inv._id,
       name: inv.itemName || 'Unnamed Item',
-      sku: inv.sku,
+      sku: inv.sku || '',
       price: inv.unitCost || inv.price || 0,
       weight: inv.weight || 0
-    }));
+    })).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   }, [inventoryData]);
+
+  const filteredInventories = useMemo(() => {
+    return availableInventories.filter(inv =>
+      inv.name.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+      inv.sku.toLowerCase().includes(inventorySearch.toLowerCase())
+    );
+  }, [availableInventories, inventorySearch]);
 
   // Dynamically flatten carriers into selectable options
   const shippingOptions = useMemo(() => {
@@ -199,6 +214,7 @@ export default function OrderForm() {
       setCustomerId(currentOrder.customer?._id || currentOrder.customer || '');
       setDivisionId(currentOrder.division?._id || currentOrder.division || '');
       setUserId(currentOrder.user?._id || currentOrder.user || '');
+      setChargeCode(currentOrder.chargeCode || ''); // POPULATE CHARGE CODE
 
       setOrderStatus(currentOrder.status || 'New');
       setShipping({
@@ -242,22 +258,27 @@ export default function OrderForm() {
     setCustomerId(e.target.value);
     setDivisionId('');
     setUserId('');
+    setChargeCode(''); // Reset charge code
     setShipping({ ...shipping, carrierId: '', carrierType: '', serviceCode: '' });
   };
 
   const handleDivisionChange = (e) => {
     setDivisionId(e.target.value);
     setUserId('');
+    setChargeCode(''); // Reset charge code
     setShipping({ ...shipping, carrierId: '', carrierType: '', serviceCode: '' });
   };
 
-  const handleInventoryChange = (e) => {
-    const selectedId = e.target.value;
-    const matchedStock = availableInventories.find(inv => inv.id === selectedId);
-    if (matchedStock) {
-      setNewItem({ ...newItem, name: matchedStock.name, sku: matchedStock.sku, price: matchedStock.price, weight: matchedStock.weight });
+  // Handled automatically filling the charge code based on the selected user
+  const handleUserChange = (e) => {
+    const selectedUserId = e.target.value;
+    setUserId(selectedUserId);
+    
+    if (selectedUserId) {
+      const selectedUser = contextualUsers.find(u => String(u._id) === String(selectedUserId));
+      setChargeCode(selectedUser?.chargeCode || '');
     } else {
-      setNewItem({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
+      setChargeCode('');
     }
   };
 
@@ -294,6 +315,7 @@ export default function OrderForm() {
       customer: customerId,
       division: divisionId,
       user: userId || null,
+      chargeCode: chargeCode.trim(), // PASS CHARGE CODE TO API
       status: orderStatus,
       notes: notes,
       shippingAddress: {
@@ -381,7 +403,7 @@ export default function OrderForm() {
         <div className="space-y-6">
 
           {/* Core Configuration Form */}
-          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
+          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] relative z-10">
             <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-5 flex items-center gap-2 border-b border-white/60 pb-3">
               <Box size={14} /> Core Configuration
             </h3>
@@ -432,14 +454,15 @@ export default function OrderForm() {
                   </select>
                 </div>
 
-                <div className="col-span-2">
+                {/* Shopper and Charge Code Row */}
+                <div className="col-span-2 md:col-span-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 flex items-center gap-1.5">
                     <User size={12} /> Shopper (End-User)
                   </label>
                   <select
                     className={`w-full p-3 rounded-xl text-xs font-bold border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all cursor-pointer ${!customerId && !divisionId ? 'bg-slate-50 text-slate-400' : 'bg-white'}`}
                     value={userId}
-                    onChange={(e) => setUserId(e.target.value)}
+                    onChange={handleUserChange}
                     disabled={!customerId && !divisionId}
                   >
                     <option value="">Guest Checkout / Unassigned</option>
@@ -449,6 +472,19 @@ export default function OrderForm() {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div className="col-span-2 md:col-span-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 flex items-center gap-1.5">
+                    <Briefcase size={12} /> Charge Code
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full bg-white p-3 rounded-xl text-xs font-bold border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all placeholder:font-medium"
+                    value={chargeCode}
+                    onChange={(e) => setChargeCode(e.target.value)}
+                    placeholder="e.g. CHG-90210"
+                  />
                 </div>
               </div>
 
@@ -581,7 +617,7 @@ export default function OrderForm() {
                         className="absolute z-[100] w-full md:w-48 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
                       >
                         <div className="p-2 border-b border-slate-100 flex items-center gap-2">
-                          <Search size={14} className="text-slate-400" />
+                          <Search size={14} className="text-slate-400 shrink-0" />
                           <input
                             autoFocus
                             className="w-full text-xs outline-none font-medium text-slate-700"
@@ -638,8 +674,9 @@ export default function OrderForm() {
         {/* Right Column: Manifest & Totals */}
         <div className="space-y-6">
 
+          {/* CRITICAL FIX: Z-Index elevated to 30 so dropdown breaks above the invoice container */}
           {/* Manifest Form */}
-          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
+          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] relative z-30">
             <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-5 flex items-center gap-2 border-b border-white/60 pb-3">
               <PackageCheck size={14} /> Edit Manifest Items
             </h3>
@@ -684,17 +721,61 @@ export default function OrderForm() {
               {/* Add Item Row */}
               <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 shadow-inner space-y-3 mt-4">
                 <h4 className="text-[9px] font-black uppercase tracking-widest text-slate-500">Add Product</h4>
-                <select
-                  className="w-full bg-white p-2.5 rounded-lg text-xs font-bold border border-slate-200 outline-none focus:border-brand-gold text-slate-700 cursor-pointer shadow-sm transition-all"
-                  value={availableInventories.find(i => i.name === newItem.name)?.id || ''}
-                  onChange={handleInventoryChange}
-                  disabled={inventoryStatus === 'loading'}
-                >
-                  <option className="text-slate-400" value="">{inventoryStatus === 'loading' ? 'Loading Catalog...' : 'Select Item from Catalog...'}</option>
-                  {availableInventories.map(inv => (
-                    <option key={inv.id} value={inv.id}>{inv.name} (SKU: {inv.sku})</option>
-                  ))}
-                </select>
+                
+                {/* CUSTOM SEARCHABLE INVENTORY DROPDOWN */}
+                <div className="relative w-full" ref={inventoryDropdownRef}>
+                  <div
+                    className={`w-full bg-white p-2.5 rounded-lg text-xs font-bold border border-slate-200 focus-within:border-brand-gold shadow-sm flex items-center justify-between transition-all ${inventoryStatus === 'loading' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                    onClick={() => { if (inventoryStatus !== 'loading') setIsInventoryDropdownOpen(!isInventoryDropdownOpen); }}
+                  >
+                    <span className={newItem.name ? "text-slate-900" : "text-slate-400"}>
+                      {newItem.name ? `${newItem.name} (SKU: ${newItem.sku})` : (inventoryStatus === 'loading' ? 'Loading Catalog...' : 'Select Item from Catalog...')}
+                    </span>
+                    <ChevronDown size={14} className="text-slate-400" />
+                  </div>
+
+                  <AnimatePresence>
+                    {isInventoryDropdownOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -5 }}
+                        className="absolute z-[100] w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
+                      >
+                        <div className="p-2 border-b border-slate-100 flex items-center gap-2">
+                          <Search size={14} className="text-slate-400 shrink-0" />
+                          <input
+                            autoFocus
+                            className="w-full text-xs outline-none font-medium text-slate-700"
+                            placeholder="Search by name or SKU..."
+                            value={inventorySearch}
+                            onChange={(e) => setInventorySearch(e.target.value)}
+                          />
+                        </div>
+                        <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                          {filteredInventories.length > 0 ? (
+                            filteredInventories.map(inv => (
+                              <div
+                                key={inv.id}
+                                className="px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer flex flex-col transition-colors"
+                                onClick={() => {
+                                  setNewItem({ ...newItem, name: inv.name, sku: inv.sku, price: inv.price, weight: inv.weight });
+                                  setIsInventoryDropdownOpen(false);
+                                  setInventorySearch('');
+                                }}
+                              >
+                                <span className="font-bold">{inv.name}</span>
+                                <span className="text-slate-400 text-[10px]">SKU: {inv.sku}</span>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="p-3 text-xs text-slate-400 text-center">No items found</div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
 
                 <div className="flex gap-2">
                   <input
@@ -719,7 +800,7 @@ export default function OrderForm() {
           </div>
 
           {/* Invoice Summary Preview */}
-          <div className="bg-slate-950 text-white p-6 rounded-3xl shadow-xl border border-slate-900 relative overflow-hidden">
+          <div className="bg-slate-950 text-white p-6 rounded-3xl shadow-xl border border-slate-900 relative z-10 overflow-hidden">
             <div className="absolute -right-8 -top-8 w-32 h-32 bg-brand-gold/10 rounded-full blur-2xl pointer-events-none"></div>
             <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2 mb-4 border-b border-white/10 pb-3 relative z-10">
               <CreditCard size={14} /> Invoice Preview

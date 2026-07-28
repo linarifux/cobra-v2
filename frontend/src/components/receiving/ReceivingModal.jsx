@@ -1,7 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, Plus, Trash2, X, Loader2, DollarSign, Filter, AlertCircle } from 'lucide-react';
+import { 
+  Package, Plus, Trash2, X, Loader2, DollarSign, 
+  Filter, AlertCircle, Calendar, Truck, Building2, MapPin, Check 
+} from 'lucide-react';
 
 // Redux Thunks
 import { createReceivingLog, updateReceivingLog } from '../../store/slices/receivingSlice';
@@ -25,7 +28,8 @@ const INITIAL_FORM_STATE = {
   quantity: 0,
   numberOfCartons: 0,
   totalWeight: 0, 
-  skids: '',
+  pallets: '',
+  palletProcessingFee: '',
   charge: ''
 };
 
@@ -83,7 +87,8 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
           quantity: record.quantity || 0,
           numberOfCartons: record.numberOfCartons || breakdown.reduce((sum, r) => sum + (Number(r.cartons)||0), 0),
           totalWeight: record.totalWeight || breakdown.reduce((sum, r) => sum + ((Number(r.cartons)||0) * (Number(r.weightPerCarton)||0)), 0),
-          skids: record.skids || '',
+          pallets: record.pallets || '',
+          palletProcessingFee: record.palletProcessingFee || '',
           charge: record.charge || ''
         });
       } else {
@@ -142,9 +147,9 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
   // ROBUST STORAGE LIMIT VALIDATION
   // ==========================================
   const handleAddLocation = (loc) => {
-    const incomingSkids = Number(formData.skids) || 0;
+    const incomingPallets = Number(formData.pallets) || 0;
     
-    // Support generic field names depending on your Location schema (e.g. capacity vs maxSkids)
+    // Support generic field names depending on your Location schema (e.g. capacity vs maxPallets)
     const maxLimit = loc.capacity || loc.maxSkids || loc.maxPallets; 
     const currentUsage = loc.utilized || loc.currentSkids || loc.currentPallets || 0;
 
@@ -153,8 +158,8 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
         alert(`Storage Limit Reached: Location ${loc.designation} is completely full.`);
         return;
       }
-      if (incomingSkids > 0 && (currentUsage + incomingSkids > maxLimit)) {
-        alert(`Capacity Overload: Adding ${incomingSkids} skids exceeds the limit for ${loc.designation}. Only ${maxLimit - currentUsage} spots remaining.`);
+      if (incomingPallets > 0 && (currentUsage + incomingPallets > maxLimit)) {
+        alert(`Capacity Overload: Adding ${incomingPallets} pallets exceeds the limit for ${loc.designation}. Only ${maxLimit - currentUsage} spots remaining.`);
         return;
       }
     }
@@ -196,7 +201,8 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
     payload.quantity = Number(formData.quantity) || 0;
     payload.numberOfCartons = Number(formData.numberOfCartons) || 0;
     payload.totalWeight = Number(formData.totalWeight) || 0;
-    payload.skids = Number(formData.skids) || 0;
+    payload.pallets = Number(formData.pallets) || 0;
+    payload.palletProcessingFee = Number(formData.palletProcessingFee) || 0;
     payload.charge = Number(formData.charge) || 0;
     payload.cartonBreakdown = formData.cartonBreakdown.map(r => ({
       cartons: Number(r.cartons) || 0, unitsPerCarton: Number(r.unitsPerCarton) || 0, weightPerCarton: Number(r.weightPerCarton) || 0
@@ -222,232 +228,276 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
 
   if (!isOpen) return null;
 
+  // PREMIUM UI UTILITY CLASSES
+  const inputClass = "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 outline-none focus:bg-white focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all shadow-sm disabled:opacity-60 disabled:bg-slate-100 placeholder:text-slate-400";
+  const labelClass = "text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block";
+  const cardClass = "bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-5";
+  const cardHeaderClass = "text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 border-b border-slate-100 pb-3";
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={onClose} />
-      <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="relative w-full max-w-lg h-full bg-white shadow-2xl border-l border-slate-200 p-5 sm:p-6 md:p-8 overflow-y-auto flex flex-col">
-        <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100">
-          <h2 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            <Package className="text-brand-gold" size={20} />
-            {record ? 'Edit Receiving Log' : 'New Inbound Receipt'}
-          </h2>
-          <button onClick={onClose} disabled={isSubmitting} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={20} className="text-slate-500"/></button>
+      {/* Backdrop */}
+      <motion.div 
+        initial={{ opacity: 0 }} 
+        animate={{ opacity: 1 }} 
+        exit={{ opacity: 0 }} 
+        className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" 
+        onClick={onClose} 
+      />
+
+      {/* Main Modal Panel */}
+      <motion.div 
+        initial={{ x: '100%' }} 
+        animate={{ x: 0 }} 
+        exit={{ x: '100%' }} 
+        transition={{ type: 'spring', damping: 30, stiffness: 250 }} 
+        className="relative w-full max-w-2xl h-full bg-slate-50/95 backdrop-blur-2xl shadow-2xl border-l border-slate-200 flex flex-col"
+      >
+        
+        {/* Sticky Header */}
+        <div className="flex justify-between items-center px-8 py-6 bg-white border-b border-slate-200 shadow-sm z-10 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-slate-900 text-brand-gold rounded-xl shadow-inner">
+              <Package size={22} />
+            </div>
+            <div>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">
+                {record ? 'Edit Receiving Log' : 'New Inbound Receipt'}
+              </h2>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mt-0.5">Inventory Intake</p>
+            </div>
+          </div>
+          <button onClick={onClose} disabled={isSubmitting} className="p-2 text-slate-400 hover:text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-full transition-colors border border-slate-200/60 shadow-sm">
+            <X size={20} />
+          </button>
         </div>
         
-        <form onSubmit={handleSaveShipment} className="flex-1 flex flex-col gap-y-5">
-          <div className="space-y-4">
+        {/* Scrollable Form Body */}
+        <form id="receivingForm" onSubmit={handleSaveShipment} className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
+          
+          {/* Card 1: Intake Details */}
+          <div className={cardClass}>
+            <h3 className={cardHeaderClass}>
+              <Calendar size={14} /> Intake Details
+            </h3>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Date Received <span className="text-red-400">*</span></label>
-                <input required type="date" value={formData.dateReceived} onChange={(e) => setFormData({...formData, dateReceived: e.target.value})} disabled={isSubmitting} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer" />
+                <label className={labelClass}>Date Received <span className="text-red-400">*</span></label>
+                <input required type="date" value={formData.dateReceived} onChange={(e) => setFormData({...formData, dateReceived: e.target.value})} disabled={isSubmitting} className={inputClass} />
               </div>
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Carrier <span className="text-red-400">*</span></label>
-                <input required type="text" placeholder="e.g., FedEx" value={formData.carrier} onChange={(e) => setFormData({...formData, carrier: e.target.value})} disabled={isSubmitting} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
-              </div>
-            </div>
-
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3 sm:space-y-4">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-2">Vendor Information</h3>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Vendor Name <span className="text-red-400">*</span></label>
-                  <input required type="text" value={formData.vendor} onChange={(e) => setFormData({...formData, vendor: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:border-brand-gold transition-all" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Phone Number</label>
-                  <input type="text" value={formData.vendorPhone} onChange={(e) => setFormData({...formData, vendorPhone: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:border-brand-gold transition-all" />
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Address</label>
-                  <input type="text" value={formData.vendorAddress} onChange={(e) => setFormData({...formData, vendorAddress: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:border-brand-gold transition-all" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">City, State, ZIP</label>
-                  <input type="text" value={formData.vendorCityStateZip} onChange={(e) => setFormData({...formData, vendorCityStateZip: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:border-brand-gold transition-all" />
+                <label className={labelClass}>Carrier <span className="text-red-400">*</span></label>
+                <div className="relative">
+                  <Truck size={16} className="absolute left-4 top-3 text-slate-400" />
+                  <input required type="text" placeholder="e.g. FedEx Freight" value={formData.carrier} onChange={(e) => setFormData({...formData, carrier: e.target.value})} disabled={isSubmitting} className={`${inputClass} pl-11`} />
                 </div>
               </div>
             </div>
 
-            <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Customer / Depositor <span className="text-red-400">*</span></label>
-              <select required value={formData.customer} onChange={handleCustomerChange} disabled={isSubmitting} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer">
-                <option value="">1. Select Customer...</option>
-                {customers.map(c => <option key={c._id} value={c._id}>{c.customerName}</option>)}
-              </select>
+            <div className="p-5 bg-slate-50/80 rounded-2xl border border-slate-200/60 space-y-4">
+              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200/80 pb-2">Vendor Details</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Vendor Name <span className="text-red-400">*</span></label>
+                  <input required type="text" placeholder="Supplier Inc." value={formData.vendor} onChange={(e) => setFormData({...formData, vendor: e.target.value})} disabled={isSubmitting} className={inputClass} />
+                </div>
+                <div>
+                  <label className={labelClass}>Phone Number</label>
+                  <input type="text" placeholder="(555) 123-4567" value={formData.vendorPhone} onChange={(e) => setFormData({...formData, vendorPhone: e.target.value})} disabled={isSubmitting} className={inputClass} />
+                </div>
+                <div>
+                  <label className={labelClass}>Address</label>
+                  <input type="text" placeholder="123 Supply St." value={formData.vendorAddress} onChange={(e) => setFormData({...formData, vendorAddress: e.target.value})} disabled={isSubmitting} className={inputClass} />
+                </div>
+                <div>
+                  <label className={labelClass}>City, State, ZIP</label>
+                  <input type="text" placeholder="New York, NY 10001" value={formData.vendorCityStateZip} onChange={(e) => setFormData({...formData, vendorCityStateZip: e.target.value})} disabled={isSubmitting} className={inputClass} />
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="space-y-4 pt-4 border-t border-slate-100">
-            <div className="flex items-center gap-2 mb-2">
-              <Filter className="text-brand-gold" size={14} />
-              <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Asset Selection & Info</h3>
-            </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="col-span-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Division Segment</label>
-                <select value={formData.division} onChange={handleDivisionChange} disabled={!formData.customer || isSubmitting || availableDivisions.length === 0} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer disabled:opacity-50">
+          {/* Card 2: Asset Identification */}
+          <div className={cardClass}>
+            <h3 className={cardHeaderClass}>
+              <Filter size={14} className="text-brand-gold" /> Asset Identification
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <div>
+                <label className={labelClass}>Customer / Depositor <span className="text-red-400">*</span></label>
+                <select required value={formData.customer} onChange={handleCustomerChange} disabled={isSubmitting} className={`${inputClass} cursor-pointer appearance-none`}>
+                  <option value="">Select Customer...</option>
+                  {customers.map(c => <option key={c._id} value={c._id}>{c.customerName}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>Division Segment</label>
+                <select value={formData.division} onChange={handleDivisionChange} disabled={!formData.customer || isSubmitting || availableDivisions.length === 0} className={`${inputClass} cursor-pointer appearance-none`}>
                   <option value="">Select Division...</option>
                   {availableDivisions.map(d => <option key={d._id} value={d._id}>{d.divisionName}</option>)}
                 </select>
               </div>
-              <div className="col-span-1 sm:col-span-2 relative">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Select Inventory Asset <span className="text-red-400">*</span></label>
-                <select required value={formData.inventoryItem} onChange={handleInventoryChange} disabled={!formData.division || isSubmitting || availableInventory.length === 0} className={`w-full px-4 py-2.5 border rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all cursor-pointer disabled:opacity-50 ${formData.inventoryItem ? 'bg-brand-gold/5 border-brand-gold/30 text-slate-900' : 'bg-slate-50 border-slate-200 text-slate-900'}`}>
-                  <option value="">{availableInventory.length > 0 ? "Select Asset..." : "No assets found for this division"}</option>
-                  {availableInventory.map(inv => <option key={inv._id} value={inv._id}>{inv.productCode || inv.sku} — {inv.description || inv.itemName}</option>)}
-                </select>
-              </div>
             </div>
 
+            <div>
+              <label className={labelClass}>Select Inventory Asset <span className="text-red-400">*</span></label>
+              <select required value={formData.inventoryItem} onChange={handleInventoryChange} disabled={!formData.division || isSubmitting || availableInventory.length === 0} className={`${inputClass} cursor-pointer appearance-none ${formData.inventoryItem ? 'border-brand-gold ring-1 ring-brand-gold/30 bg-brand-gold/5' : ''}`}>
+                <option value="">{availableInventory.length > 0 ? "Search and select asset..." : "No assets found for this division"}</option>
+                {availableInventory.map(inv => <option key={inv._id} value={inv._id}>{inv.productCode || inv.sku} — {inv.description || inv.itemName}</option>)}
+              </select>
+            </div>
+
+            {/* Selected Asset Info Banner */}
             <AnimatePresence>
               {selectedInvDetails && (
-                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="bg-slate-950 text-white rounded-xl p-4 shadow-inner overflow-hidden border border-slate-900">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest block mb-1">Current Stock Level</span>
-                      <span className="text-xl font-black text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 inline-block">{selectedInvDetails.available || selectedInvDetails.unitsOnHand || 0}</span>
-                    </div>
-                    <div>
-                      <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest block mb-1.5">Asset Categories</span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedInvDetails.category1 && <span className="bg-white/10 border border-white/20 px-2 py-0.5 rounded text-[10px] font-bold text-slate-200">{selectedInvDetails.category1.categoryName || selectedInvDetails.category1}</span>}
-                        {selectedInvDetails.category2 && <span className="bg-white/10 border border-white/20 px-2 py-0.5 rounded text-[10px] font-bold text-slate-200">{selectedInvDetails.category2.categoryName || selectedInvDetails.category2}</span>}
-                        {selectedInvDetails.category3 && <span className="bg-white/10 border border-white/20 px-2 py-0.5 rounded text-[10px] font-bold text-slate-200">{selectedInvDetails.category3.categoryName || selectedInvDetails.category3}</span>}
-                      </div>
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="bg-slate-900 text-white rounded-2xl p-5 shadow-inner overflow-hidden border border-slate-800 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest block mb-1">Current Stock Level</span>
+                    <span className="text-2xl font-black text-emerald-400 font-mono drop-shadow-md tracking-tight">
+                      {selectedInvDetails.available || selectedInvDetails.unitsOnHand || 0}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest block mb-1.5">Asset Categories</span>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {selectedInvDetails.category1 && <span className="bg-white/10 border border-white/20 px-2.5 py-1 rounded-lg text-[10px] font-bold text-slate-200">{selectedInvDetails.category1.categoryName || selectedInvDetails.category1}</span>}
+                      {selectedInvDetails.category2 && <span className="bg-white/10 border border-white/20 px-2.5 py-1 rounded-lg text-[10px] font-bold text-slate-200">{selectedInvDetails.category2.categoryName || selectedInvDetails.category2}</span>}
+                      {selectedInvDetails.category3 && <span className="bg-white/10 border border-white/20 px-2.5 py-1 rounded-lg text-[10px] font-bold text-slate-200">{selectedInvDetails.category3.categoryName || selectedInvDetails.category3}</span>}
                     </div>
                   </div>
                 </motion.div>
               )}
             </AnimatePresence>
 
-            {/* LOT & STORAGE LOCATION */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 items-start">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 pt-2 border-t border-slate-100">
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Lot / Batch ID</label>
-                <input type="text" placeholder="e.g., LOT-8812" value={formData.lot} onChange={(e) => setFormData({...formData, lot: e.target.value})} disabled={isSubmitting} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
+                <label className={labelClass}>Lot / Batch ID</label>
+                <input type="text" placeholder="e.g. LOT-8812" value={formData.lot} onChange={(e) => setFormData({...formData, lot: e.target.value})} disabled={isSubmitting} className={inputClass} />
               </div>
               
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Storage Locations</label>
-                <div className="relative">
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {formData.locations.map(locId => {
-                      const locObj = locations.find(l => l._id === locId);
-                      return (
-                        <span key={locId} className="bg-slate-100 border border-slate-200 text-slate-700 px-2 py-1 rounded-md flex items-center gap-1.5 text-[10px] font-bold shadow-sm">
-                          {locObj?.designation || locId}
-                          <X size={12} className="cursor-pointer hover:text-red-500 transition-colors" onClick={() => handleRemoveLocation(locId)} />
-                        </span>
-                      );
-                    })}
-                  </div>
-                  <input 
-                    type="text" 
-                    placeholder={formData.locations.length === 0 ? "Type to search (e.g. F-12)..." : "Add another location..."}
-                    value={locSearchTerm}
-                    onChange={(e) => { setLocSearchTerm(e.target.value); setIsLocDropdownOpen(true); }}
-                    onFocus={() => setIsLocDropdownOpen(true)}
-                    onBlur={() => setTimeout(() => setIsLocDropdownOpen(false), 200)}
-                    disabled={isSubmitting}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all"
-                  />
-                  
-                  {/* UPDATED LOCATION DROPDOWN UI WITH CAPACITY BADGES */}
-                  <AnimatePresence>
-                    {isLocDropdownOpen && (
-                      <motion.ul initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto custom-scrollbar">
-                        {availableLocations.length > 0 ? (
-                          availableLocations.map(loc => {
-                            const maxLimit = loc.capacity || loc.maxSkids || loc.maxPallets;
-                            const currentUsage = loc.utilized || loc.currentSkids || loc.currentPallets || 0;
-                            const isFull = maxLimit !== undefined && currentUsage >= maxLimit || loc.status === 'Full';
-
-                            return (
-                              <li 
-                                key={loc._id} 
-                                onClick={() => !isFull && handleAddLocation(loc)} 
-                                className={`px-4 py-2.5 border-b last:border-b-0 border-slate-100 flex items-center justify-between transition-colors ${
-                                  isFull 
-                                    ? 'bg-slate-50 cursor-not-allowed opacity-60' 
-                                    : 'hover:bg-brand-gold/10 hover:text-brand-gold cursor-pointer'
-                                }`}
-                              >
-                                <div className="flex flex-col">
-                                  <span className="text-xs font-black flex items-center gap-1.5">
-                                    {loc.designation} 
-                                    {isFull && <AlertCircle size={12} className="text-red-500"/>}
-                                  </span>
-                                  <span className="text-[9px] font-bold text-slate-400">{loc.storageCategory || 'Standard Storage'}</span>
-                                </div>
-                                
-                                <div className="flex items-center gap-2">
-                                  {isFull ? (
-                                    <span className="text-[8px] font-black uppercase text-red-500 bg-red-50 px-1.5 py-0.5 rounded border border-red-100">Full</span>
-                                  ) : (
-                                    maxLimit !== undefined && (
-                                      <span className="text-[10px] font-bold text-slate-500">
-                                        <span className="text-slate-700">{currentUsage}</span> / {maxLimit}
-                                      </span>
-                                    )
-                                  )}
-                                </div>
-                              </li>
-                            );
-                          })
-                        ) : (
-                          <li className="px-4 py-3 text-xs font-bold text-slate-400 text-center italic">No matching locations</li>
-                        )}
-                      </motion.ul>
-                    )}
-                  </AnimatePresence>
+              <div className="relative">
+                <label className={labelClass}>Storage Locations</label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {formData.locations.map(locId => {
+                    const locObj = locations.find(l => l._id === locId);
+                    return (
+                      <span key={locId} className="bg-slate-100 border border-slate-200 text-slate-700 px-2.5 py-1 rounded-lg flex items-center gap-2 text-xs font-bold shadow-sm">
+                        <MapPin size={12} className="text-slate-400"/>
+                        {locObj?.designation || locId}
+                        <X size={14} className="cursor-pointer text-slate-400 hover:text-red-500 transition-colors" onClick={() => handleRemoveLocation(locId)} />
+                      </span>
+                    );
+                  })}
                 </div>
+                <input 
+                  type="text" 
+                  placeholder={formData.locations.length === 0 ? "Type to search (e.g. F-12)..." : "Add another location..."}
+                  value={locSearchTerm}
+                  onChange={(e) => { setLocSearchTerm(e.target.value); setIsLocDropdownOpen(true); }}
+                  onFocus={() => setIsLocDropdownOpen(true)}
+                  onBlur={() => setTimeout(() => setIsLocDropdownOpen(false), 200)}
+                  disabled={isSubmitting}
+                  className={inputClass}
+                />
+                
+                {/* Location Autocomplete Dropdown */}
+                <AnimatePresence>
+                  {isLocDropdownOpen && (
+                    <motion.ul initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto custom-scrollbar overflow-hidden">
+                      {availableLocations.length > 0 ? (
+                        availableLocations.map(loc => {
+                          const maxLimit = loc.capacity || loc.maxSkids || loc.maxPallets;
+                          const currentUsage = loc.utilized || loc.currentSkids || loc.currentPallets || 0;
+                          const isFull = maxLimit !== undefined && currentUsage >= maxLimit || loc.status === 'Full';
+
+                          return (
+                            <li 
+                              key={loc._id} 
+                              onClick={() => !isFull && handleAddLocation(loc)} 
+                              className={`px-4 py-3 border-b last:border-b-0 border-slate-100 flex items-center justify-between transition-colors ${
+                                isFull 
+                                  ? 'bg-slate-50 cursor-not-allowed opacity-60' 
+                                  : 'hover:bg-slate-50 hover:text-brand-gold cursor-pointer'
+                              }`}
+                            >
+                              <div className="flex flex-col">
+                                <span className="text-sm font-black flex items-center gap-1.5">
+                                  {loc.designation} 
+                                  {isFull && <AlertCircle size={14} className="text-red-500"/>}
+                                </span>
+                                <span className="text-[10px] font-bold text-slate-400 mt-0.5">{loc.storageCategory || 'Standard Storage'}</span>
+                              </div>
+                              
+                              <div className="flex items-center gap-2">
+                                {isFull ? (
+                                  <span className="text-[9px] font-black uppercase tracking-wider text-red-500 bg-red-50 px-2 py-1 rounded-md border border-red-100">Full</span>
+                                ) : (
+                                  maxLimit !== undefined && (
+                                    <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md border border-slate-200">
+                                      <span className="text-slate-800">{currentUsage}</span> / {maxLimit}
+                                    </span>
+                                  )
+                                )}
+                              </div>
+                            </li>
+                          );
+                        })
+                      ) : (
+                        <li className="px-4 py-4 text-xs font-bold text-slate-400 text-center italic">No matching locations</li>
+                      )}
+                    </motion.ul>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
           </div>
 
-          <div className="bg-slate-50/80 p-4 sm:p-5 rounded-2xl border border-slate-200 space-y-5 mt-2">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-2">Quantitative Metrics</h3>
+          {/* Card 3: Quantitative Metrics & Breakdown */}
+          <div className={cardClass}>
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                 Quantitative Metrics
+              </h3>
+              <button type="button" onClick={addBreakdownRow} className="text-[10px] font-black uppercase tracking-wider text-brand-gold hover:text-white bg-brand-gold/10 hover:bg-brand-gold border border-brand-gold/20 hover:border-brand-gold flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all shadow-sm">
+                <Plus size={14} /> Add Config
+              </button>
+            </div>
+            
+            {/* Dynamic Carton Breakdown Rows */}
             <div className="space-y-3">
-              <div className="flex justify-between items-center mb-1">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider pl-1">Carton Configurations</label>
-                <button type="button" onClick={addBreakdownRow} className="text-[10px] font-black uppercase tracking-wider text-brand-gold hover:text-brand-gold/80 flex items-center gap-1 transition-colors bg-brand-gold/10 px-2 py-1 rounded-md">
-                  <Plus size={12} /> Add Config
-                </button>
-              </div>
-
               {formData.cartonBreakdown.map((row) => (
-                <div key={row.id} className="grid grid-cols-3 sm:flex sm:items-center gap-2 sm:gap-3 bg-white p-3 border border-slate-200 rounded-xl shadow-sm relative">
-                  <div className="col-span-1 sm:flex-1">
-                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block text-center">Cartons</label>
-                    <input type="number" min="0" value={row.cartons} onChange={(e) => handleBreakdownChange(row.id, 'cartons', e.target.value)} disabled={isSubmitting} className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-black text-slate-900 text-center outline-none focus:border-brand-gold" />
+                <div key={row.id} className="flex flex-col sm:flex-row sm:items-center gap-3 bg-slate-50/50 p-4 rounded-2xl border border-slate-200 shadow-sm relative transition-all hover:bg-white hover:border-slate-300">
+                  
+                  <div className="flex-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 text-center">Cartons</label>
+                    <input type="number" min="0" value={row.cartons} onChange={(e) => handleBreakdownChange(row.id, 'cartons', e.target.value)} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-black text-slate-900 text-center outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/10 shadow-sm transition-all" />
                   </div>
                   
-                  <span className="hidden sm:inline text-slate-300 font-black text-xs pt-4">×</span>
+                  <span className="hidden sm:block text-slate-300 font-black text-sm pt-5">×</span>
                   
-                  <div className="col-span-1 sm:flex-1">
-                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block text-center">Units/Ctn</label>
-                    <input type="number" min="0" value={row.unitsPerCarton} onChange={(e) => handleBreakdownChange(row.id, 'unitsPerCarton', e.target.value)} disabled={isSubmitting} className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-black text-slate-900 text-center outline-none focus:border-brand-gold" />
+                  <div className="flex-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 text-center">Units/Ctn</label>
+                    <input type="number" min="0" value={row.unitsPerCarton} onChange={(e) => handleBreakdownChange(row.id, 'unitsPerCarton', e.target.value)} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-black text-slate-900 text-center outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/10 shadow-sm transition-all" />
                   </div>
                   
-                  <span className="hidden sm:inline text-slate-300 font-black text-xs pt-4">&</span>
+                  <span className="hidden sm:block text-slate-300 font-black text-sm pt-5">&</span>
                   
-                  <div className="col-span-1 sm:flex-1">
-                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block text-center">Lbs/Ctn</label>
-                    <input type="number" step="0.01" min="0" value={row.weightPerCarton} onChange={(e) => handleBreakdownChange(row.id, 'weightPerCarton', e.target.value)} disabled={isSubmitting} className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-black text-slate-900 text-center outline-none focus:border-brand-gold" />
+                  <div className="flex-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 text-center">Lbs/Ctn</label>
+                    <input type="number" step="0.01" min="0" value={row.weightPerCarton} onChange={(e) => handleBreakdownChange(row.id, 'weightPerCarton', e.target.value)} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-black text-slate-900 text-center outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/10 shadow-sm transition-all" />
                   </div>
 
-                  <div className="col-span-3 sm:w-16 flex flex-row sm:flex-col items-center justify-between sm:justify-center pt-2 sm:pt-4 gap-2 sm:gap-1 border-t sm:border-t-0 sm:border-l border-slate-100 sm:pl-2 mt-2 sm:mt-0">
-                    <span className="text-sm font-black text-brand-gold leading-none">
-                      {((Number(row.cartons) || 0) * (Number(row.unitsPerCarton) || 0)).toLocaleString()} <span className="text-[9px]">U</span>
-                    </span>
-                    <button type="button" onClick={() => removeBreakdownRow(row.id)} disabled={formData.cartonBreakdown.length === 1} className="text-slate-300 hover:text-red-500 transition-colors disabled:opacity-30">
+                  {/* Row Totals & Delete */}
+                  <div className="w-full sm:w-24 flex items-center justify-between sm:justify-center sm:flex-col pt-3 sm:pt-4 border-t sm:border-t-0 sm:border-l border-slate-200 gap-2 sm:pl-3 mt-3 sm:mt-0">
+                    <div className="text-center">
+                      <span className="text-lg font-black text-brand-gold tracking-tight leading-none">
+                        {((Number(row.cartons) || 0) * (Number(row.unitsPerCarton) || 0)).toLocaleString()}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-400 block uppercase">Units</span>
+                    </div>
+                    <button type="button" onClick={() => removeBreakdownRow(row.id)} disabled={formData.cartonBreakdown.length === 1} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all disabled:opacity-30">
                       <Trash2 size={16} />
                     </button>
                   </div>
@@ -455,46 +505,56 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
               ))}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 pt-4 border-t border-slate-200/60">
-              <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 block pl-1">Total Qty</label>
-                <input type="text" readOnly value={formData.quantity.toLocaleString()} className="w-full px-4 py-2.5 sm:py-3 bg-brand-gold/5 border border-brand-gold/30 rounded-xl text-lg font-black text-brand-gold cursor-not-allowed shadow-inner outline-none text-center" />
+            {/* Read-Only Summary Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-5 border-t border-slate-100">
+              <div className="bg-brand-gold/5 border border-brand-gold/20 p-4 rounded-2xl flex flex-col items-center justify-center shadow-inner">
+                <span className="text-[10px] font-black text-brand-gold/70 uppercase tracking-widest mb-1">Total Qty</span>
+                <span className="text-2xl font-black text-brand-gold tracking-tight">{formData.quantity.toLocaleString()}</span>
               </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 block pl-1">Total Cartons</label>
-                <input type="text" readOnly value={formData.numberOfCartons.toLocaleString()} className="w-full px-4 py-2.5 sm:py-3 bg-slate-100 border border-slate-200 rounded-xl text-lg font-black text-slate-500 cursor-not-allowed shadow-inner outline-none text-center" />
+              <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl flex flex-col items-center justify-center shadow-inner">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Total Cartons</span>
+                <span className="text-2xl font-black text-slate-800 tracking-tight">{formData.numberOfCartons.toLocaleString()}</span>
               </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 block pl-1">Total Wgt (lbs)</label>
-                <input type="text" readOnly value={formData.totalWeight.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} className="w-full px-4 py-2.5 sm:py-3 bg-emerald-50 border border-emerald-200 rounded-xl text-lg font-black text-emerald-700 cursor-not-allowed shadow-inner outline-none text-center" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Total Skids</label>
-                <input type="number" min="0" value={formData.skids} onChange={(e) => setFormData({...formData, skids: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
-              </div>
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1 block pl-1">Unit Wt (lbs)</label>
-                <input type="number" step="0.01" min="0" value={formData.unitWeight} onChange={(e) => setFormData({...formData, unitWeight: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
-              </div>
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1 pl-1"><DollarSign size={10}/> Applied Charge</label>
-                <input type="number" step="0.01" min="0" value={formData.charge} onChange={(e) => setFormData({...formData, charge: e.target.value})} disabled={isSubmitting} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-emerald-700 outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all" />
+              <div className="bg-emerald-50 border border-emerald-200/60 p-4 rounded-2xl flex flex-col items-center justify-center shadow-inner">
+                <span className="text-[10px] font-black text-emerald-600/70 uppercase tracking-widest mb-1">Total Wgt (lbs)</span>
+                <span className="text-2xl font-black text-emerald-600 tracking-tight">{formData.totalWeight.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
             </div>
           </div>
 
-          <div className="mt-auto pt-6 border-t border-slate-100 flex flex-col-reverse sm:flex-row gap-3">
-            <button type="button" onClick={onClose} disabled={isSubmitting} className="w-full sm:w-auto px-6 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black rounded-2xl transition-all disabled:opacity-50 text-[11px] uppercase tracking-widest text-center">
-              Cancel
-            </button>
-            <button type="submit" disabled={isSubmitting} className="flex-1 flex justify-center items-center py-3.5 bg-slate-900 hover:bg-slate-800 text-brand-gold font-black rounded-2xl shadow-xl shadow-slate-900/20 transition-all active:scale-95 disabled:opacity-70 text-[11px] uppercase tracking-widest">
-              {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : (record ? 'Save Updates' : 'Confirm Receipt')}
-            </button>
+          {/* Card 4: Pallets & Fees */}
+          <div className={cardClass}>
+             <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+              <div>
+                <label className={labelClass}>Pallets</label>
+                <input type="number" min="0" value={formData.pallets} onChange={(e) => setFormData({...formData, pallets: e.target.value})} disabled={isSubmitting} className={inputClass} />
+              </div>
+              <div>
+                <label className={`${labelClass} flex items-center gap-1`}><DollarSign size={12}/> Pallet Processing Fee</label>
+                <input type="number" step="0.01" min="0" value={formData.palletProcessingFee} onChange={(e) => setFormData({...formData, palletProcessingFee: e.target.value})} disabled={isSubmitting} className={inputClass} />
+              </div>
+              <div>
+                <label className={`${labelClass} flex items-center gap-1`}><DollarSign size={12}/> Applied Charge</label>
+                <div className="relative">
+                   <input type="number" step="0.01" min="0" value={formData.charge} onChange={(e) => setFormData({...formData, charge: e.target.value})} disabled={isSubmitting} className={`${inputClass} !text-emerald-700 !bg-emerald-50/30 !border-emerald-200 focus:!ring-emerald-500/20`} />
+                </div>
+              </div>
+            </div>
           </div>
+
         </form>
+
+        {/* Fixed Footer Actions */}
+        <div className="p-6 bg-white border-t border-slate-200 flex flex-col-reverse sm:flex-row gap-3 shrink-0 z-10">
+          <button type="button" onClick={onClose} disabled={isSubmitting} className="w-full sm:w-auto px-8 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black rounded-xl transition-all disabled:opacity-50 text-[11px] uppercase tracking-widest text-center">
+            Cancel
+          </button>
+          <button type="submit" form="receivingForm" disabled={isSubmitting} className="flex-1 flex justify-center items-center py-3.5 bg-slate-900 hover:bg-slate-800 text-brand-gold font-black rounded-xl shadow-xl shadow-slate-900/20 transition-all active:scale-95 disabled:opacity-70 text-[11px] uppercase tracking-widest gap-2">
+            {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
+            {record ? 'Save Updates' : 'Confirm Receipt'}
+          </button>
+        </div>
+
       </motion.div>
     </div>
   );

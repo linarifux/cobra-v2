@@ -53,6 +53,11 @@ const userSchema = new mongoose.Schema({
       'Order portal users must have at least one division assigned'
     ]
   }],
+  // NEW: Optional charge code for order portal users
+  chargeCode: {
+    type: String,
+    trim: true
+  },
   isActive: {
     type: Boolean,
     default: true
@@ -79,11 +84,10 @@ userSchema.pre('validate', function() {
 // 1. Hash password before saving (Triggered on User.create or user.save())
 userSchema.pre('save', async function () {
   // Only run this function if password was actually modified
-  if (!this.isModified('password')) return ;
+  if (!this.isModified('password')) return;
   
   // Hash the password with cost of 12
   this.password = await bcrypt.hash(this.password, 12);
-  
 });
 
 // 2. NEW: Hash password on updates (Triggered on findByIdAndUpdate)
@@ -98,7 +102,6 @@ userSchema.pre('findOneAndUpdate', async function () {
   else if (update.$set && update.$set.password) {
     update.$set.password = await bcrypt.hash(update.$set.password, 12);
   }
-  
 });
 
 // Instance method to verify password during login

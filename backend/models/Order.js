@@ -40,6 +40,10 @@ const orderSchema = new mongoose.Schema(
       enum: ['New', 'Pending', 'Processing', 'Picked', 'Shipped', 'Hold', 'Cancelled', 'Delivered', 'Billed'],
       default: 'New'
     },
+    chargeCode: {
+      type: String,
+      required: false
+    },
     items: [orderItemSchema],
     totalAmount: {
       type: Number,

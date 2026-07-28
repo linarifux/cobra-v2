@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -22,15 +22,6 @@ import { fetchCustomers } from '../store/slices/customerSlice';
 import { fetchDivisions } from '../store/slices/divisionSlice';
 import { fetchInventory } from '../store/slices/inventorySlice';
 
-const INITIAL_FILTERS = {
-  status: 'New',
-  customer: 'All', 
-  division: 'All',
-  user: 'All',     
-  dateStart: '',
-  dateEnd: ''
-};
-
 export default function OrdersPage() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -43,7 +34,16 @@ export default function OrdersPage() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrders, setSelectedOrders] = useState([]);
-  const [filters, setFilters] = useState(INITIAL_FILTERS);
+  
+  // Start with 'New' so it doesn't flash the entire database while loading
+  const [filters, setFilters] = useState({
+    status: 'New',
+    customer: 'All', 
+    division: 'All',
+    user: 'All',     
+    dateStart: '',
+    dateEnd: ''
+  });
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState(null);
@@ -52,6 +52,9 @@ export default function OrdersPage() {
   // --- Bulk Fulfillment Modal State ---
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [isGeneratingDocs, setIsGeneratingDocs] = useState(false);
+
+  // --- SMART DEFAULT FILTER LOGIC ---
+  const filterInitialized = useRef(false);
 
   useEffect(() => {
     dispatch(fetchOrders({})); 
@@ -62,6 +65,18 @@ export default function OrdersPage() {
     
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch]);
+
+  // Evaluates database payload to determine optimal default status view
+  useEffect(() => {
+    if (ordersStatus === 'succeeded' && !filterInitialized.current) {
+      const hasNewOrders = ordersData.some(o => o.status === 'New');
+      setFilters(prev => ({
+        ...prev,
+        status: hasNewOrders ? 'New' : 'All'
+      }));
+      filterInitialized.current = true;
+    }
+  }, [ordersStatus, ordersData]);
 
   // --- Cascading Filter Logic ---
   const availableDivisions = useMemo(() => {
@@ -106,7 +121,16 @@ export default function OrdersPage() {
 
   const clearAllFilters = () => {
     setSearchQuery('');
-    setFilters(INITIAL_FILTERS);
+    // Ensure the 'Clear Filters' button respects the dynamic smart default
+    const hasNewOrders = ordersData.some(o => o.status === 'New');
+    setFilters({
+      status: hasNewOrders ? 'New' : 'All',
+      customer: 'All', 
+      division: 'All',
+      user: 'All',     
+      dateStart: '',
+      dateEnd: ''
+    });
   };
 
   const activeFilterCount = useMemo(() => {
@@ -285,7 +309,6 @@ export default function OrdersPage() {
             // Extract location(s) based on structural assignment
             let locationStr = '';
             if (invItem?.locations && Array.isArray(invItem.locations) && invItem.locations.length > 0) {
-               // Map through locations array and get 'designation', join with commas
                locationStr = invItem.locations.map(loc => loc.designation).filter(Boolean).join(', ');
             }
             

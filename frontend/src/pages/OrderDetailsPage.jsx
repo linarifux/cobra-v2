@@ -7,7 +7,7 @@ import {
   ArrowLeft, Truck, MapPin, User, CreditCard, 
   Trash2, Edit2, Check, Plus, MessageSquare, Ban,
   Mail, Phone, X, Weight, Loader2, Save, ExternalLink, 
-  CloudUpload, CheckCircle2, PackageCheck, AlertTriangle, Clock, Printer, ChevronDown, Search
+  CloudUpload, CheckCircle2, PackageCheck, AlertTriangle, Clock, Printer, ChevronDown, Search, Briefcase
 } from 'lucide-react';
 
 import jsPDF from 'jspdf';
@@ -17,12 +17,13 @@ import api from '../utils/api';
 import { 
   fetchOrderById, updateOrder, clearCurrentOrder, 
   generateOrderLabel, downloadPurchasedLabel,
-  voidOrderLabel, cancelOrderShipment 
+  voidOrderLabel, cancelOrderShipment, createOrderShipment
 } from '../store/slices/orderSlice'; 
 import { fetchInventory, updateInventory } from '../store/slices/inventorySlice'; 
 import { fetchUsers } from '../store/slices/userSlice'; 
 
 import NotFoundPage from './NotFoundPage';
+import CreateShipmentModal from '../components/order-details/CreateShipmentModal';
 
 const generateLocalId = () => `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -40,11 +41,7 @@ const generateTrackingLink = (carrier, trackingNumber) => {
 const downloadBase64PDF = (base64Data, filename) => {
   try {
     let cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
-    
-    // Automatically pad Base64 string to ensure string length is a multiple of 4
-    while (cleanBase64.length % 4 > 0) {
-      cleanBase64 += '=';
-    }
+    while (cleanBase64.length % 4 > 0) cleanBase64 += '=';
     
     const byteCharacters = atob(cleanBase64);
     const byteNumbers = new Array(byteCharacters.length);
@@ -112,6 +109,11 @@ export default function OrderDetailsPage() {
   const [newItem, setNewItem] = useState({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
   const [editing, setEditing] = useState({ logistics: false, address: false });
   
+  // --- Create Shipment Modal State ---
+  const [createShipmentModalOpen, setCreateShipmentModalOpen] = useState(false);
+  const [isCreatingShipment, setIsCreatingShipment] = useState(false);
+
+  // --- Action States ---
   const [isSaving, setIsSaving] = useState(false);
   const [isGeneratingLabel, setIsGeneratingLabel] = useState(false);
   const [isDownloadingLabel, setIsDownloadingLabel] = useState(false);
@@ -137,10 +139,17 @@ export default function OrderDetailsPage() {
   const [stateSearch, setStateSearch] = useState('');
   const stateDropdownRef = useRef(null);
 
+  const [isInventoryDropdownOpen, setIsInventoryDropdownOpen] = useState(false);
+  const [inventorySearch, setInventorySearch] = useState('');
+  const inventoryDropdownRef = useRef(null);
+
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (stateDropdownRef.current && !stateDropdownRef.current.contains(event.target)) {
         setIsStateDropdownOpen(false);
+      }
+      if (inventoryDropdownRef.current && !inventoryDropdownRef.current.contains(event.target)) {
+        setIsInventoryDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -177,12 +186,20 @@ export default function OrderDetailsPage() {
   
   const orderCreatorName = orderCreator ? (orderCreator.name || orderCreator.firstName || orderCreator.email) : null;
 
+  // --- FIX: INFINITE LOOP RESOLUTION ---
+  // Decoupled the order fetching from the global dependency fetching.
   useEffect(() => {
     if (isValidMongoId) dispatch(fetchOrderById(id));
-    if (inventoryStatus === 'idle') dispatch(fetchInventory());
-    if (usersStatus === 'idle') dispatch(fetchUsers()); 
     return () => dispatch(clearCurrentOrder());
-  }, [id, isValidMongoId, inventoryStatus, usersStatus, dispatch]);
+  }, [id, isValidMongoId, dispatch]);
+
+  useEffect(() => {
+    if (inventoryStatus === 'idle') dispatch(fetchInventory());
+  }, [inventoryStatus, dispatch]);
+
+  useEffect(() => {
+    if (usersStatus === 'idle') dispatch(fetchUsers()); 
+  }, [usersStatus, dispatch]);
 
   useEffect(() => {
     const fetchLocations = async () => {
@@ -210,11 +227,18 @@ export default function OrderDetailsPage() {
     return inventoryData.map(inv => ({
       id: inv._id,
       name: inv.itemName || 'Unnamed Item',
-      sku: inv.sku,
+      sku: inv.sku || '',
       price: inv.unitCost || inv.price || 0,
       weight: inv.weight || 0
-    }));
+    })).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   }, [inventoryData]);
+
+  const filteredInventories = useMemo(() => {
+    return availableInventories.filter(inv =>
+      inv.name.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+      inv.sku.toLowerCase().includes(inventorySearch.toLowerCase())
+    );
+  }, [availableInventories, inventorySearch]);
 
   useEffect(() => {
     if (currentOrder) {
@@ -253,6 +277,7 @@ export default function OrderDetailsPage() {
           weight: matchedStock?.weight || 0 
         };
       }) || [];
+
       
       setItems(mappedItems);
 
@@ -261,17 +286,26 @@ export default function OrderDetailsPage() {
          setPackages([{ id: generateLocalId(), weightInOunces: calculatedOz > 0 ? calculatedOz : 16, length: 10, width: 10, height: 10 }]);
       }
     }
-  }, [currentOrder, availableInventories]); 
+  }, [currentOrder]); 
+  // removed availableInventories to prevent rewriting state during catalog edits
 
+  // Sync missing item weights continuously (No infinite loop)
   useEffect(() => {
-    if (availableInventories.length > 0 && items.length > 0) {
-      setItems(prevItems => prevItems.map(item => {
-        if (!item.weight || item.weight === 0) {
-          const matchedStock = availableInventories.find(inv => inv.sku === item.sku);
-          if (matchedStock) return { ...item, weight: matchedStock.weight };
-        }
-        return item;
-      }));
+    if (availableInventories.length > 0) {
+      setItems(prevItems => {
+        let isModified = false;
+        const newItems = prevItems.map(item => {
+          if (!item.weight || item.weight === 0) {
+            const matchedStock = availableInventories.find(inv => inv.sku === item.sku);
+            if (matchedStock && matchedStock.weight) {
+              isModified = true;
+              return { ...item, weight: matchedStock.weight };
+            }
+          }
+          return item;
+        });
+        return isModified ? newItems : prevItems;
+      });
     }
   }, [availableInventories]);
 
@@ -306,6 +340,7 @@ export default function OrderDetailsPage() {
            locationStr = invItem.locationString;
         }
 
+
         return [
           " [    ] ", 
           locationStr || '',
@@ -332,6 +367,7 @@ export default function OrderDetailsPage() {
       doc.addPage();
       
       const customerName = currentOrder.customer?.customerName || 'Customer Order';
+      const divisionName = currentOrder.division?.divisionName || 'Custom Division'
       const orderNo = currentOrder.orderNumber || 'N/A';
       const orderDate = currentOrder.createdAt ? new Date(currentOrder.createdAt).toLocaleDateString('en-GB', {day: '2-digit', month: 'short', year: 'numeric'}) : 'N/A';
       const shipVia = `${shipping.carrierType || ''} ${shipping.serviceCode || ''}`.trim() || 'UPS - Ground';
@@ -340,16 +376,7 @@ export default function OrderDetailsPage() {
       doc.setFontSize(14);
       doc.setTextColor(0, 0, 0);
       doc.setFont('helvetica', 'bold');
-      doc.text(customerName.toUpperCase(), 14, 20);
-
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'normal');
-      doc.text("Service Center", 105, 20, { align: 'center' });
-      doc.text("MI-KRO Industries", 105, 24, { align: 'center' });
-      doc.text("1509 RT 38 Unit 9", 105, 28, { align: 'center' });
-      doc.text("Hainesport, NJ 08036 US", 105, 32, { align: 'center' });
-      doc.text("609-694-0521", 105, 36, { align: 'center' });
-      doc.text("mike@mi-krologistics.com", 105, 40, { align: 'center' });
+      doc.text(`${customerName.toUpperCase()} - ${divisionName}`, 14, 20);
 
       const rightColKeyX = 160;
       const rightColValX = 162;
@@ -430,9 +457,7 @@ export default function OrderDetailsPage() {
           head: [["Item Code / Lot(s) #", "Description", "Qty.\nPicked", "Qty.\nOrdered", "Qty.\nShipped"]],
           body: tableRows,
           theme: 'plain',
-          headStyles: { 
-            fontStyle: 'bold', textColor: 0, halign: 'left', borderBottomColor: 0, borderBottomWidth: 0.5 
-          },
+          headStyles: { fontStyle: 'bold', textColor: 0, halign: 'left', borderBottomColor: 0, borderBottomWidth: 0.5 },
           styles: { fontSize: 9, cellPadding: 3, textColor: 20, font: 'helvetica' },
           columnStyles: {
               0: { cellWidth: 45 }, 1: { cellWidth: 'auto' },
@@ -440,8 +465,14 @@ export default function OrderDetailsPage() {
           },
           willDrawCell: function(data) {
               if (data.row.section === 'body') {
-                  doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.1);
-                  doc.line(data.cell.x, data.cell.y + data.cell.height, data.cell.x + data.cell.width, data.cell.y + data.cell.height);
+                  doc.setDrawColor(200, 200, 200);
+                  doc.setLineWidth(0.1);
+                  doc.line(
+                      data.cell.x, 
+                      data.cell.y + data.cell.height, 
+                      data.cell.x + data.cell.width, 
+                      data.cell.y + data.cell.height
+                  );
               }
           }
       });
@@ -461,9 +492,13 @@ export default function OrderDetailsPage() {
       const blobUrl = doc.output('bloburl');
       window.open(blobUrl, '_blank');
 
-      await dispatch(updateOrder({ id: currentOrder._id, updateData: { status: 'Picked' } })).unwrap();
-      setOrderStatus('Picked');
-      toast.success("Documents generated and order marked as Picked.");
+      if (!shipping.trackingNumber) {
+        await dispatch(updateOrder({ id: currentOrder._id, updateData: { status: 'Picked' } })).unwrap();
+        setOrderStatus('Picked');
+        toast.success("Documents generated and order marked as Picked.");
+      } else {
+        toast.success("Documents generated successfully.");
+      }
 
     } catch (error) {
       console.error(error);
@@ -484,9 +519,9 @@ export default function OrderDetailsPage() {
   };
 
   const handleAddItem = () => {
-    if (!newItem.name || newItem.price === undefined) return;
-    setItems([
-      ...items, 
+    if (!newItem.name || newItem.price === undefined) return toast.error("Please select an item to add.");
+    setItems(prev => [
+      ...prev, 
       { 
         ...newItem, 
         id: generateLocalId(), 
@@ -498,14 +533,30 @@ export default function OrderDetailsPage() {
     setNewItem({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
   };
 
-  const addPackage = () => setPackages([...packages, { id: generateLocalId(), weightInOunces: 16, length: 10, width: 10, height: 10 }]);
-  const updatePackage = (id, field, value) => setPackages(packages.map(p => p.id === id ? { ...p, [field]: value } : p));
-  const removePackage = (id) => setPackages(packages.filter(p => p.id !== id));
+  // --- FIX: Bulletproof state updates for arrays ---
+  const addPackage = () => setPackages(prev => [...prev, { id: generateLocalId(), weightInOunces: 16, length: 10, width: 10, height: 10 }]);
+  const updatePackage = (id, field, value) => setPackages(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
+  const removePackage = (id) => setPackages(prev => prev.filter(p => p.id !== id));
   
+  const handleWeightChange = (id, currentTotalOz, type, value) => {
+    const numVal = value === '' ? '' : Number(value);
+    const currentLbs = Math.floor((Number(currentTotalOz) || 0) / 16);
+    const currentOz = (Number(currentTotalOz) || 0) % 16;
+
+    let newTotal = 0;
+    if (type === 'lbs') {
+      newTotal = (numVal === '' ? 0 : numVal * 16) + currentOz;
+    } else {
+      newTotal = (currentLbs * 16) + (numVal === '' ? 0 : numVal);
+    }
+    
+    updatePackage(id, 'weightInOunces', newTotal);
+  };
+
   const autoSyncWeights = () => {
     if (packages.length === 0 || totalItemWeightOz === 0) return;
     const weightPerBox = Math.ceil(totalItemWeightOz / packages.length);
-    setPackages(packages.map(p => ({ ...p, weightInOunces: weightPerBox })));
+    setPackages(prev => prev.map(p => ({ ...p, weightInOunces: weightPerBox })));
     toast.success('Package weights synced with item weights.');
   };
 
@@ -627,6 +678,35 @@ export default function OrderDetailsPage() {
       toast.error(`Failed to delete order: ${error.response?.data?.message || error.message}`);
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleCreateShipmentSubmit = async () => {
+    if (!shipping.carrierType || !shipping.serviceCode) return toast.warning("Please configure shipping carrier and service code on the order.");
+    if (!fulfillmentData.shipFromId) return toast.warning("Please select a Ship From warehouse location.");
+
+    setIsCreatingShipment(true);
+    const payload = {
+      packages: packages.map(p => ({
+        weightInOunces: Number(p.weightInOunces),
+        length: Number(p.length),
+        width: Number(p.width),
+        height: Number(p.height)
+      })),
+      isResidential: fulfillmentData.isResidential,
+      carrierCode: shipping.carrierType,
+      serviceCode: shipping.serviceCode
+    };
+
+    try {
+      await dispatch(createOrderShipment({ orderId: currentOrder._id, fulfillmentData: payload })).unwrap();
+      toast.success("Shipment successfully created in ShipStation.");
+      setCreateShipmentModalOpen(false);
+      dispatch(fetchOrderById(currentOrder._id));
+    } catch (error) {
+      toast.error("Failed to create shipment", { description: typeof error === 'string' ? error : error.message });
+    } finally {
+      setIsCreatingShipment(false);
     }
   };
 
@@ -777,6 +857,7 @@ export default function OrderDetailsPage() {
   return (
     <div className="h-full flex flex-col gap-5 animate-fade-in max-w-[1400px] mx-auto pb-10 px-4 box-border text-slate-900">
       
+      {/* Header Actions */}
       <div className="flex items-center justify-between bg-white/30 p-3 rounded-2xl border border-white/50 backdrop-blur-xl transition-all duration-300 gap-4 shadow-sm">
         <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors duration-200 shrink-0">
           <ArrowLeft size={16} /> <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">Back to Orders</span>
@@ -804,8 +885,9 @@ export default function OrderDetailsPage() {
 
           <button 
             onClick={handlePrintDocsAndPick}
-            disabled={isGeneratingDocs || isSaving}
-            className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-600 text-white rounded-xl text-[11px] font-black shadow-lg hover:bg-emerald-500 transition-all duration-200 disabled:opacity-70"
+            // Gating Action: Disable until shipment is actually created in ShipStation
+            disabled={isGeneratingDocs || isSaving || !isShipmentCreated}
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-[11px] font-black shadow-lg transition-all duration-200 ${!isShipmentCreated ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-70'}`}
           >
             {isGeneratingDocs ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />} Print & Pick
           </button>
@@ -819,15 +901,41 @@ export default function OrderDetailsPage() {
           </button>
 
           <button 
+            onClick={() => setCreateShipmentModalOpen(true)}
+            disabled={isShipmentCreated || isSaving}
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-[11px] font-black shadow-lg transition-all duration-200 ${isShipmentCreated ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-blue-600 text-white shadow-blue-600/20 hover:scale-105'}`}
+          >
+            <CloudUpload size={14} /> Create Shipment
+          </button>
+
+          <button 
             onClick={() => setFulfillOpen(true)}
-            disabled={!canManageLabel}
-            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-[11px] font-black shadow-lg transition-all duration-200 ${!canManageLabel ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-brand-gold text-white shadow-brand-gold/20 hover:scale-105'}`}
+            // Gating Action: Disable until shipment is actually created in ShipStation
+            disabled={!canManageLabel || !isShipmentCreated}
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-[11px] font-black shadow-lg transition-all duration-200 ${!canManageLabel || !isShipmentCreated ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-brand-gold text-white shadow-brand-gold/20 hover:scale-105'}`}
           >
             <CheckCircle2 size={14} /> {isLabelPurchased ? 'View Label' : 'Generate Label'}
           </button>
         </div>
       </div>
 
+      {/* --- CREATE SHIPMENT MODAL --- */}
+      <CreateShipmentModal 
+        isOpen={createShipmentModalOpen}
+        onClose={() => setCreateShipmentModalOpen(false)}
+        onSubmit={handleCreateShipmentSubmit}
+        isCreatingShipment={isCreatingShipment}
+        address={address}
+        shipping={shipping}
+        packages={packages}
+        notes={notes}
+        onAddPackage={addPackage}
+        onUpdatePackage={updatePackage}
+        onRemovePackage={removePackage}
+        onWeightChange={handleWeightChange}
+      />
+
+      {/* Slide-over Drawer for Label Generation Configuration */}
       <div className={`fixed inset-0 z-50 flex justify-end transition-opacity duration-300 ${fulfillOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
         <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setFulfillOpen(false)} />
         <div className={`relative w-full max-w-[400px] bg-white/95 backdrop-blur-2xl border-l border-white/50 p-6 shadow-2xl h-full overflow-y-auto transition-transform duration-300 ease-in-out flex flex-col ${fulfillOpen ? 'translate-x-0' : 'translate-x-full'}`}>
@@ -888,36 +996,78 @@ export default function OrderDetailsPage() {
               </div>
               
               <div className="space-y-4 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2 pb-2">
-                {packages.map((pkg, index) => (
-                  <div key={pkg.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3 relative group">
-                    {packages.length > 1 && (
-                      <button onClick={() => removePackage(pkg.id)} className="absolute top-3 right-3 text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100">
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                    <p className="text-[10px] font-black uppercase tracking-widest text-brand-gold border-b border-slate-100 pb-2 mb-2">Box {index + 1}</p>
-                    
-                    <div>
-                      <label className="text-[9px] uppercase font-bold text-slate-400 mb-1 block">Weight (Ounces)</label>
-                      <input 
-                        type="number"
-                        min="1"
-                        value={pkg.weightInOunces}
-                        onChange={(e) => updatePackage(pkg.id, 'weightInOunces', e.target.value)}
-                        className="w-full bg-slate-50 p-2.5 rounded-lg text-xs font-bold outline-none border border-slate-200 focus:border-brand-gold focus:bg-white transition-all" 
-                      />
-                    </div>
-                    
-                    <div>
-                      <label className="text-[9px] uppercase font-bold text-slate-400 mb-1 block">Dimensions (L x W x H)</label>
-                      <div className="grid grid-cols-3 gap-2">
-                        <input type="number" min="1" value={pkg.length} onChange={(e) => updatePackage(pkg.id, 'length', e.target.value)} className="w-full bg-slate-50 p-2.5 rounded-lg text-xs font-bold outline-none border border-slate-200 focus:border-brand-gold focus:bg-white text-center transition-all" placeholder="L" />
-                        <input type="number" min="1" value={pkg.width} onChange={(e) => updatePackage(pkg.id, 'width', e.target.value)} className="w-full bg-slate-50 p-2.5 rounded-lg text-xs font-bold outline-none border border-slate-200 focus:border-brand-gold focus:bg-white text-center transition-all" placeholder="W" />
-                        <input type="number" min="1" value={pkg.height} onChange={(e) => updatePackage(pkg.id, 'height', e.target.value)} className="w-full bg-slate-50 p-2.5 rounded-lg text-xs font-bold outline-none border border-slate-200 focus:border-brand-gold focus:bg-white text-center transition-all" placeholder="H" />
+                {packages.map((pkg, index) => {
+                  const lbs = Math.floor((Number(pkg.weightInOunces) || 0) / 16);
+                  const oz = (Number(pkg.weightInOunces) || 0) % 16;
+                  
+                  return (
+                    <div key={pkg.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3 relative group">
+                      {packages.length > 1 && (
+                        <button onClick={() => removePackage(pkg.id)} className="absolute top-3 right-3 text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100">
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                      <p className="text-[10px] font-black uppercase tracking-widest text-brand-gold border-b border-slate-100 pb-2 mb-2">Box {index + 1}</p>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Split Weight Input */}
+                        <div>
+                          <label className="text-[9px] uppercase font-bold text-slate-400 mb-1.5 block">Weight</label>
+                          <div className="flex gap-2">
+                            <div className="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-lg focus-within:border-blue-500 transition-colors shadow-inner">
+                              <input 
+                                type="number" min="0" 
+                                value={lbs === 0 && oz === 0 && !pkg.weightInOunces ? '' : lbs} 
+                                onChange={(e) => handleWeightChange(pkg.id, pkg.weightInOunces, 'lbs', e.target.value)}
+                                className="w-full bg-transparent p-2 text-xs font-bold text-center outline-none" 
+                                placeholder="0"
+                              />
+                              <span className="text-[10px] font-black text-slate-400 pr-3">lb</span>
+                            </div>
+                            <div className="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-lg focus-within:border-blue-500 transition-colors shadow-inner">
+                              <input 
+                                type="number" min="0" max="15.99" step="0.1"
+                                value={oz === 0 && lbs === 0 && !pkg.weightInOunces ? '' : oz} 
+                                onChange={(e) => handleWeightChange(pkg.id, pkg.weightInOunces, 'oz', e.target.value)}
+                                className="w-full bg-transparent p-2 text-xs font-bold text-center outline-none" 
+                                placeholder="0"
+                              />
+                              <span className="text-[10px] font-black text-slate-400 pr-3">oz</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Split Dimensions Input */}
+                        <div>
+                          <label className="text-[9px] uppercase font-bold text-slate-400 mb-1.5 block">Dimensions (L x W x H)</label>
+                          <div className="flex items-center gap-1.5">
+                            <input 
+                              type="number" min="0" step="0.1" placeholder="L"
+                              value={pkg.length !== undefined ? pkg.length : ''} 
+                              onChange={(e) => updatePackage(pkg.id, 'length', e.target.value)}
+                              className="w-full bg-slate-50 p-2 rounded-lg text-xs font-bold text-center border border-slate-200 outline-none focus:border-blue-500 transition-colors shadow-inner" 
+                            />
+                            <span className="text-slate-300 text-xs font-black">×</span>
+                            <input 
+                              type="number" min="0" step="0.1" placeholder="W"
+                              value={pkg.width !== undefined ? pkg.width : ''} 
+                              onChange={(e) => updatePackage(pkg.id, 'width', e.target.value)}
+                              className="w-full bg-slate-50 p-2 rounded-lg text-xs font-bold text-center border border-slate-200 outline-none focus:border-blue-500 transition-colors shadow-inner" 
+                            />
+                            <span className="text-slate-300 text-xs font-black">×</span>
+                            <input 
+                              type="number" min="0" step="0.1" placeholder="H"
+                              value={pkg.height !== undefined ? pkg.height : ''} 
+                              onChange={(e) => updatePackage(pkg.id, 'height', e.target.value)}
+                              className="w-full bg-slate-50 p-2 rounded-lg text-xs font-bold text-center border border-slate-200 outline-none focus:border-blue-500 transition-colors shadow-inner" 
+                            />
+                            <span className="text-[10px] font-black text-slate-400 pl-1">in</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 <button onClick={addPackage} className="w-full py-2 flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black uppercase tracking-widest rounded-xl transition-colors border border-slate-200">
                   <Plus size={14} /> Add Another Box
@@ -981,7 +1131,14 @@ export default function OrderDetailsPage() {
           <div className="flex flex-wrap items-center justify-between gap-3 bg-white/40 border border-white/60 p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] backdrop-blur-xl">
             <div>
               <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Order Reference</span>
-              <span className="text-xl font-black text-slate-900 tracking-tight">{currentOrder.orderNumber}</span>
+              <div className="flex items-center gap-3">
+                <span className="text-xl font-black text-slate-900 tracking-tight">{currentOrder.orderNumber}</span>
+                {currentOrder.chargeCode && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-100 border border-amber-200 text-amber-800 rounded-lg text-[10px] font-black tracking-widest shadow-sm transition-all duration-300">
+                    <Briefcase size={12} /> {currentOrder.chargeCode}
+                  </span>
+                )}
+              </div>
               {orderCreatorName && (
                 <p className="text-[10px] font-bold text-slate-500 mt-1 flex items-center gap-1.5">
                   <User size={12} className="text-brand-gold" /> Order Placed by {orderCreatorName}
@@ -1106,7 +1263,7 @@ export default function OrderDetailsPage() {
                                 className="absolute z-[100] w-full md:w-48 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
                               >
                                 <div className="p-2 border-b border-slate-100 flex items-center gap-2">
-                                  <Search size={14} className="text-slate-400" />
+                                  <Search size={14} className="text-slate-400 shrink-0" />
                                   <input 
                                     autoFocus
                                     className="w-full text-xs outline-none font-medium text-slate-700" 
@@ -1182,7 +1339,7 @@ export default function OrderDetailsPage() {
 
         <div className="space-y-6">
             
-          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
+          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] relative z-30">
             <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-5 flex items-center gap-2 border-b border-white/60 pb-3">
               <PackageCheck size={14} /> Edit Manifest Items
             </h3>
@@ -1226,17 +1383,61 @@ export default function OrderDetailsPage() {
 
                 <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 shadow-inner space-y-3 mt-4">
                     <h4 className="text-[9px] font-black uppercase tracking-widest text-slate-500">Add Product</h4>
-                    <select 
-                        className="w-full bg-white p-2.5 rounded-lg text-xs font-bold border border-slate-200 outline-none focus:border-brand-gold text-slate-700 cursor-pointer shadow-sm transition-all"
-                        value={availableInventories.find(i => i.name === newItem.name)?.id || ''}
-                        onChange={handleInventoryChange}
-                        disabled={inventoryStatus === 'loading'}
-                    >
-                        <option className="text-slate-400" value="">{inventoryStatus === 'loading' ? 'Loading Catalog...' : 'Select Item from Catalog...'}</option>
-                        {availableInventories.map(inv => (
-                            <option key={inv.id} value={inv.id}>{inv.name} (SKU: {inv.sku})</option>
-                        ))}
-                    </select>
+                    
+                    {/* CUSTOM SEARCHABLE INVENTORY DROPDOWN */}
+                    <div className="relative w-full" ref={inventoryDropdownRef}>
+                      <div
+                        className={`w-full bg-white p-2.5 rounded-lg text-xs font-bold border border-slate-200 focus-within:border-brand-gold shadow-sm flex items-center justify-between transition-all ${inventoryStatus === 'loading' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                        onClick={() => { if (inventoryStatus !== 'loading') setIsInventoryDropdownOpen(!isInventoryDropdownOpen); }}
+                      >
+                        <span className={newItem.name ? "text-slate-900" : "text-slate-400"}>
+                          {newItem.name ? `${newItem.name} (SKU: ${newItem.sku})` : (inventoryStatus === 'loading' ? 'Loading Catalog...' : 'Select Item from Catalog...')}
+                        </span>
+                        <ChevronDown size={14} className="text-slate-400" />
+                      </div>
+
+                      <AnimatePresence>
+                        {isInventoryDropdownOpen && (
+                          <motion.div
+                            initial={{ opacity: 0, y: -5 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -5 }}
+                            className="absolute z-[100] w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
+                          >
+                            <div className="p-2 border-b border-slate-100 flex items-center gap-2">
+                              <Search size={14} className="text-slate-400 shrink-0" />
+                              <input
+                                autoFocus
+                                className="w-full text-xs outline-none font-medium text-slate-700"
+                                placeholder="Search by name or SKU..."
+                                value={inventorySearch}
+                                onChange={(e) => setInventorySearch(e.target.value)}
+                              />
+                            </div>
+                            <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                              {filteredInventories.length > 0 ? (
+                                filteredInventories.map(inv => (
+                                  <div
+                                    key={inv.id}
+                                    className="px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer flex flex-col transition-colors"
+                                    onClick={() => {
+                                      setNewItem({ ...newItem, name: inv.name, sku: inv.sku, price: inv.price, weight: inv.weight });
+                                      setIsInventoryDropdownOpen(false);
+                                      setInventorySearch('');
+                                    }}
+                                  >
+                                    <span className="font-bold">{inv.name}</span>
+                                    <span className="text-slate-400 text-[10px]">SKU: {inv.sku}</span>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="p-3 text-xs text-slate-400 text-center">No items found</div>
+                              )}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
 
                     <div className="flex gap-2">
                         <input 
@@ -1260,7 +1461,7 @@ export default function OrderDetailsPage() {
             </div>
           </div>
 
-          <div className="bg-slate-950 text-white p-6 rounded-3xl shadow-xl border border-slate-900 relative overflow-hidden">
+          <div className="bg-slate-950 text-white p-6 rounded-3xl shadow-xl border border-slate-900 relative z-10 overflow-hidden">
              <div className="absolute -right-8 -top-8 w-32 h-32 bg-brand-gold/10 rounded-full blur-2xl pointer-events-none"></div>
              <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2 mb-4 border-b border-white/10 pb-3 relative z-10">
                  <CreditCard size={14}/> Invoice Preview

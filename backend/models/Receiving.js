@@ -103,7 +103,7 @@ const receivingSchema = new mongoose.Schema(
       required: [true, 'Received quantity is required'],
       min: [0, 'Quantity cannot be negative']
     },
-    skids: {
+    pallets: {
       type: Number,
       default: 0,
       min: 0
@@ -128,9 +128,14 @@ const receivingSchema = new mongoose.Schema(
       default: 0,
       min: 0
     },
-
+    
     // The grand total weight of all cartons combined
     totalWeight: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    palletProcessingFee: {
       type: Number,
       default: 0,
       min: 0

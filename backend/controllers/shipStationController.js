@@ -41,10 +41,10 @@ const getMIKROShipFrom = () => ({
   address_residential_indicator: "no"
 });
 
-// --- HELPER: Map Frontend Packages ---
+// --- HELPER: Map Frontend Packages to ShipStation Format ---
 const mapPackages = (packages, totalWeightInOunces = 16) => {
   if (packages && packages.length > 0) {
-    return packages.map(pkg => ({
+    return packages.map((pkg, index) => ({
       package_code: "package",
       weight: {
         value: pkg.weightInOunces > 0 ? Math.ceil(pkg.weightInOunces) : 16,
@@ -66,11 +66,11 @@ const mapPackages = (packages, totalWeightInOunces = 16) => {
 };
 
 // =====================================================================
-// CENTRALIZED CORE LOGIC FOR CREATING SHIPMENTS (USED BY ROUTES & AUTO-CREATE)
+// CENTRALIZED CORE LOGIC FOR CREATING SHIPMENTS 
 // =====================================================================
-export const executeShipmentCreation = async (order, packages = [], isResidential = false, carrierCodeOverride = null, serviceCodeOverride = null) => {
+export const executeShipmentCreation = async (order, frontendPackages = [], isResidential = false, carrierCodeOverride = null, serviceCodeOverride = null) => {
   const displayId = order.orderNumber || order._id.toString();
-  const { recipientName, line1, line2, city, state, zip, country, phone } = order.shippingAddress || {};
+  const { recipientName, line1, line2, city, state, zip, country, phone, email } = order.shippingAddress || {};
   
   if (!recipientName || !line1 || !city || !state || !zip) throw new Error('Incomplete destination address.');
   
@@ -84,26 +84,44 @@ export const executeShipmentCreation = async (order, packages = [], isResidentia
   if (!carrier) throw new Error(`Carrier configuration not found for ${finalCarrierType}.`);
 
   const shipToCountry = normalizeCountry(country);
+  
   const totalWeight = order.items?.reduce((acc, item) => acc + (Number(item.weight || 0) * Number(item.quantity || 1)), 0) || 16;
-  const finalPackages = (packages && packages.length > 0) ? mapPackages(packages) : mapPackages([], totalWeight);
+  const finalPackages = (frontendPackages && frontendPackages.length > 0) ? mapPackages(frontendPackages) : mapPackages([], totalWeight);
 
+  const subtotal = order.items?.reduce((acc, item) => acc + (Number(item.unitPrice || 0) * Number(item.quantity || 1)), 0) || 0;
+  const shippingCost = Number(order.shippingDetails?.shippingCost || 0);
+  const tax = subtotal * 0.08;
+
+  // Exact Payload schema corresponding to ShipStation v2 shipments specification
   const shipmentPayload = {
     shipments: [
       {
         validate_address: "no_validation",
-        external_shipment_id: displayId, 
-        external_order_id: displayId,
-        create_sales_order: true, 
-        shipment_number: displayId,    
-        shipment_status: "pending",    
+        external_shipment_id: displayId,
         carrier_id: carrier.shipStationId, 
-        requested_shipment_service: finalServiceCode, 
-        ship_date: new Date().toISOString().split('T')[0] + "T00:00:00.000Z", 
+        create_sales_order: true,
+        is_gift: false,
+        zone: 0,
+        display_scheme: "paperless",
+        requested_shipment_service: finalServiceCode,
+        shipment_status: "pending",
+        amount_paid: {
+          currency: "usd",
+          amount: Number((subtotal + shippingCost + tax).toFixed(2))
+        },
+        shipping_paid: {
+          currency: "usd",
+          amount: Number(shippingCost.toFixed(2))
+        },
+        tax_paid: {
+          currency: "usd",
+          amount: Number(tax.toFixed(2))
+        },
         ship_to: {
           name: recipientName,
           phone: phone || "",
-          email: order.shippingAddress.email || order.customer?.contactEmail || "",
-          company_name: "", // Purposely left blank so the Brand doesn't show up on ShipTo
+          email: email || order.customer?.contactEmail || "",
+          company_name: "", 
           address_line1: line1,
           address_line2: line2 || "",
           city_locality: city,
@@ -113,25 +131,13 @@ export const executeShipmentCreation = async (order, packages = [], isResidentia
           address_residential_indicator: isResidential ? "yes" : "no"
         },
         ship_from: getMIKROShipFrom(),
-        packages: finalPackages,
-        items: order.items.map(item => ({
+        items: order.items?.map(item => ({
           name: item.name ? item.name.substring(0, 200) : "Merchandise",
           sku: item.sku || "UNKNOWN",
           quantity: item.quantity || 1,
           weight: { value: item.weight || 0, unit: "ounce" }
-        })),
-        ...(shipToCountry !== 'US' && {
-          customs: {
-            contents: "merchandise",
-            non_delivery: "return_to_sender",
-            customs_items: order.items.map(item => ({
-              description: item.name ? item.name.substring(0, 50) : "Merchandise",
-              quantity: item.quantity || 1,
-              value: { currency: "USD", amount: item.unitPrice || 1 },
-              country_of_origin: "US"
-            }))
-          }
-        })
+        })) || [],
+        packages: finalPackages
       }
     ]
   };
@@ -149,19 +155,20 @@ export const executeShipmentCreation = async (order, packages = [], isResidentia
       throw new Error('ShipStation failed to return a valid shipment ID.');
   }
 
-  // Update DB states exclusively to processing
-  order.status = 'New';
+  // Update local Order model states 
+  order.status = 'Pending';
   order.shippingDetails.carrierType = finalCarrierType;
   order.shippingDetails.serviceCode = finalServiceCode;
   
   order.shipstationDetails = {
     orderId: processedShipment.shipment_id || processedShipment.shipmentId,
-    orderKey: processedShipment.external_order_id || processedShipment.orderKey || '',
+    orderKey: processedShipment.external_shipment_id || processedShipment.shipmentId || '',
     orderStatus: processedShipment.shipment_status || processedShipment.shipmentStatus || 'pending',
     externalShipmentId: displayId 
   };
   await order.save();
 
+  // Create or update the Shipment Tracker model
   let shipmentTracker = await Shipment.findOne({ order: order._id });
   if (!shipmentTracker) {
     shipmentTracker = new Shipment({
@@ -203,6 +210,15 @@ export const fetchCarriers = catchAsync(async (req, res, next) => {
       services: carrier.services?.map(service => ({
         code: service.service_code,
         name: service.name,
+      })),
+      test: {
+        name: 'test'
+      },
+      packages: carrier?.packages?.map(p => ({
+        packageId: p.package_id,
+        packageCode: p.package_code,
+        packageName: p.name,
+        packageDimensios: p.dimensions
       }))
     }));
     res.status(200).json({ status: 'success', results: filteredCarriers?.length || 0, data: filteredCarriers });
@@ -324,7 +340,21 @@ export const getCheckoutRates = catchAsync(async (req, res, next) => {
   }
 });
 
-// --- FIX: Restructured completely to avoid duplicates ("1 of 2") and handle authenticated 404 links ---
+export const createOrderShipment = catchAsync(async (req, res, next) => {
+  const { orderId } = req.params;
+  const { packages, isResidential, carrierCode, serviceCode } = req.body;
+
+  const order = await Order.findById(orderId).populate('division customer');
+  if (!order) return next(new AppError('Order not found in database.', 404));
+
+  try {
+    const result = await executeShipmentCreation(order, packages, isResidential, carrierCode, serviceCode);
+    res.status(200).json({ status: 'success', message: 'Shipment successfully created in ShipStation.', data: result });
+  } catch (error) {
+    return next(new AppError(`ShipStation Rejected: ${error.message}`, 400));
+  }
+});
+
 export const generateOrderLabel = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
   const { packages, weightInOunces, carrierCode, serviceCode } = req.body; 
@@ -407,7 +437,7 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
        const proxyBase64 = await fetchLabelBufferAsBase64(labelUrl);
        if (proxyBase64) {
            labelData = proxyBase64;
-           labelUrl = null; // Force frontend to use the Base64 data string
+           labelUrl = null; 
        }
     }
 
@@ -423,22 +453,6 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
   } catch (error) { return next(new AppError(`ShipStation Label Error: ${error.message}`, 502)); }
 });
 
-export const createOrderShipment = catchAsync(async (req, res, next) => {
-  const { orderId } = req.params;
-  const { packages, isResidential, carrierCode, serviceCode } = req.body;
-
-  const order = await Order.findById(orderId).populate('division customer');
-  if (!order) return next(new AppError('Order not found in database.', 404));
-
-  try {
-    const result = await executeShipmentCreation(order, packages, isResidential, carrierCode, serviceCode);
-    res.status(200).json({ status: 'success', message: 'Order created in ShipStation.', data: result });
-  } catch (error) {
-    return next(new AppError(`ShipStation Rejected: ${error.message}`, 400));
-  }
-});
-
-// --- FIX: Secure Proxy applied to standalone downloads as well ---
 export const downloadOrderLabel = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
 
@@ -487,7 +501,7 @@ export const voidOrderLabel = catchAsync(async (req, res, next) => {
   try {
     await voidLabel(labelId);
     
-    order.status = 'New'; // Status updated to New after the label is void
+    order.status = 'Pending'; 
     order.shippingDetails.trackingNumber = '';
     order.shippingDetails.shippingCost = 0;
     
@@ -520,7 +534,7 @@ export const cancelOrderShipment = catchAsync(async (req, res, next) => {
   try {
     await cancelShipment(shipmentId);
     
-    order.status = 'Cancelled';
+    order.status = 'New';
     order.shipstationDetails.orderId = null;
     order.shipstationDetails.orderStatus = 'cancelled';
     await order.save();

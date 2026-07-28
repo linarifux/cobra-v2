@@ -148,6 +148,22 @@ export const cancelOrderShipment = createAsyncThunk(
   }
 );
 
+// 10. Create Shipment (Without Purchasing Label)
+export const createOrderShipment = createAsyncThunk(
+  "orders/createShipment",
+  async ({ orderId, fulfillmentData }, { rejectWithValue }) => {
+    try {
+      const response = await api.post(`/shipstation/shipments/${orderId}`, fulfillmentData);
+      return response.data.data; // This expects { shipment, order } from the backend
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || error.message || "Failed to create shipment"
+      );
+    }
+  }
+);
+
+
 // --- Slice Definition ---
 const orderSlice = createSlice({
   name: "orders",
@@ -243,6 +259,17 @@ const orderSlice = createSlice({
         const index = state.items.findIndex((o) => String(o._id) === String(action.payload._id));
         if (index !== -1) {
           state.items[index] = action.payload;
+        }
+      })
+      
+      // Update state when shipment is created
+      .addCase(createOrderShipment.fulfilled, (state, action) => {
+        if (action.payload.order) {
+          state.currentOrder = action.payload.order;
+          const index = state.items.findIndex((o) => String(o._id) === String(action.payload.order._id));
+          if (index !== -1) {
+            state.items[index] = action.payload.order;
+          }
         }
       });
   },

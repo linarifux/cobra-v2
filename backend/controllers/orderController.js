@@ -1,10 +1,9 @@
 import Order from '../models/Order.js';
 import Customer from '../models/Customer.js';
-import Inventory from '../models/Inventory.js'; // Ensure Inventory is imported
+import Inventory from '../models/Inventory.js';
 import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
-import { executeShipmentCreation } from './shipStationController.js'; 
-import { cancelShipment, voidLabel } from '../services/shipStationService.js'; 
+import { cancelShipment, voidLabel } from '../services/shipStationService.js';
 
 // Helper to determine the user's access tier
 const getAccessLevel = (user) => {
@@ -17,16 +16,16 @@ const getAccessLevel = (user) => {
   return 'standard_user';
 };
 
-// @desc    Create a new order & immediately push to ShipStation
+// @desc    Create a new order and deduct inventory (LOCAL DB ONLY - NO SHIPSTATION PUSH)
 // @route   POST /api/v1/orders
 export const createOrder = catchAsync(async (req, res, next) => {
   if (!req.body.customer && req.params.customerId) req.body.customer = req.params.customerId;
   if (!req.body.division && req.params.divisionId) req.body.division = req.params.divisionId;
-  
+
   if (!req.body.user && req.params.userId) req.body.user = req.params.userId;
 
   if (!req.body.shippingDetails?.carrierType || !req.body.shippingDetails?.serviceCode) {
-    return next(new AppError('Shipping carrier and service code are required to process and create the order.', 400));
+    return next(new AppError('Shipping carrier and service code are required to process the order.', 400));
   }
 
   const customer = await Customer.findById(req.body.customer);
@@ -35,13 +34,8 @@ export const createOrder = catchAsync(async (req, res, next) => {
   let order = new Order(req.body);
   order.customer = customer;
 
-  // 1. Push to ShipStation
-  try {
-    const shipmentResult = await executeShipmentCreation(order);
-    order = shipmentResult.order;
-  } catch (error) {
-    return next(new AppError(`Order discarded. ShipStation rejected the shipment: ${error.message}`, 400));
-  }
+  // 1. Save the order strictly to the local database
+  await order.save();
 
   // 2. Deduct Inventory Quantities & Append Audit Ledger
   if (order.items && order.items.length > 0) {
@@ -50,14 +44,10 @@ export const createOrder = catchAsync(async (req, res, next) => {
         const deduction = Number(item.quantity) || 1;
         await Inventory.findOneAndUpdate(
           { sku: item.sku, customer: order.customer },
-          { 
-            $inc: { 
-              available: -deduction, 
-              unitsOnHand: -deduction 
-            },
-            $push: { 
+          {
+            $inc: { available: -deduction, unitsOnHand: -deduction }, $push: {
               auditLedger: {
-                event: 'Order Fulfillment',
+                event: 'Order Placed',
                 referenceId: order.orderNumber || order._id.toString(),
                 quantityDelta: -deduction
               }
@@ -74,7 +64,7 @@ export const createOrder = catchAsync(async (req, res, next) => {
   await order.populate([
     { path: 'customer', select: 'customerName contactEmail' },
     { path: 'division', select: 'divisionName divisionCode' },
-    { path: 'user', select: 'name firstName lastName email' } 
+    { path: 'user', select: 'name firstName lastName email' }
   ]);
 
   res.status(201).json({ status: 'success', data: { order } });
@@ -84,7 +74,7 @@ export const createOrder = catchAsync(async (req, res, next) => {
 // @route   GET /api/v1/orders
 export const getAllOrders = catchAsync(async (req, res, next) => {
   let filter = {};
-  
+
   if (req.params.customerId) filter.customer = req.params.customerId;
   if (req.params.divisionId) filter.division = req.params.divisionId;
 
@@ -92,7 +82,7 @@ export const getAllOrders = catchAsync(async (req, res, next) => {
   if (req.query.division && req.query.division !== 'All') filter.division = req.query.division;
   if (req.query.user && req.query.user !== 'All') filter.user = req.query.user;
   if (req.query.status && req.query.status !== 'All') filter.status = req.query.status;
-  
+
   if (req.query.search) {
     filter.$or = [
       { orderNumber: { $regex: req.query.search, $options: 'i' } },
@@ -106,7 +96,7 @@ export const getAllOrders = catchAsync(async (req, res, next) => {
     filter.user = req.user._id;
   } else if (accessLevel === 'division_admin') {
     const userDivisions = req.user.divisions ? req.user.divisions.map(d => String(d._id || d)) : [];
-    
+
     if (filter.division) {
       if (!userDivisions.includes(String(filter.division))) {
         return next(new AppError('You do not have permission to view orders for this division', 403));
@@ -118,8 +108,8 @@ export const getAllOrders = catchAsync(async (req, res, next) => {
 
   const orders = await Order.find(filter)
     .populate('customer', 'customerName contactEmail')
-    .populate('division', 'divisionName divisionCode') 
-    .populate('user', 'name firstName lastName email') 
+    .populate('division', 'divisionName divisionCode')
+    .populate('user', 'name firstName lastName email')
     .populate('shippingDetails.carrierId', 'carrierType accountName')
     .sort('-createdAt');
 
@@ -131,14 +121,14 @@ export const getAllOrders = catchAsync(async (req, res, next) => {
 export const getOrder = catchAsync(async (req, res, next) => {
   const order = await Order.findById(req.params.id)
     .populate('customer', 'customerName contactEmail contactNumber address')
-    .populate('division', 'divisionName divisionCode address') 
-    .populate('user', 'name firstName lastName email phone') 
+    .populate('division', 'divisionName divisionCode address')
+    .populate('user', 'name firstName lastName email phone')
     .populate('shippingDetails.carrierId', 'carrierType accountName');
 
   if (!order) return next(new AppError('No order found with that ID', 404));
 
   const accessLevel = getAccessLevel(req.user);
-  
+
   if (accessLevel !== 'global_admin') {
     const orderUserId = String(order.user?._id || order.user);
     const orderDivisionId = String(order.division?._id || order.division);
@@ -187,13 +177,13 @@ export const updateOrder = catchAsync(async (req, res, next) => {
   if (req.body.status === 'Cancelled' && order.status !== 'Cancelled') {
     const labelId = order.shipstationDetails?.labelId;
     const shipmentId = order.shipstationDetails?.orderId;
-    
+
     // 1. Clean ShipStation
     try {
       if (labelId) await voidLabel(labelId);
       else if (shipmentId) await cancelShipment(shipmentId);
-    } catch(e) {
-       console.warn(`Failed to selectively void ShipStation records for cancelled order ${order._id}:`, e.message);
+    } catch (e) {
+      console.warn(`Failed to selectively void ShipStation records for cancelled order ${order._id}:`, e.message);
     }
 
     // 2. Restock Inventory
@@ -203,9 +193,9 @@ export const updateOrder = catchAsync(async (req, res, next) => {
           const restockQty = Number(item.quantity) || 1;
           await Inventory.findOneAndUpdate(
             { sku: item.sku, customer: order.customer },
-            { 
+            {
               $inc: { available: restockQty, unitsOnHand: restockQty },
-              $push: { 
+              $push: {
                 auditLedger: {
                   event: 'Order Cancellation Restock',
                   referenceId: order.orderNumber || order._id.toString(),
@@ -224,8 +214,8 @@ export const updateOrder = catchAsync(async (req, res, next) => {
 
   order = await Order.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true })
     .populate('customer', 'customerName')
-    .populate('division', 'divisionName divisionCode') 
-    .populate('user', 'name firstName lastName email') 
+    .populate('division', 'divisionName divisionCode')
+    .populate('user', 'name firstName lastName email')
     .populate('shippingDetails.carrierId', 'carrierType accountName');
 
   res.status(200).json({ status: 'success', data: { order } });
@@ -259,11 +249,11 @@ export const deleteOrder = catchAsync(async (req, res, next) => {
   // --- AUTOMATED SHIPSTATION CLEANUP ---
   const labelId = order.shipstationDetails?.labelId;
   const shipmentId = order.shipstationDetails?.orderId;
-  
+
   try {
     if (labelId) await voidLabel(labelId);
     else if (shipmentId) await cancelShipment(shipmentId);
-  } catch(e) {
+  } catch (e) {
     console.warn(`Failed to cleanup ShipStation records for deleted order ${order._id}:`, e.message);
   }
 
@@ -278,9 +268,9 @@ export const deleteOrder = catchAsync(async (req, res, next) => {
         const restockQty = Number(item.quantity) || 1;
         await Inventory.findOneAndUpdate(
           { sku: item.sku, customer: order.customer },
-          { 
+          {
             $inc: { available: restockQty, unitsOnHand: restockQty },
-            $push: { 
+            $push: {
               auditLedger: {
                 event: 'Order Deletion Restock',
                 referenceId: order.orderNumber || order._id.toString(),

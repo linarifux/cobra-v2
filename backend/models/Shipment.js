@@ -22,6 +22,7 @@ const statusHistorySchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   }
+  
 });
 
 const shipmentSchema = new mongoose.Schema({
