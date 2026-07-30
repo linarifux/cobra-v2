@@ -40,6 +40,7 @@ export const getCarriers = async () => {
   try {
     const response = await shipStationAPI.get('/carriers');
     return response.data;
+    console.log(response)
   } catch (error) { 
     handleApiError(error, 'getCarriers'); 
   }
@@ -130,5 +131,15 @@ export const voidLabel = async (labelId) => {
     return response.data;
   } catch (error) {
     handleApiError(error, 'voidLabel');
+  }
+};
+
+// --- NEW: Create Carrier Connection ---
+export const connectUpsCarrier = async (payload) => {
+  try {
+    const response = await shipStationAPI.post('/connections/carriers/ups', payload);
+    return response.data;
+  } catch (error) {
+    handleApiError(error, 'connectUpsCarrier');
   }
 };

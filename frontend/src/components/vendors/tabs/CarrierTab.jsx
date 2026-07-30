@@ -52,6 +52,7 @@ export default function CarrierTab({ division }) {
     const getShipStationData = async () => {
       try {
         const res = await api.get('/shipstation/carriers');
+        console.log(res)
         setSsCarriers(res.data.data || []);
       } catch (err) {
         toast.error('Failed to load ShipStation carriers. Check API connection.');

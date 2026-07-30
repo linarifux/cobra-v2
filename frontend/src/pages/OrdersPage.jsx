@@ -303,18 +303,23 @@ export default function OrdersPage() {
       selectedOrderObjects.forEach(order => {
         order.items?.forEach(item => {
           if (!itemMap[item.sku]) {
-            // Locate the item in inventory data
-            const invItem = inventoryData.find(inv => inv.sku === item.sku);
-            
+            // Locate the item in inventory data (Robust match for case-sensitivity & productCode)
+            const invItem = inventoryData.find(inv => 
+              String(inv.sku || '').trim().toLowerCase() === String(item.sku || '').trim().toLowerCase() ||
+              String(inv.productCode || '').trim().toLowerCase() === String(item.sku || '').trim().toLowerCase()
+            );
+
             // Extract location(s) based on structural assignment
             let locationStr = '';
             if (invItem?.locations && Array.isArray(invItem.locations) && invItem.locations.length > 0) {
-               locationStr = invItem.locations.map(loc => loc.designation).filter(Boolean).join(', ');
+               locationStr = invItem.locations.map(loc => typeof loc === 'object' ? (loc.designation || loc.name || '') : String(loc)).filter(Boolean).join(', ');
             }
-            
-            // Fallback to locationString if locations array is empty or undefined
-            if (!locationStr && invItem?.locationString) {
-               locationStr = invItem.locationString;
+            // Fallbacks for older data structures
+            // if (!locationStr && invItem?.locationString) {
+            //    locationStr = invItem.locationString;
+            // }
+            if (!locationStr && invItem?.location) {
+               locationStr = typeof invItem.location === 'object' ? (invItem.location.designation || invItem.location.name || '') : String(invItem.location);
             }
 
             itemMap[item.sku] = { 
@@ -357,6 +362,7 @@ export default function OrdersPage() {
         doc.addPage();
         
         const customerName = order.customer?.customerName || 'Customer Order';
+        const divisionName = order.division?.divisionName || 'custom division';
         const orderNo = order.orderNumber || 'N/A';
         const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-GB', {day: '2-digit', month: 'short', year: 'numeric'}) : 'N/A';
         const shipVia = `${order.shippingDetails?.carrierType || ''} ${order.shippingDetails?.serviceCode || ''}`.trim() || 'UPS - Ground';
@@ -370,17 +376,7 @@ export default function OrdersPage() {
         doc.setFontSize(14);
         doc.setTextColor(0, 0, 0);
         doc.setFont('helvetica', 'bold');
-        doc.text(customerName.toUpperCase(), 14, 20);
-
-        // Top Center: Service Center (MI-KRO)
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        doc.text("Service Center", 105, 20, { align: 'center' });
-        doc.text("MI-KRO Industries", 105, 24, { align: 'center' });
-        doc.text("1509 RT 38 Unit 9", 105, 28, { align: 'center' });
-        doc.text("Hainesport, NJ 08036 US", 105, 32, { align: 'center' });
-        doc.text("609-694-0521", 105, 36, { align: 'center' });
-        doc.text("mike@mi-krologistics.com", 105, 40, { align: 'center' });
+        doc.text(`${customerName.toUpperCase()} - ${divisionName}`, 14, 20);
 
         // Top Right: Order Information block (Right-aligned keys, Left-aligned values)
         const rightColKeyX = 160;
@@ -419,8 +415,7 @@ export default function OrdersPage() {
         doc.setFont('helvetica', 'bold');
         doc.text("SHIP FROM:", 14, addressBlockY);
         doc.setFont('helvetica', 'normal');
-        doc.text(customerName.toUpperCase(), 40, addressBlockY);
-        doc.text("c/o MI-KRO Industries", 40, addressBlockY + 5);
+        doc.text("MI-KRO Industries", 40, addressBlockY + 5);
         doc.text("1509 RT 38, Unit 9", 40, addressBlockY + 10);
         doc.text("Hainesport, NJ 08036 US", 40, addressBlockY + 15);
         doc.text("Phone: 609-694-0521", 40, addressBlockY + 20);
@@ -463,7 +458,7 @@ export default function OrdersPage() {
             return [
                 item.sku,
                 item.name,
-                "",     // Qty Picked (Left blank for manual fill)
+                qtyStr,     // Qty Picked (Left blank for manual fill)
                 qtyStr, // Qty Ordered
                 qtyStr  // Qty Shipped
             ];
@@ -522,17 +517,23 @@ export default function OrdersPage() {
       const blobUrl = doc.output('bloburl');
       window.open(blobUrl, '_blank');
 
-      // 3. BULK UPDATE STATUS TO "PICKED"
-      await Promise.all(
-        selectedOrderObjects.map(order => 
-           dispatch(updateOrder({ id: order._id, updateData: { status: 'Picked' } })).unwrap()
-        )
+      // 3. BULK UPDATE STATUS TO "PICKED" FOR ELIGIBLE ORDERS ONLY
+      const eligibleOrders = selectedOrderObjects.filter(
+        order => order.status === 'New' || order.status === 'Pending'
       );
+
+      if (eligibleOrders.length > 0) {
+        await Promise.all(
+          eligibleOrders.map(order => 
+             dispatch(updateOrder({ id: order._id, updateData: { status: 'Picked' } })).unwrap()
+          )
+        );
+      }
 
       // Force UI to sync with the database immediately after bulk mutations
       dispatch(fetchOrders({}));
 
-      toast.success(`Successfully processed ${selectedOrderObjects.length} orders. Status updated to Picked.`);
+      toast.success(`Successfully processed ${selectedOrderObjects.length} orders. New/Pending orders marked as Picked.`);
       setSelectedOrders([]);
       setIsPrintModalOpen(false);
     } catch (error) {
@@ -803,7 +804,7 @@ export default function OrdersPage() {
 
       {/* Floating Bulk Actions Bar */}
       <AnimatePresence>
-        {selectedOrders.length > 0 && (
+        {selectedOrders.length > 0 && !isPrintModalOpen && (
           <motion.div 
             initial={{ opacity: 0, y: 50, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -842,7 +843,7 @@ export default function OrdersPage() {
       {/* Bulk Print & Fulfill Modal */}
       <AnimatePresence>
         {isPrintModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }} 
               animate={{ opacity: 1 }} 
@@ -861,7 +862,10 @@ export default function OrdersPage() {
               </div>
               <h2 className="text-xl font-black text-slate-900 tracking-tight mb-2">Process {selectedOrders.length} Orders</h2>
               <p className="text-sm font-medium text-slate-500 mb-6">
-                This will generate a master picking list along with individual packing slips. Once generated, all selected orders will be marked as <strong className="text-indigo-600 bg-indigo-50 px-1 rounded">Picked</strong>.
+                This will generate a master picking list along with individual packing slips. 
+                {ordersData.filter(o => selectedOrders.includes(o._id) && (o.status === 'New' || o.status === 'Pending')).length > 0 
+                  ? <> Once generated, eligible New/Pending orders will be marked as <strong className="text-indigo-600 bg-indigo-50 px-1 rounded">Picked</strong>.</>
+                  : <> Order statuses will remain unchanged.</>}
               </p>
 
               <div className="flex gap-3">
