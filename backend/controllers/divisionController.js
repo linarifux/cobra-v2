@@ -4,6 +4,7 @@ import TypePiece from '../models/TypePiece.js';
 import Inventory from '../models/Inventory.js';
 import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
+import { createTag } from '../services/shipStationService.js';
 
 // @desc    Create a new division
 // @route   POST /api/v1/divisions
@@ -18,6 +19,22 @@ export const createDivision = catchAsync(async (req, res, next) => {
 
   // Populate customer before returning
   await division.populate('customer', 'customerName contactEmail');
+
+  // ==========================================
+  // SHIPSTATION INTEGRATION: Auto-Create Tag
+  // ==========================================
+  try {
+    const tagString = division.divisionCode || division.divisionName;
+    if (tagString) {
+      await createTag({
+        name: tagString,
+        color: '#3b82f6' // Default Blue (can be changed to any hex)
+      });
+    }
+  } catch (ssError) {
+    // Log the error but do not fail the division creation
+    console.error(`[ShipStation Warning]: Failed to create tag for division ${division._id}`, ssError.message);
+  }
 
   res.status(201).json({
     status: 'success',

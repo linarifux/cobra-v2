@@ -143,3 +143,23 @@ export const connectUpsCarrier = async (payload) => {
     handleApiError(error, 'connectUpsCarrier');
   }
 };
+
+// --- NEW: Create Order Tag ---
+export const createTag = async (tagPayload) => {
+  try {
+    const response = await shipStationAPI.post('/tags', tagPayload);
+    return response.data;
+  } catch (error) {
+    handleApiError(error, 'createTag');
+  }
+};
+
+// --- NEW: Assign Tag to Shipment ---
+export const addTagToShipment = async (shipmentId, tagName) => {
+  try {
+    const response = await shipStationAPI.post(`/shipments/${shipmentId}/tags/${encodeURIComponent(tagName)}`, {});
+    return response.data;
+  } catch (error) {
+    handleApiError(error, 'addTagToShipment');
+  }
+};

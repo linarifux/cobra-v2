@@ -8,7 +8,8 @@ import {
   getRates, getWarehouses, getCarriers, 
   createLabel, createShipment, getLabelByExternalId,
   cancelShipment, voidLabel,
-  createLabelForShipment, fetchLabelBufferAsBase64
+  createLabelForShipment, fetchLabelBufferAsBase64,
+  addTagToShipment // <-- NEW IMPORT
 } from '../services/shipStationService.js';
 
 // Fallback to 08036 if not set in .env
@@ -153,6 +154,19 @@ export const executeShipmentCreation = async (order, frontendPackages = [], isRe
   const processedShipment = shipmentResponse?.shipments?.[0] || shipmentResponse?.results?.[0] || shipmentResponse;
   if (!processedShipment || (!processedShipment.shipment_id && !processedShipment.shipmentId)) {
       throw new Error('ShipStation failed to return a valid shipment ID.');
+  }
+
+  // ==========================================
+  // SHIPSTATION INTEGRATION: Assign Division Tag
+  // ==========================================
+  const divisionCode = order.division?.divisionCode || order.division?.divisionName;
+  if (divisionCode) {
+    try {
+      const shipmentIdForTag = processedShipment.shipment_id || processedShipment.shipmentId;
+      await addTagToShipment(shipmentIdForTag, divisionCode);
+    } catch (tagError) {
+      console.warn(`[ShipStation Warning]: Failed to assign tag '${divisionCode}' to shipment.`, tagError.message);
+    }
   }
 
   // Update local Order model states 
