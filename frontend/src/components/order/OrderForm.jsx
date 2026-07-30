@@ -140,7 +140,7 @@ export default function OrderForm() {
       sku: inv.sku || '',
       price: inv.unitCost || inv.price || 0,
       weight: inv.weight || 0
-    })).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    })).sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' })); // <--- FIXED: Now sorting by sku
   }, [inventoryData]);
 
   const filteredInventories = useMemo(() => {
