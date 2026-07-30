@@ -1,5 +1,5 @@
 import TestCarrier from '../models/testCarrierModel.js';
-import { connectUpsCarrier } from '../services/shipstationService.js'; // <-- Adjust this path to your service file
+import { connectUpsCarrier } from '../services/shipStationService.js';
 
 // @desc    Create a new UPS carrier connection in ShipStation & local DB
 // @route   POST /api/v1/test-carriers
