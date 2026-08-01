@@ -62,26 +62,42 @@ export const removeCarrierProfile = createAsyncThunk(
   }
 );
 
+// 5. NEW: Fetch Package Types by ShipStation Carrier ID
+export const fetchCarrierPackages = createAsyncThunk(
+  'carriers/fetchCarrierPackages',
+  async (shipStationId, { rejectWithValue }) => {
+    try {
+      const response = await api.get(`/shipstation/carriers/${shipStationId}/packages`);
+      return response.data.data || response.data || [];
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch package types');
+    }
+  }
+);
 
 // --- Slice Definition ---
 const carrierSlice = createSlice({
   name: 'carriers',
   initialState: {
     items: [],
+    packageTypes: [], // Store the fetched package types here
     status: 'idle', // 'idle' | 'loading' | 'succeeded' | 'failed'
+    packageStatus: 'idle',
     error: null
   },
   reducers: {
     // Utility to wipe state (e.g., on user logout or unmounting)
     clearCarriers: (state) => {
       state.items = [];
+      state.packageTypes = [];
       state.status = 'idle';
+      state.packageStatus = 'idle';
       state.error = null;
     }
   },
   extraReducers: (builder) => {
     builder
-      // --- Fetch ---
+      // --- Fetch Carriers ---
       .addCase(fetchCarriers.pending, (state) => {
         state.status = 'loading';
         state.error = null;
@@ -95,12 +111,12 @@ const carrierSlice = createSlice({
         state.error = action.payload;
       })
       
-      // --- Add ---
+      // --- Add Carrier ---
       .addCase(addCarrier.fulfilled, (state, action) => {
         state.items.push(action.payload);
       })
       
-      // --- Update ---
+      // --- Update Carrier ---
       .addCase(updateCarrierConfig.fulfilled, (state, action) => {
         const index = state.items.findIndex(c => String(c._id) === String(action.payload._id));
         if (index !== -1) {
@@ -108,9 +124,21 @@ const carrierSlice = createSlice({
         }
       })
       
-      // --- Remove ---
+      // --- Remove Carrier ---
       .addCase(removeCarrierProfile.fulfilled, (state, action) => {
         state.items = state.items.filter(c => String(c._id) !== String(action.payload));
+      })
+
+      // --- Fetch Carrier Packages (NEW) ---
+      .addCase(fetchCarrierPackages.pending, (state) => {
+        state.packageStatus = 'loading';
+      })
+      .addCase(fetchCarrierPackages.fulfilled, (state, action) => {
+        state.packageStatus = 'succeeded';
+        state.packageTypes = action.payload;
+      })
+      .addCase(fetchCarrierPackages.rejected, (state) => {
+        state.packageStatus = 'failed';
       });
   }
 });

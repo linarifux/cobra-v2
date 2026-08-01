@@ -40,9 +40,18 @@ export const getCarriers = async () => {
   try {
     const response = await shipStationAPI.get('/carriers');
     return response.data;
-    console.log(response)
   } catch (error) { 
     handleApiError(error, 'getCarriers'); 
+  }
+};
+
+// --- NEW: Fetch Carrier Packages ---
+export const getCarrierPackages = async (carrierId) => {
+  try {
+    const response = await shipStationAPI.get(`/carriers/${carrierId}/packages`);
+    return response.data;
+  } catch (error) {
+    handleApiError(error, 'getCarrierPackages');
   }
 };
 

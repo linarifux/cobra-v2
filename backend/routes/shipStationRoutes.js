@@ -8,7 +8,8 @@ import {
     createOrderShipment,
     downloadOrderLabel,
     voidOrderLabel,
-    cancelOrderShipment
+    cancelOrderShipment,
+    fetchCarrierPackages
 } from '../controllers/shipStationController.js';
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
@@ -20,6 +21,7 @@ router.use(protect);
 // Get all warehouses & carriers
 router.route('/warehouses').get(fetchWarehouses);
 router.route('/carriers').get(fetchCarriers);
+router.route('/carriers/:carrierId/packages').get(fetchCarrierPackages);
 
 // --- Rate Fetching ---
 // POST route to accept live frontend data

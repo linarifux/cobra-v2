@@ -5,11 +5,11 @@ import Shipment from '../models/Shipment.js';
 import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 import { 
-  getRates, getWarehouses, getCarriers, 
+  getRates, getWarehouses, getCarriers, getCarrierPackages, 
   createLabel, createShipment, getLabelByExternalId,
   cancelShipment, voidLabel,
   createLabelForShipment, fetchLabelBufferAsBase64,
-  addTagToShipment // <-- NEW IMPORT
+  addTagToShipment
 } from '../services/shipStationService.js';
 
 // Fallback to 08036 if not set in .env
@@ -45,8 +45,9 @@ const getMIKROShipFrom = () => ({
 // --- HELPER: Map Frontend Packages to ShipStation Format ---
 const mapPackages = (packages, totalWeightInOunces = 16) => {
   if (packages && packages.length > 0) {
-    return packages.map((pkg, index) => ({
-      package_code: "package",
+    return packages.map((pkg) => ({
+      // Restored dynamic package code parsing so ShipStation respects the box types
+      package_code: pkg.packageCode || "package",
       weight: {
         value: pkg.weightInOunces > 0 ? Math.ceil(pkg.weightInOunces) : 16,
         unit: "ounce"
@@ -169,8 +170,8 @@ export const executeShipmentCreation = async (order, frontendPackages = [], isRe
     }
   }
 
-  // Update local Order model states 
-  order.status = 'Pending';
+  // Update local Order model states
+  // Removed `order.status = 'Pending'` so that we do not downgrade the Picked status
   order.shippingDetails.carrierType = finalCarrierType;
   order.shippingDetails.serviceCode = finalServiceCode;
   
@@ -237,6 +238,19 @@ export const fetchCarriers = catchAsync(async (req, res, next) => {
     }));
     res.status(200).json({ status: 'success', results: filteredCarriers?.length || 0, data: filteredCarriers });
   } catch (error) { return next(new AppError(`ShipStation Error: ${error.message}`, 502)); }
+});
+
+// --- NEW: Fetch Carrier Packages ---
+export const fetchCarrierPackages = catchAsync(async (req, res, next) => {
+  const { carrierId } = req.params;
+  if (!carrierId) return next(new AppError('Carrier ID is required.', 400));
+  
+  try {
+    const packages = await getCarrierPackages(carrierId);
+    res.status(200).json({ status: 'success', data: packages });
+  } catch (error) {
+    return next(new AppError(`ShipStation Error: ${error.message}`, 502));
+  }
 });
 
 export const fetchLiveRates = catchAsync(async (req, res, next) => {
@@ -361,6 +375,11 @@ export const createOrderShipment = catchAsync(async (req, res, next) => {
   const order = await Order.findById(orderId).populate('division customer');
   if (!order) return next(new AppError('Order not found in database.', 404));
 
+  // --- STRICT STATUS ENFORCEMENT ---
+  if (order.status !== 'Picked') {
+    return next(new AppError('Shipment creation is restricted. Order status must be "Picked".', 400));
+  }
+
   try {
     const result = await executeShipmentCreation(order, packages, isResidential, carrierCode, serviceCode);
     res.status(200).json({ status: 'success', message: 'Shipment successfully created in ShipStation.', data: result });
@@ -398,6 +417,8 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
       value: totalWeight,
       units: "ounces"
     },
+    // Restored the missing packages parameter required for ShipStation API v2 dimension extraction
+    packages: mapPackages(packages, totalWeight),
     validate_address: 'no_validation',
     label_layout: '4x6',
     label_format: 'pdf',

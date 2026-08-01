@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useEffect, useMemo } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CloudUpload, X, MapPin, Truck, PackageCheck, MessageSquare, Loader2, Plus, Trash2 } from 'lucide-react';
+import { CloudUpload, X, MapPin, Truck, PackageCheck, MessageSquare, Loader2, Plus, Trash2, Scale, Maximize } from 'lucide-react';
+import { fetchCarrierPackages } from '../../store/slices/carrierSlice'; // Adjust path if necessary
 
 export default function CreateShipmentModal({
   isOpen,
@@ -16,7 +18,44 @@ export default function CreateShipmentModal({
   onRemovePackage,
   onWeightChange
 }) {
+  const dispatch = useDispatch();
+
+  console.log(packages);
   
+
+  // Grab the carrier list and the newly fetched package types from Redux
+  const { items: carriersData, packageTypes, packageStatus } = useSelector(state => state.carriers || {});
+
+  // Trigger package fetch when modal opens and a carrier is selected
+  useEffect(() => {
+    if (isOpen && shipping?.carrierId) {
+      // Find the selected carrier object to extract the official ShipStation ID
+      const activeCarrier = carriersData.find(c => String(c._id) === String(shipping.carrierId));
+      if (activeCarrier && activeCarrier.shipStationId) {
+        dispatch(fetchCarrierPackages(activeCarrier.shipStationId));
+      }
+    }
+  }, [isOpen, shipping?.carrierId, carriersData, dispatch]);
+
+  // --- FIX: Bulletproof Array Extraction to prevent .map() crashes ---
+  const safePackageTypes = useMemo(() => {
+    if (!packageTypes) return [];
+    if (Array.isArray(packageTypes)) return packageTypes;
+    if (Array.isArray(packageTypes.packages)) return packageTypes.packages;
+    if (Array.isArray(packageTypes.data)) return packageTypes.data;
+    return [];
+  }, [packageTypes]);
+
+  // --- Aggregate Summary Calculations ---
+  const totalOunces = packages.reduce((sum, pkg) => sum + (Number(pkg.weightInOunces) || 0), 0);
+  const summaryLbs = Math.floor(totalOunces / 16);
+  const summaryOz = (totalOunces % 16).toFixed(1);
+
+  // Approximate stacking calculation for final dimensions
+  const finalLength = Math.max(0, ...packages.map(p => Number(p.length) || 0));
+  const finalWidth = Math.max(0, ...packages.map(p => Number(p.width) || 0));
+  const finalHeight = packages.reduce((sum, p) => sum + (Number(p.height) || 0), 0);
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -75,19 +114,37 @@ export default function CreateShipmentModal({
 
                {/* Multi-Package Configuration */}
                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center justify-between mb-4">
                     <h4 className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-1.5">
                       <PackageCheck size={12}/> Package Configuration
                     </h4>
                   </div>
+
+                  {/* SUMMARY BOX: Total Weight & Final Dimensions */}
+                  <div className="grid grid-cols-2 gap-3 mb-5">
+                    <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100 flex items-center gap-3">
+                      <div className="p-2 bg-blue-100 text-blue-500 rounded-lg"><Scale size={16} /></div>
+                      <div>
+                        <p className="text-[9px] font-black uppercase text-blue-400 mb-0.5 tracking-wider">Total Weight</p>
+                        <p className="text-sm font-bold text-blue-700">{summaryLbs} <span className="text-[10px] text-blue-500 font-medium">lb</span> {summaryOz} <span className="text-[10px] text-blue-500 font-medium">oz</span></p>
+                      </div>
+                    </div>
+                    <div className="bg-emerald-50/50 p-3 rounded-xl border border-emerald-100 flex items-center gap-3">
+                      <div className="p-2 bg-emerald-100 text-emerald-500 rounded-lg"><Maximize size={16} /></div>
+                      <div>
+                        <p className="text-[9px] font-black uppercase text-emerald-400 mb-0.5 tracking-wider">Est. Final Dimensions</p>
+                        <p className="text-sm font-bold text-emerald-700">{finalLength} × {finalWidth} × {finalHeight} <span className="text-[10px] text-emerald-500 font-medium">in</span></p>
+                      </div>
+                    </div>
+                  </div>
                   
-                  <div className="space-y-3">
+                  <div className="space-y-4">
                     {packages.map((pkg, i) => {
                       const lbs = Math.floor((Number(pkg.weightInOunces) || 0) / 16);
                       const oz = (Number(pkg.weightInOunces) || 0) % 16;
 
                       return (
-                        <div key={pkg.id} className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm relative group">
+                        <div key={pkg.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm relative group">
                           {packages.length > 1 && (
                             <button 
                               onClick={() => onRemovePackage(pkg.id)}
@@ -98,11 +155,34 @@ export default function CreateShipmentModal({
                             </button>
                           )}
                           
-                          <p className="text-[10px] font-black uppercase tracking-widest text-blue-600 border-b border-slate-100 pb-1.5 mb-3">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-blue-600 border-b border-slate-100 pb-2 mb-3">
                             Box {i + 1}
                           </p>
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            
+                            {/* Package Type Dropdown */}
+                            <div className="col-span-1 md:col-span-2">
+                              <label className="text-[9px] uppercase font-bold text-slate-400 mb-1.5 flex justify-between items-center">
+                                <span>Package Type</span>
+                                {packageStatus === 'loading' && <Loader2 size={10} className="animate-spin text-blue-400" />}
+                              </label>
+                              <select
+                                value={pkg.packageCode || 'package'}
+                                onChange={(e) => onUpdatePackage(pkg.id, 'packageCode', e.target.value)}
+                                className="w-full bg-slate-50 p-2.5 rounded-lg text-xs font-bold border border-slate-200 outline-none focus:border-blue-500 transition-colors shadow-inner cursor-pointer"
+                              >
+                                {safePackageTypes.map(pt => {
+                                  const code = pt.packageCode || pt.package_code || pt.code;
+                                  return (
+                                    <option key={code} value={code}>
+                                      {pt.name}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </div>
+
                             {/* Split Weight Input */}
                             <div>
                               <label className="text-[9px] uppercase font-bold text-slate-400 mb-1.5 block">Weight</label>

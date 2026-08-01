@@ -34,6 +34,12 @@ export const createOrder = catchAsync(async (req, res, next) => {
   let order = new Order(req.body);
   order.customer = customer;
 
+  // --- AUTOMATED STATUS OVERRIDE ---
+  // If the payload explicitly states the quantity limit was exceeded, force the order into 'Pending' review
+  if (req.body.qtyLimitExceeds === true) {
+    order.status = 'Pending';
+  }
+
   // 1. Save the order strictly to the local database
   await order.save();
 

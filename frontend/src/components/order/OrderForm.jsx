@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, MapPin, CreditCard,
   Trash2, Plus, MessageSquare,
-  PackageCheck, Save, Loader2, Box, Building2, User, Briefcase, Truck, ChevronDown, Search
+  PackageCheck, Save, Loader2, Box, Building2, User, Briefcase, Truck, ChevronDown, Search, AlertTriangle
 } from 'lucide-react';
 import { toast } from 'sonner';
 import NotFoundPage from '../../pages/NotFoundPage';
@@ -139,8 +139,9 @@ export default function OrderForm() {
       name: inv.itemName || 'Unnamed Item',
       sku: inv.sku || '',
       price: inv.unitCost || inv.price || 0,
-      weight: inv.weight || 0
-    })).sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' })); // <--- FIXED: Now sorting by sku
+      weight: inv.weight || 0,
+      max: inv.max || 0 // Included to evaluate quantity limit exceedances 
+    })).sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' })); 
   }, [inventoryData]);
 
   const filteredInventories = useMemo(() => {
@@ -149,6 +150,14 @@ export default function OrderForm() {
       inv.sku.toLowerCase().includes(inventorySearch.toLowerCase())
     );
   }, [availableInventories, inventorySearch]);
+
+  const isCurrentQtyLimitExceeded = useMemo(() => {
+    return items.some(item => {
+      const matchedStock = availableInventories.find(inv => inv.sku === item.sku);
+      const maxLimit = Number(matchedStock?.max) || 0;
+      return maxLimit > 0 && item.qty > maxLimit;
+    });
+  }, [items, availableInventories]);
 
   // Dynamically flatten carriers into selectable options
   const shippingOptions = useMemo(() => {
@@ -216,7 +225,10 @@ export default function OrderForm() {
       setUserId(currentOrder.user?._id || currentOrder.user || '');
       setChargeCode(currentOrder.chargeCode || ''); // POPULATE CHARGE CODE
 
-      setOrderStatus(currentOrder.status || 'New');
+      // Calculate effective status to keep visually in sync with quantity constraints
+      const effectiveStatus = currentOrder.qtyLimitExceeds && currentOrder.status === 'New' ? 'Pending' : (currentOrder.status || 'New');
+      setOrderStatus(effectiveStatus);
+      
       setShipping({
         carrierId: currentOrder.shippingDetails?.carrierId?._id || currentOrder.shippingDetails?.carrierId || '',
         carrierType: currentOrder.shippingDetails?.carrierType || '',
@@ -315,8 +327,9 @@ export default function OrderForm() {
       customer: customerId,
       division: divisionId,
       user: userId || null,
-      chargeCode: chargeCode.trim(), // PASS CHARGE CODE TO API
+      chargeCode: chargeCode.trim(), 
       status: orderStatus,
+      qtyLimitExceeds: isCurrentQtyLimitExceeded, // Included in payload to enforce workflow locks
       notes: notes,
       shippingAddress: {
         recipientName: address.name, email: address.email, phone: address.phone,
@@ -492,7 +505,12 @@ export default function OrderForm() {
               <hr className="border-slate-100 my-2" />
 
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Order Status</label>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center justify-between mb-1.5">
+                  <span>Order Status</span>
+                  {isCurrentQtyLimitExceeded && (
+                    <span className="text-amber-500 flex items-center gap-1 text-[9px]"><AlertTriangle size={10} /> Qty Limit Exceeded</span>
+                  )}
+                </label>
                 <select
                   value={orderStatus}
                   onChange={(e) => setOrderStatus(e.target.value)}

@@ -40,19 +40,18 @@ export default function CarrierTab({ division }) {
   // --- Form State ---
   const [formData, setFormData] = useState({});
 
-  // 1. Fetch Local Redux Configs
+  // 1. Fetch Local Redux Configs explicitly tied to the current division context
   useEffect(() => {
-    if (carrierStatus === 'idle' || carrierStatus === 'failed') {
-      dispatch(fetchCarriers());
+    if (division?._id) {
+      dispatch(fetchCarriers(division._id));
     }
-  }, [carrierStatus, dispatch]);
+  }, [dispatch, division?._id]);
 
   // 2. Fetch Live ShipStation Carriers
   useEffect(() => {
     const getShipStationData = async () => {
       try {
         const res = await api.get('/shipstation/carriers');
-        console.log(res)
         setSsCarriers(res.data.data || []);
       } catch (err) {
         toast.error('Failed to load ShipStation carriers. Check API connection.');
@@ -85,14 +84,14 @@ export default function CarrierTab({ division }) {
     if (existingDoc) {
       setFormData({
         _id: existingDoc._id,
-        accountName: existingDoc.accountName || `${division.divisionName} - ${platform.name}`,
+        accountName: existingDoc.accountName || `${division?.divisionName || 'Division'} - ${platform.name}`,
         isActive: existingDoc.isActive !== false,
         enabledServices: reconciledServices
       });
     } else {
       setFormData({
         _id: null,
-        accountName: `${division.divisionName} - ${platform.name}`,
+        accountName: `${division?.divisionName || 'Division'} - ${platform.name}`,
         isActive: true,
         enabledServices: reconciledServices
       });
@@ -372,7 +371,7 @@ export default function CarrierTab({ division }) {
                     ) : (
                       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col divide-y divide-slate-100">
                         {formData.enabledServices
-                          .filter(s => s.serviceName.toLowerCase().includes(serviceSearch.toLowerCase()) || s.serviceCode.toLowerCase().includes(serviceSearch.toLowerCase()))
+                          .filter(s => (s.serviceName || '').toLowerCase().includes(serviceSearch.toLowerCase()) || (s.serviceCode || '').toLowerCase().includes(serviceSearch.toLowerCase()))
                           .map(service => (
                             <div key={service.serviceCode} className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors">
                               <div className="pr-4 min-w-0">

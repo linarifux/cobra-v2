@@ -21,6 +21,7 @@ import {
 } from '../store/slices/orderSlice'; 
 import { fetchInventory, updateInventory } from '../store/slices/inventorySlice'; 
 import { fetchUsers } from '../store/slices/userSlice'; 
+import { fetchCarriers, fetchCarrierPackages } from '../store/slices/carrierSlice';
 
 import NotFoundPage from './NotFoundPage';
 import CreateShipmentModal from '../components/order-details/CreateShipmentModal';
@@ -98,9 +99,12 @@ export default function OrderDetailsPage() {
   const { items: inventoryData = [], status: inventoryStatus } = useSelector((state) => state.inventory || {});
   const { items: usersData = [], status: usersStatus } = useSelector((state) => state.users || {}); 
   
+  // Carrier State for Dynamic Packages
+  const { items: carriersData = [], packageTypes = [], packageStatus } = useSelector((state) => state.carriers || {});
+  
   const [orderStatus, setOrderStatus] = useState('New');
   const [selectedUserId, setSelectedUserId] = useState(''); 
-  const [shipping, setShipping] = useState({ carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0 });
+  const [shipping, setShipping] = useState({ carrierId: '', carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0, shipStationId: '' });
   const [address, setAddress] = useState({ name: '', email: '', phone: '', street: '', line2: '', city: '', state: '', zip: '', country: '' });
   const [items, setItems] = useState([]);
   const [notes, setNotes] = useState('');
@@ -132,7 +136,7 @@ export default function OrderDetailsPage() {
   });
   
   const [packages, setPackages] = useState([
-    { id: generateLocalId(), weightInOunces: 16, length: 10, width: 10, height: 10 }
+    { id: generateLocalId(), packageCode: 'package', weightInOunces: 16, length: 10, width: 10, height: 10 }
   ]);
 
   const [isStateDropdownOpen, setIsStateDropdownOpen] = useState(false);
@@ -166,14 +170,15 @@ export default function OrderDetailsPage() {
   const ssLabelId = ssData?.labelId || null;
 
   const isLabelPurchased = !!ssLabelId || !!shipping.trackingNumber;
-  const isPickingListDone = ['Picked', 'Shipped', 'Delivered', 'Billed'].includes(orderStatus);
-  const isShipmentCreated = isPickingListDone || !!ssOrderId;
-  const canManageLabel = ['Picked', 'Shipped', 'Delivered', 'Billed'].includes(orderStatus);
+  
+  // FIX: Make sure isShipmentCreated is strictly bound to an existing ShipStation ID 
+  const isShipmentCreated = !!ssOrderId; 
 
   const subtotal = items.reduce((acc, item) => acc + (Number(item.price) * Number(item.qty)), 0);
   const shippingCost = Number(shipping.shippingCost) || 0;
   const tax = subtotal * 0.08; 
   const grandTotal = subtotal + shippingCost + tax;
+  
   const totalItemWeightOz = items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
   const totalPackageWeightOz = packages.reduce((acc, pkg) => acc + Number(pkg.weightInOunces || 0), 0);
   const isWeightMismatched = Math.abs(totalItemWeightOz - totalPackageWeightOz) > 1;
@@ -187,7 +192,6 @@ export default function OrderDetailsPage() {
   const orderCreatorName = orderCreator ? (orderCreator.name || orderCreator.firstName || orderCreator.email) : null;
 
   // --- FIX: INFINITE LOOP RESOLUTION ---
-  // Decoupled the order fetching from the global dependency fetching.
   useEffect(() => {
     if (isValidMongoId) dispatch(fetchOrderById(id));
     return () => dispatch(clearCurrentOrder());
@@ -200,6 +204,24 @@ export default function OrderDetailsPage() {
   useEffect(() => {
     if (usersStatus === 'idle') dispatch(fetchUsers()); 
   }, [usersStatus, dispatch]);
+
+  // Fetch carriers so we can resolve the shipStationId inside the drawer
+  useEffect(() => {
+    if (currentOrder?.division) {
+       const divId = currentOrder.division._id || currentOrder.division;
+       dispatch(fetchCarriers(divId));
+    }
+  }, [currentOrder?.division, dispatch]);
+
+  // Dynamically load Package Types based on the attached Carrier
+  useEffect(() => {
+    if (fulfillOpen && shipping?.carrierId) {
+      const activeCarrier = carriersData.find(c => String(c._id) === String(shipping.carrierId));
+      if (activeCarrier && activeCarrier.shipStationId) {
+        dispatch(fetchCarrierPackages(activeCarrier.shipStationId));
+      }
+    }
+  }, [fulfillOpen, shipping?.carrierId, carriersData, dispatch]);
 
   useEffect(() => {
     const fetchLocations = async () => {
@@ -246,12 +268,14 @@ export default function OrderDetailsPage() {
       setSelectedUserId(currentOrder.user?._id || currentOrder.user || ''); 
       
       setShipping({ 
+        carrierId: currentOrder.shippingDetails?.carrierId?._id || currentOrder.shippingDetails?.carrierId || '',
         carrierType: currentOrder.shippingDetails?.carrierType || '', 
         serviceCode: currentOrder.shippingDetails?.serviceCode || '', 
         trackingNumber: currentOrder.shippingDetails?.trackingNumber || '',
-        shippingCost: currentOrder.shippingDetails?.shippingCost || 0
+        shippingCost: currentOrder.shippingDetails?.shippingCost || 0,
+        shipStationId: currentOrder.shippingDetails?.shipStationId || ''
       });
-      
+
       setAddress({ 
         name: currentOrder.shippingAddress?.recipientName || '', 
         email: currentOrder.shippingAddress?.email || '',
@@ -283,11 +307,10 @@ export default function OrderDetailsPage() {
 
       const calculatedOz = mappedItems.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
       if (packages.length === 1 && packages[0].weightInOunces === 16) {
-         setPackages([{ id: generateLocalId(), weightInOunces: calculatedOz > 0 ? calculatedOz : 16, length: 10, width: 10, height: 10 }]);
+         setPackages([{ id: generateLocalId(), packageCode: 'package', weightInOunces: calculatedOz > 0 ? calculatedOz : 16, length: 10, width: 10, height: 10 }]);
       }
     }
   }, [currentOrder]); 
-  // removed availableInventories to prevent rewriting state during catalog edits
 
   // Sync missing item weights continuously (No infinite loop)
   useEffect(() => {
@@ -412,11 +435,11 @@ export default function OrderDetailsPage() {
       doc.setFont('helvetica', 'bold');
       doc.text("SHIP FROM:", 14, addressBlockY);
       doc.setFont('helvetica', 'normal');
-      doc.text("MI-KRO Industries", 40, addressBlockY);
-      doc.text("1509 RT 38, Unit 9", 40, addressBlockY + 5);
-      doc.text("Hainesport, NJ 08036 US", 40, addressBlockY + 10);
-      doc.text("Phone: 609-694-0521", 40, addressBlockY + 15);
-      doc.text("Email: mike@mi-krologistics.com", 40, addressBlockY + 20);
+      doc.text("MI-KRO Industries", 40, addressBlockY + 5);
+      doc.text("1509 RT 38, Unit 9", 40, addressBlockY + 10);
+      doc.text("Hainesport, NJ 08036 US", 40, addressBlockY + 15);
+      doc.text("Phone: 609-694-0521", 40, addressBlockY + 20);
+      doc.text("Email: mike@mi-krologistics.com", 40, addressBlockY + 25);
 
       doc.setFont('helvetica', 'bold');
       doc.text("SHIP TO:", 110, addressBlockY);
@@ -533,8 +556,7 @@ export default function OrderDetailsPage() {
     setNewItem({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
   };
 
-  // --- FIX: Bulletproof state updates for arrays ---
-  const addPackage = () => setPackages(prev => [...prev, { id: generateLocalId(), weightInOunces: 16, length: 10, width: 10, height: 10 }]);
+  const addPackage = () => setPackages(prev => [...prev, { id: generateLocalId(), packageCode: 'package', weightInOunces: 16, length: 10, width: 10, height: 10 }]);
   const updatePackage = (id, field, value) => setPackages(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
   const removePackage = (id) => setPackages(prev => prev.filter(p => p.id !== id));
   
@@ -682,12 +704,14 @@ export default function OrderDetailsPage() {
   };
 
   const handleCreateShipmentSubmit = async () => {
+    if (orderStatus !== 'Picked') return toast.warning("Order status must be 'Picked' before you can create a shipment.");
     if (!shipping.carrierType || !shipping.serviceCode) return toast.warning("Please configure shipping carrier and service code on the order.");
     if (!fulfillmentData.shipFromId) return toast.warning("Please select a Ship From warehouse location.");
 
     setIsCreatingShipment(true);
     const payload = {
       packages: packages.map(p => ({
+        packageCode: p.packageCode || 'package',
         weightInOunces: Number(p.weightInOunces),
         length: Number(p.length),
         width: Number(p.width),
@@ -711,20 +735,12 @@ export default function OrderDetailsPage() {
   };
 
   const handleGenerateLabel = async () => {
-    if (!shipping.carrierType || !shipping.serviceCode) return toast.warning("Please configure shipping carrier and service code on the order before purchasing.");
     if (!fulfillmentData.shipFromId) return toast.warning("Please select a Ship From warehouse location.");
 
     setIsGeneratingLabel(true);
     const payload = {
-      packages: packages.map(p => ({
-        weightInOunces: Number(p.weightInOunces),
-        length: Number(p.length),
-        width: Number(p.width),
-        height: Number(p.height)
-      })),
       isResidential: fulfillmentData.isResidential,
-      carrierCode: shipping.carrierType,
-      serviceCode: shipping.serviceCode
+      shipFromId: fulfillmentData.shipFromId
     };
 
     try {
@@ -885,9 +901,8 @@ export default function OrderDetailsPage() {
 
           <button 
             onClick={handlePrintDocsAndPick}
-            // Gating Action: Disable until shipment is actually created in ShipStation
-            disabled={isGeneratingDocs || isSaving || !isShipmentCreated}
-            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-[11px] font-black shadow-lg transition-all duration-200 ${!isShipmentCreated ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-70'}`}
+            disabled={isGeneratingDocs || isSaving}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-[11px] font-black shadow-lg transition-all duration-200 bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-70"
           >
             {isGeneratingDocs ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />} Print & Pick
           </button>
@@ -900,19 +915,21 @@ export default function OrderDetailsPage() {
             {isSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save Changes
           </button>
 
-          <button 
-            onClick={() => setCreateShipmentModalOpen(true)}
-            disabled={isShipmentCreated || isSaving}
-            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-[11px] font-black shadow-lg transition-all duration-200 ${isShipmentCreated ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-blue-600 text-white shadow-blue-600/20 hover:scale-105'}`}
-          >
-            <CloudUpload size={14} /> Create Shipment
-          </button>
+          {orderStatus === 'Picked' && (
+            <button 
+              onClick={() => setCreateShipmentModalOpen(true)}
+              disabled={isShipmentCreated || isSaving}
+              title={isShipmentCreated ? "Shipment already created in ShipStation." : ""}
+              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-[11px] font-black shadow-lg transition-all duration-200 ${isShipmentCreated ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-blue-600 text-white shadow-blue-600/20 hover:scale-105'}`}
+            >
+              <CloudUpload size={14} /> Create Shipment
+            </button>
+          )}
 
           <button 
             onClick={() => setFulfillOpen(true)}
-            // Gating Action: Disable until shipment is actually created in ShipStation
-            disabled={!canManageLabel || !isShipmentCreated}
-            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-[11px] font-black shadow-lg transition-all duration-200 ${!canManageLabel || !isShipmentCreated ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-brand-gold text-white shadow-brand-gold/20 hover:scale-105'}`}
+            disabled={!isShipmentCreated}
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-[11px] font-black shadow-lg transition-all duration-200 ${!isShipmentCreated ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-brand-gold text-white shadow-brand-gold/20 hover:scale-105'}`}
           >
             <CheckCircle2 size={14} /> {isLabelPurchased ? 'View Label' : 'Generate Label'}
           </button>
@@ -979,100 +996,6 @@ export default function OrderDetailsPage() {
                   className="accent-brand-gold w-3.5 h-3.5 rounded-sm" 
                 /> Residential Destination
               </label>
-            </div>
-
-            <hr className="border-slate-200" />
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-[10px] uppercase font-black text-slate-500 flex items-center gap-1.5">
-                  <Truck size={12}/> Package Configuration
-                </h3>
-                {isWeightMismatched && (
-                  <button onClick={autoSyncWeights} className="text-[9px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-md border border-amber-200 flex items-center gap-1 hover:bg-amber-100 transition-colors">
-                    <AlertTriangle size={10} /> Sync Weights
-                  </button>
-                )}
-              </div>
-              
-              <div className="space-y-4 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2 pb-2">
-                {packages.map((pkg, index) => {
-                  const lbs = Math.floor((Number(pkg.weightInOunces) || 0) / 16);
-                  const oz = (Number(pkg.weightInOunces) || 0) % 16;
-                  
-                  return (
-                    <div key={pkg.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3 relative group">
-                      {packages.length > 1 && (
-                        <button onClick={() => removePackage(pkg.id)} className="absolute top-3 right-3 text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100">
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                      <p className="text-[10px] font-black uppercase tracking-widest text-brand-gold border-b border-slate-100 pb-2 mb-2">Box {index + 1}</p>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Split Weight Input */}
-                        <div>
-                          <label className="text-[9px] uppercase font-bold text-slate-400 mb-1.5 block">Weight</label>
-                          <div className="flex gap-2">
-                            <div className="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-lg focus-within:border-blue-500 transition-colors shadow-inner">
-                              <input 
-                                type="number" min="0" 
-                                value={lbs === 0 && oz === 0 && !pkg.weightInOunces ? '' : lbs} 
-                                onChange={(e) => handleWeightChange(pkg.id, pkg.weightInOunces, 'lbs', e.target.value)}
-                                className="w-full bg-transparent p-2 text-xs font-bold text-center outline-none" 
-                                placeholder="0"
-                              />
-                              <span className="text-[10px] font-black text-slate-400 pr-3">lb</span>
-                            </div>
-                            <div className="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-lg focus-within:border-blue-500 transition-colors shadow-inner">
-                              <input 
-                                type="number" min="0" max="15.99" step="0.1"
-                                value={oz === 0 && lbs === 0 && !pkg.weightInOunces ? '' : oz} 
-                                onChange={(e) => handleWeightChange(pkg.id, pkg.weightInOunces, 'oz', e.target.value)}
-                                className="w-full bg-transparent p-2 text-xs font-bold text-center outline-none" 
-                                placeholder="0"
-                              />
-                              <span className="text-[10px] font-black text-slate-400 pr-3">oz</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Split Dimensions Input */}
-                        <div>
-                          <label className="text-[9px] uppercase font-bold text-slate-400 mb-1.5 block">Dimensions (L x W x H)</label>
-                          <div className="flex items-center gap-1.5">
-                            <input 
-                              type="number" min="0" step="0.1" placeholder="L"
-                              value={pkg.length !== undefined ? pkg.length : ''} 
-                              onChange={(e) => updatePackage(pkg.id, 'length', e.target.value)}
-                              className="w-full bg-slate-50 p-2 rounded-lg text-xs font-bold text-center border border-slate-200 outline-none focus:border-blue-500 transition-colors shadow-inner" 
-                            />
-                            <span className="text-slate-300 text-xs font-black">×</span>
-                            <input 
-                              type="number" min="0" step="0.1" placeholder="W"
-                              value={pkg.width !== undefined ? pkg.width : ''} 
-                              onChange={(e) => updatePackage(pkg.id, 'width', e.target.value)}
-                              className="w-full bg-slate-50 p-2 rounded-lg text-xs font-bold text-center border border-slate-200 outline-none focus:border-blue-500 transition-colors shadow-inner" 
-                            />
-                            <span className="text-slate-300 text-xs font-black">×</span>
-                            <input 
-                              type="number" min="0" step="0.1" placeholder="H"
-                              value={pkg.height !== undefined ? pkg.height : ''} 
-                              onChange={(e) => updatePackage(pkg.id, 'height', e.target.value)}
-                              className="w-full bg-slate-50 p-2 rounded-lg text-xs font-bold text-center border border-slate-200 outline-none focus:border-blue-500 transition-colors shadow-inner" 
-                            />
-                            <span className="text-[10px] font-black text-slate-400 pl-1">in</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                <button onClick={addPackage} className="w-full py-2 flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-black uppercase tracking-widest rounded-xl transition-colors border border-slate-200">
-                  <Plus size={14} /> Add Another Box
-                </button>
-              </div>
             </div>
           </div>
           
