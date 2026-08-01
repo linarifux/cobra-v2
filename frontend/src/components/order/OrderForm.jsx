@@ -690,8 +690,10 @@ export default function OrderForm() {
               )}
 
               {items.map((item) => (
+                
                 <div key={item.id} className="flex items-center gap-3 bg-white/60 p-3 rounded-xl border border-slate-100 group">
                   <div className="flex-1 min-w-0">
+                    
                     <p className="text-xs font-bold text-slate-900 truncate">{item.name}</p>
                     <p className="text-[10px] font-mono text-slate-500 truncate">{item.sku}</p>
                   </div>

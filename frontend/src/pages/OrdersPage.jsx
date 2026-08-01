@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, MapPin, Package, Loader2, Filter, X, 
   Calendar, Building2, User, Plus, FileText, Truck,
-  Layers, Edit2, Trash2, Save, Briefcase, Printer, CheckSquare
+  Layers, Edit2, Trash2, Save, Briefcase, Printer, CheckSquare, AlertTriangle
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -14,6 +14,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 import PageHeader from '../components/PageHeader';
+import OrdersSidebar from '../components/order/OrdersSidebar';
 import { useConfirm } from '../providers/ConfirmProvider';
 
 // Redux Actions
@@ -69,10 +70,13 @@ export default function OrdersPage() {
   // Evaluates database payload to determine optimal default status view
   useEffect(() => {
     if (ordersStatus === 'succeeded' && !filterInitialized.current) {
-      const hasNewOrders = ordersData.some(o => o.status === 'New');
+      // Calculate effective statuses to ensure Pending orders aren't hidden by a strict 'New' filter
+      const hasNewOrders = ordersData.some(o => (o.qtyLimitExceeds && o.status === 'New' ? 'Pending' : (o.status || 'New')) === 'New');
+      const hasPendingOrders = ordersData.some(o => (o.qtyLimitExceeds && o.status === 'New' ? 'Pending' : (o.status || 'New')) === 'Pending');
+      
       setFilters(prev => ({
         ...prev,
-        status: hasNewOrders ? 'New' : 'All'
+        status: hasNewOrders ? 'New' : (hasPendingOrders ? 'Pending' : 'All')
       }));
       filterInitialized.current = true;
     }
@@ -122,9 +126,10 @@ export default function OrdersPage() {
   const clearAllFilters = () => {
     setSearchQuery('');
     // Ensure the 'Clear Filters' button respects the dynamic smart default
-    const hasNewOrders = ordersData.some(o => o.status === 'New');
+    const hasNewOrders = ordersData.some(o => (o.qtyLimitExceeds && o.status === 'New' ? 'Pending' : (o.status || 'New')) === 'New');
+    const hasPendingOrders = ordersData.some(o => (o.qtyLimitExceeds && o.status === 'New' ? 'Pending' : (o.status || 'New')) === 'Pending');
     setFilters({
-      status: hasNewOrders ? 'New' : 'All',
+      status: hasNewOrders ? 'New' : (hasPendingOrders ? 'Pending' : 'All'),
       customer: 'All', 
       division: 'All',
       user: 'All',     
@@ -144,6 +149,51 @@ export default function OrdersPage() {
     return count;
   }, [searchQuery, filters]);
 
+  // --- Dynamic Sidebar Status Counts ---
+  const statusCounts = useMemo(() => {
+    const counts = { All: 0, New: 0, Pending: 0, Picked: 0, Shipped: 0, Hold: 0, Cancelled: 0, Delivered: 0, Billed: 0 };
+    
+    if (!Array.isArray(ordersData)) return counts;
+
+    ordersData.forEach(order => {
+      const orderCustomerId = String(order.customer?._id || order.customer || '');
+      const orderDivisionId = String(order.division?._id || order.division || ''); 
+      const orderUserId = String(order.user?._id || order.user || '');
+
+      const customerName = order.customer?.customerName || '';
+      const orderNumber = order.orderNumber || '';
+      const recipientName = order.shippingAddress?.recipientName || '';
+      
+      let orderDate = '';
+      try {
+        if (order.createdAt) orderDate = new Date(order.createdAt).toISOString().split('T')[0];
+      } catch (e) {}
+
+      const matchSearch = customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          recipientName.toLowerCase().includes(searchQuery.toLowerCase());
+                          
+      const matchCustomer = filters.customer === 'All' || orderCustomerId === String(filters.customer);
+      const matchDivision = filters.division === 'All' || orderDivisionId === String(filters.division);
+      const matchUser = filters.user === 'All' || orderUserId === String(filters.user);
+      
+      const matchDateStart = !filters.dateStart || orderDate >= filters.dateStart;
+      const matchDateEnd = !filters.dateEnd || orderDate <= filters.dateEnd;
+      
+      // Only tally orders that pass the current top-bar filters (ignores the sidebar status filter itself)
+      if (matchSearch && matchCustomer && matchDivision && matchUser && matchDateStart && matchDateEnd) {
+        const effectiveStatus = order.qtyLimitExceeds && order.status === 'New' ? 'Pending' : (order.status || 'New');
+        
+        counts.All++;
+        if (counts[effectiveStatus] !== undefined) {
+          counts[effectiveStatus]++;
+        }
+      }
+    });
+
+    return counts;
+  }, [searchQuery, filters.customer, filters.division, filters.user, filters.dateStart, filters.dateEnd, ordersData]);
+
   // --- Data Processing ---
   const filteredOrders = useMemo(() => {
     if (!Array.isArray(ordersData)) return [];
@@ -162,11 +212,14 @@ export default function OrdersPage() {
         if (order.createdAt) orderDate = new Date(order.createdAt).toISOString().split('T')[0];
       } catch (e) {}
 
+      // Auto-override the status mapping if qty limits are exceeded
+      const effectiveStatus = order.qtyLimitExceeds && order.status === 'New' ? 'Pending' : (order.status || 'New');
+
       const matchSearch = customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           recipientName.toLowerCase().includes(searchQuery.toLowerCase());
                           
-      const matchStatus = filters.status === 'All' || order.status === filters.status;
+      const matchStatus = filters.status === 'All' || effectiveStatus === filters.status;
       const matchCustomer = filters.customer === 'All' || orderCustomerId === String(filters.customer);
       const matchDivision = filters.division === 'All' || orderDivisionId === String(filters.division);
       const matchUser = filters.user === 'All' || orderUserId === String(filters.user);
@@ -197,10 +250,11 @@ export default function OrdersPage() {
 
   // --- Inline Action Handlers ---
   const openQuickEdit = (order) => {
+    const effectiveStatus = order.qtyLimitExceeds && order.status === 'New' ? 'Pending' : (order.status || 'New');
     setEditingOrder({
       _id: order._id,
       orderNumber: order.orderNumber,
-      status: order.status || 'New',
+      status: effectiveStatus,
       notes: order.notes || ''
     });
     setIsEditModalOpen(true);
@@ -314,10 +368,6 @@ export default function OrdersPage() {
             if (invItem?.locations && Array.isArray(invItem.locations) && invItem.locations.length > 0) {
                locationStr = invItem.locations.map(loc => typeof loc === 'object' ? (loc.designation || loc.name || '') : String(loc)).filter(Boolean).join(', ');
             }
-            // Fallbacks for older data structures
-            // if (!locationStr && invItem?.locationString) {
-            //    locationStr = invItem.locationString;
-            // }
             if (!locationStr && invItem?.location) {
                locationStr = typeof invItem.location === 'object' ? (invItem.location.designation || invItem.location.name || '') : String(invItem.location);
             }
@@ -518,9 +568,10 @@ export default function OrdersPage() {
       window.open(blobUrl, '_blank');
 
       // 3. BULK UPDATE STATUS TO "PICKED" FOR ELIGIBLE ORDERS ONLY
-      const eligibleOrders = selectedOrderObjects.filter(
-        order => order.status === 'New' || order.status === 'Pending'
-      );
+      const eligibleOrders = selectedOrderObjects.filter(order => {
+        const st = order.qtyLimitExceeds && order.status === 'New' ? 'Pending' : (order.status || 'New');
+        return st === 'New' || st === 'Pending';
+      });
 
       if (eligibleOrders.length > 0) {
         await Promise.all(
@@ -562,6 +613,7 @@ export default function OrdersPage() {
   return (
     <div className="relative h-full p-6 space-y-6 animate-fade-in max-w-[1600px] mx-auto pb-32">
       
+      {/* Header Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <PageHeader title="Fulfillment Queue" subtitle="Real-time dispatch and logistics overview." />
         <button 
@@ -572,235 +624,243 @@ export default function OrdersPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Orders', val: ordersData.length, color: 'text-slate-900' },
-          { label: 'Awaiting Action', val: ordersData.filter(o => ['New', 'Pending'].includes(o.status)).length, color: 'text-rose-600' },
-          { label: 'Picked / Ready', val: ordersData.filter(o => o.status === 'Picked').length, color: 'text-indigo-600' },
-          { label: 'Shipped / Billed', val: ordersData.filter(o => ['Shipped', 'Delivered', 'Billed'].includes(o.status)).length, color: 'text-emerald-600' },
-        ].map((stat, i) => (
-          <div key={i} className="bg-white/50 border border-white/60 p-4 rounded-2xl backdrop-blur-md shadow-sm transition-all hover:bg-white/70">
-            <p className="text-[10px] uppercase font-black text-slate-400">{stat.label}</p>
-            <p className={`text-2xl font-black ${stat.color}`}>{stat.val}</p>
-          </div>
-        ))}
-      </div>
+      <div className="flex flex-col md:flex-row gap-6">
+        {/* --- NEW SIDEBAR --- */}
+        <OrdersSidebar
+          activeStatus={filters.status}
+          onStatusChange={(newStatus) => setFilters({ ...filters, status: newStatus })}
+          statusCounts={statusCounts}
+        />
 
-      <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl space-y-4 shadow-sm">
-        
-        <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-          <div className="relative flex-1 w-full max-w-2xl">
-            <Search className="absolute left-4 top-3 text-slate-400" size={16} />
-            <input 
-              className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white/70 text-sm font-bold outline-none focus:ring-2 focus:ring-brand-gold/50 transition-all shadow-sm"
-              placeholder="Search by Brand Name, Shopper Name, or Order Number..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-          
-          {activeFilterCount > 0 && (
-            <button 
-              onClick={clearAllFilters}
-              className="flex items-center gap-2 px-4 py-2.5 text-[11px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-900 hover:bg-white/60 rounded-xl transition-all border border-transparent hover:border-slate-200"
-            >
-              <X size={14} /> Clear {activeFilterCount} Filters
-            </button>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 border-t border-slate-200/60 pt-4">
-          <div className="relative">
-            <Briefcase className="absolute left-3 top-2.5 text-brand-gold" size={14} />
-            <select className={selectClass} value={filters.customer} onChange={handleCustomerChange}>
-              <option value="All">All Brands</option>
-              {customersData.map(c => <option key={c._id} value={c._id}>{c.customerName}</option>)}
-            </select>
+        {/* --- MAIN CONTENT --- */}
+        <div className="flex-1 flex flex-col min-w-0 space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { label: 'Total Orders', val: ordersData.length, color: 'text-slate-900' },
+              { label: 'Awaiting Action', val: ordersData.filter(o => {
+                  const st = o.qtyLimitExceeds && o.status === 'New' ? 'Pending' : (o.status || 'New');
+                  return ['New', 'Pending'].includes(st);
+                }).length, color: 'text-rose-600' },
+              { label: 'Picked / Ready', val: ordersData.filter(o => o.status === 'Picked').length, color: 'text-indigo-600' },
+              { label: 'Shipped / Billed', val: ordersData.filter(o => ['Shipped', 'Delivered', 'Billed'].includes(o.status)).length, color: 'text-emerald-600' },
+            ].map((stat, i) => (
+              <div key={i} className="bg-white/50 border border-white/60 p-4 rounded-2xl backdrop-blur-md shadow-sm transition-all hover:bg-white/70">
+                <p className="text-[10px] uppercase font-black text-slate-400">{stat.label}</p>
+                <p className={`text-2xl font-black ${stat.color}`}>{stat.val}</p>
+              </div>
+            ))}
           </div>
 
-          <div className="relative">
-            <Building2 className="absolute left-3 top-2.5 text-brand-gold" size={14} />
-            <select className={selectClass} value={filters.division} onChange={handleDivisionChange}>
-              <option value="All">All Divisions</option>
-              {availableDivisions.map(d => <option key={d._id} value={d._id}>{d.divisionName}</option>)}
-            </select>
+          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl space-y-4 shadow-sm">
+            
+            <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+              <div className="relative flex-1 w-full max-w-2xl">
+                <Search className="absolute left-4 top-3 text-slate-400" size={16} />
+                <input 
+                  className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white/70 text-sm font-bold outline-none focus:ring-2 focus:ring-brand-gold/50 transition-all shadow-sm"
+                  placeholder="Search by Brand Name, Shopper Name, or Order Number..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              
+              {activeFilterCount > 0 && (
+                <button 
+                  onClick={clearAllFilters}
+                  className="flex items-center gap-2 px-4 py-2.5 text-[11px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-900 hover:bg-white/60 rounded-xl transition-all border border-transparent hover:border-slate-200"
+                >
+                  <X size={14} /> Clear {activeFilterCount} Filters
+                </button>
+              )}
+            </div>
+
+            {/* Note: Status is removed from this horizontal row as it's now in the sidebar */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 border-t border-slate-200/60 pt-4">
+              <div className="relative">
+                <Briefcase className="absolute left-3 top-2.5 text-brand-gold" size={14} />
+                <select className={selectClass} value={filters.customer} onChange={handleCustomerChange}>
+                  <option value="All">All Brands</option>
+                  {customersData.map(c => <option key={c._id} value={c._id}>{c.customerName}</option>)}
+                </select>
+              </div>
+
+              <div className="relative">
+                <Building2 className="absolute left-3 top-2.5 text-brand-gold" size={14} />
+                <select className={selectClass} value={filters.division} onChange={handleDivisionChange}>
+                  <option value="All">All Divisions</option>
+                  {availableDivisions.map(d => <option key={d._id} value={d._id}>{d.divisionName}</option>)}
+                </select>
+              </div>
+
+              <div className="relative">
+                <User className="absolute left-3 top-2.5 text-brand-gold" size={14} />
+                <select className={selectClass} value={filters.user} onChange={(e) => setFilters({...filters, user: e.target.value})}>
+                  <option value="All">All Shoppers</option>
+                  {uniqueShoppers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </div>
+
+              <div className="relative">
+                <Calendar className="absolute left-3 top-2.5 text-brand-gold" size={14} />
+                <input 
+                  type="date" 
+                  className={selectClass} 
+                  value={filters.dateStart}
+                  onChange={(e) => setFilters({...filters, dateStart: e.target.value})} 
+                  title="Start Date"
+                />
+              </div>
+
+              <div className="relative">
+                <Calendar className="absolute left-3 top-2.5 text-brand-gold" size={14} />
+                <input 
+                  type="date" 
+                  className={selectClass} 
+                  value={filters.dateEnd}
+                  onChange={(e) => setFilters({...filters, dateEnd: e.target.value})} 
+                  title="End Date"
+                />
+              </div>
+            </div>
           </div>
 
-          <div className="relative">
-            <User className="absolute left-3 top-2.5 text-brand-gold" size={14} />
-            <select className={selectClass} value={filters.user} onChange={(e) => setFilters({...filters, user: e.target.value})}>
-              <option value="All">All Shoppers</option>
-              {uniqueShoppers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
-          </div>
+          {/* State Handling */}
+          {ordersStatus === 'loading' && ordersData.length === 0 ? (
+            <div className="flex justify-center items-center py-20 text-slate-400">
+              <Loader2 className="animate-spin text-brand-gold" size={32} />
+            </div>
+          ) : ordersStatus === 'failed' ? (
+            <div className="bg-red-50 text-red-600 p-6 rounded-3xl text-center text-sm font-bold border border-red-200 shadow-sm">
+              Failed to load orders: {ordersError}
+            </div>
+          ) : (
+            <div className="bg-white/60 backdrop-blur-2xl border border-white/80 rounded-[2rem] overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
+              <div className="overflow-x-auto w-full">
+                <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
+                  <thead>
+                    <tr className="bg-slate-50/50 border-b border-slate-200/80 text-[10px] uppercase font-black text-slate-400 tracking-widest">
+                      <th className="p-5 w-12">
+                        <input 
+                          type="checkbox" 
+                          className="rounded border-slate-300 text-brand-gold focus:ring-brand-gold cursor-pointer"
+                          checked={filteredOrders.length > 0 && selectedOrders.length === filteredOrders.length}
+                          onChange={handleSelectAll} 
+                        />
+                      </th>
+                      <th className="p-5">Order Reference</th>
+                      <th className="p-5">Date Logged</th>
+                      <th className="p-5">Customer & Origin</th>
+                      <th className="p-5">Shopper & Dest.</th>
+                      <th className="p-5">Assets</th>
+                      <th className="p-5">Status</th>
+                      <th className="p-5 text-right pr-6">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100/80">
+                    {filteredOrders.length > 0 ? (
+                      filteredOrders.map((order) => {
+                        const displayDate = order.createdAt 
+                          ? new Date(order.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) 
+                          : 'N/A';
+                        
+                        const location = [order.shippingAddress?.city, order.shippingAddress?.state]
+                          .filter(Boolean)
+                          .join(', ') || 'N/A';
+                        
+                        const grandTotal = (order.totalAmount || 0) + (order.shippingDetails?.shippingCost || 0);
 
-          <div className="relative">
-            <Filter className="absolute left-3 top-2.5 text-brand-gold" size={14} />
-            <select className={selectClass} value={filters.status} onChange={(e) => setFilters({...filters, status: e.target.value})}>
-              <option value="All">All Statuses</option>
-              <option value="New">New</option>
-              <option value="Pending">Pending</option>
-              <option value="Picked">Picked</option>
-              <option value="Shipped">Shipped</option>
-              <option value="Hold">Hold</option>
-              <option value="Cancelled">Cancelled</option>
-              <option value="Delivered">Delivered</option>
-              <option value="Billed">Billed</option>
-            </select>
-          </div>
+                        const divRef = order.division;
+                        const divisionObj = divisionsData.find(d => d._id === (divRef?._id || divRef));
+                        const displayDivision = divisionObj ? divisionObj.divisionName : 'Unassigned Branch';
 
-          <div className="relative">
-            <Calendar className="absolute left-3 top-2.5 text-brand-gold" size={14} />
-            <input 
-              type="date" 
-              className={selectClass} 
-              value={filters.dateStart}
-              onChange={(e) => setFilters({...filters, dateStart: e.target.value})} 
-              title="Start Date"
-            />
-          </div>
+                        const shopperName = order.user?.name || order.user?.firstName || order.shippingAddress?.recipientName || 'Unknown Shopper';
+                        
+                        // Effective status dynamically overrides "New" to "Pending" visually if quantities exceed limits
+                        const effectiveStatus = order.qtyLimitExceeds && order.status === 'New' ? 'Pending' : (order.status || 'New');
 
-          <div className="relative">
-            <Calendar className="absolute left-3 top-2.5 text-brand-gold" size={14} />
-            <input 
-              type="date" 
-              className={selectClass} 
-              value={filters.dateEnd}
-              onChange={(e) => setFilters({...filters, dateEnd: e.target.value})} 
-              title="End Date"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* State Handling */}
-      {ordersStatus === 'loading' && ordersData.length === 0 ? (
-        <div className="flex justify-center items-center py-20 text-slate-400">
-          <Loader2 className="animate-spin text-brand-gold" size={32} />
-        </div>
-      ) : ordersStatus === 'failed' ? (
-        <div className="bg-red-50 text-red-600 p-6 rounded-3xl text-center text-sm font-bold border border-red-200 shadow-sm">
-          Failed to load orders: {ordersError}
-        </div>
-      ) : (
-        <div className="bg-white/60 backdrop-blur-2xl border border-white/80 rounded-[2rem] overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
-          <div className="overflow-x-auto w-full">
-            <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
-              <thead>
-                <tr className="bg-slate-50/50 border-b border-slate-200/80 text-[10px] uppercase font-black text-slate-400 tracking-widest">
-                  <th className="p-5 w-12">
-                    <input 
-                      type="checkbox" 
-                      className="rounded border-slate-300 text-brand-gold focus:ring-brand-gold cursor-pointer"
-                      checked={filteredOrders.length > 0 && selectedOrders.length === filteredOrders.length}
-                      onChange={handleSelectAll} 
-                    />
-                  </th>
-                  <th className="p-5">Order Reference</th>
-                  <th className="p-5">Date Logged</th>
-                  <th className="p-5">Customer & Origin</th>
-                  <th className="p-5">Shopper & Dest.</th>
-                  <th className="p-5">Assets</th>
-                  <th className="p-5">Status</th>
-                  <th className="p-5 text-right pr-6">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100/80">
-                {filteredOrders.length > 0 ? (
-                  filteredOrders.map((order) => {
-                    const displayDate = order.createdAt 
-                      ? new Date(order.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) 
-                      : 'N/A';
-                    
-                    const location = [order.shippingAddress?.city, order.shippingAddress?.state]
-                      .filter(Boolean)
-                      .join(', ') || 'N/A';
-                    
-                    const grandTotal = (order.totalAmount || 0) + (order.shippingDetails?.shippingCost || 0);
-
-                    const divRef = order.division;
-                    const divisionObj = divisionsData.find(d => d._id === (divRef?._id || divRef));
-                    const displayDivision = divisionObj ? divisionObj.divisionName : 'Unassigned Branch';
-
-                    const shopperName = order.user?.name || order.user?.firstName || order.shippingAddress?.recipientName || 'Unknown Shopper';
-
-                    return (
-                      <tr key={order._id} className="hover:bg-white/80 transition-colors group cursor-pointer" onClick={() => navigate(`/orders/${order._id}`)}>
-                        <td className="p-5" onClick={e => e.stopPropagation()}>
-                          <input 
-                            type="checkbox" 
-                            className="rounded border-slate-300 text-brand-gold focus:ring-brand-gold cursor-pointer"
-                            checked={selectedOrders.includes(order._id)}
-                            onChange={() => toggleSelect(order._id)} 
-                          />
-                        </td>
-                        <td className="p-5">
-                          <div className="font-black text-slate-800 text-sm group-hover:text-brand-gold transition-colors">{order.orderNumber}</div>
-                          <div className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 w-max mt-1 tracking-widest">${grandTotal.toFixed(2)}</div>
-                        </td>
-                        <td className="p-5 text-slate-500 font-bold">{displayDate}</td>
-                        <td className="p-5">
-                          <div className="font-black text-slate-700">{order.customer?.customerName || 'Unknown Brand'}</div>
-                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 flex items-center gap-1">
-                             <Layers size={10}/> {displayDivision}
-                          </div>
-                        </td>
-                        <td className="p-5">
-                          <div className="font-black text-slate-700">{shopperName}</div>
-                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 flex items-center gap-1">
-                             <MapPin size={10} className="text-brand-gold"/> {location}
-                          </div>
-                        </td>
-                        <td className="p-5">
-                          <span className="bg-slate-100 border border-slate-200 px-2 py-1 rounded text-slate-600 font-black">{order.items?.length || 0}</span>
-                        </td>
-                        <td className="p-5">
-                          <span className={`px-2.5 py-1 text-[9px] uppercase tracking-wider rounded border shadow-sm font-black ${getStatusBadgeStyle(order.status || 'New')}`}>
-                            {order.status || 'New'}
-                          </span>
-                        </td>
-                        <td className="p-5 text-right pr-6" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button 
-                              onClick={() => openQuickEdit(order)}
-                              className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 shadow-sm transition-all" 
-                              title="Update Status"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                            <button 
-                              onClick={() => navigate(`/orders/edit/${order._id}`)}
-                              className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-amber-600 hover:border-amber-200 hover:bg-amber-50 shadow-sm transition-all" 
-                              title="Full Edit"
-                            >
-                              <FileText size={14} />
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteOrder(order._id, order.orderNumber)}
-                              className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-red-600 hover:border-red-200 hover:bg-red-50 shadow-sm transition-all" 
-                              title="Delete Order"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
+                        return (
+                          <tr key={order._id} className="hover:bg-white/80 transition-colors group cursor-pointer" onClick={() => navigate(`/orders/${order._id}`)}>
+                            <td className="p-5" onClick={e => e.stopPropagation()}>
+                              <input 
+                                type="checkbox" 
+                                className="rounded border-slate-300 text-brand-gold focus:ring-brand-gold cursor-pointer"
+                                checked={selectedOrders.includes(order._id)}
+                                onChange={() => toggleSelect(order._id)} 
+                              />
+                            </td>
+                            <td className="p-5">
+                              <div className="font-black text-slate-800 text-sm group-hover:text-brand-gold transition-colors">{order.orderNumber}</div>
+                              <div className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 w-max mt-1 tracking-widest">${grandTotal.toFixed(2)}</div>
+                            </td>
+                            <td className="p-5 text-slate-500 font-bold">{displayDate}</td>
+                            <td className="p-5">
+                              <div className="font-black text-slate-700">{order.customer?.customerName || 'Unknown Brand'}</div>
+                              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 flex items-center gap-1">
+                                 <Layers size={10}/> {displayDivision}
+                              </div>
+                            </td>
+                            <td className="p-5">
+                              <div className="font-black text-slate-700">{shopperName}</div>
+                              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 flex items-center gap-1">
+                                 <MapPin size={10} className="text-brand-gold"/> {location}
+                              </div>
+                            </td>
+                            <td className="p-5">
+                              <span className="bg-slate-100 border border-slate-200 px-2 py-1 rounded text-slate-600 font-black">{order.items?.length || 0}</span>
+                            </td>
+                            <td className="p-5">
+                              <span 
+                                className={`px-2.5 py-1 text-[9px] uppercase tracking-wider rounded border shadow-sm font-black flex items-center gap-1.5 w-max ${getStatusBadgeStyle(effectiveStatus)}`}
+                                title={order.qtyLimitExceeds && effectiveStatus === 'Pending' ? "Quantity limit exceeded. Requires approval." : ""}
+                              >
+                                {effectiveStatus}
+                                {order.qtyLimitExceeds && effectiveStatus === 'Pending' && <AlertTriangle size={10} className="shrink-0" />}
+                              </span>
+                            </td>
+                            <td className="p-5 text-right pr-6" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button 
+                                  onClick={() => openQuickEdit(order)}
+                                  className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 shadow-sm transition-all" 
+                                  title="Update Status"
+                                >
+                                  <Edit2 size={14} />
+                                </button>
+                                <button 
+                                  onClick={() => navigate(`/orders/edit/${order._id}`)}
+                                  className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-amber-600 hover:border-amber-200 hover:bg-amber-50 shadow-sm transition-all" 
+                                  title="Full Edit"
+                                >
+                                  <FileText size={14} />
+                                </button>
+                                <button 
+                                  onClick={() => handleDeleteOrder(order._id, order.orderNumber)}
+                                  className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-red-600 hover:border-red-200 hover:bg-red-50 shadow-sm transition-all" 
+                                  title="Delete Order"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan={8} className="py-20 text-center text-slate-400">
+                          <Package className="mx-auto mb-3 opacity-20" size={48} />
+                          <p className="text-sm font-black uppercase tracking-widest mb-1">No Orders Found</p>
+                          <p className="text-xs font-bold">Try clearing your filters to see more results.</p>
                         </td>
                       </tr>
-                    );
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan={8} className="py-20 text-center text-slate-400">
-                      <Package className="mx-auto mb-3 opacity-20" size={48} />
-                      <p className="text-sm font-black uppercase tracking-widest mb-1">No Orders Found</p>
-                      <p className="text-xs font-bold">Try clearing your filters to see more results.</p>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Floating Bulk Actions Bar */}
       <AnimatePresence>

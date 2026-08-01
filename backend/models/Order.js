@@ -50,6 +50,10 @@ const orderSchema = new mongoose.Schema(
       required: true,
       default: 0
     },
+    qtyLimitExceeds: {
+      type: Boolean,
+      default: false
+    },
     shippingAddress: {
       recipientName: { type: String, required: true },
       email: { type: String, required: true },
