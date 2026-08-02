@@ -174,6 +174,9 @@ export default function InventoryDetail() {
   const safeImageUrl = sanitizeS3Url(item.productImage || item.image || item.imageUrl);
   const formatCurrency = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
 
+  const weightLbs = Math.floor(Number(item.weight || 0) / 16);
+  const weightOz = Number(item.weight || 0) % 16;
+
   return (
     <div className="h-full max-w-[1500px] mx-auto p-6 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
       
@@ -255,7 +258,7 @@ export default function InventoryDetail() {
 
                 {/* NEW WEIGHT BADGE */}
                 <span className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-black rounded-lg tracking-widest uppercase border border-slate-700 bg-slate-800/80 text-slate-300 shadow-sm backdrop-blur-sm">
-                  <Weight size={12} className="text-brand-gold" /> {item.weight || 0} oz
+                  <Weight size={12} className="text-brand-gold" /> {weightLbs} lb {weightOz} oz
                 </span>
 
                 <span className={`px-3 py-1 text-[10px] font-black rounded-lg tracking-widest uppercase border backdrop-blur-sm ${isLowStock ? 'bg-red-500/10 text-red-400 border-red-500/20 animate-pulse' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>

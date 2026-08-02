@@ -11,7 +11,7 @@ const INITIAL_FORM_STATE = {
   category1: '', category2: '', category3: '', typePiece: '', 
   locations: [], 
   admin: false, offWeb: false, status: 'Active', price: 0, price2: 0,
-  weight: 0, // <-- Added weight initialization
+  weight: 0, 
   min: 0, max: 0, lowPoint: 0, lowPoint2: 0, openOrders: 0, available: 0,
   qtyLastReceived: 0, dateLastReceived: '', productImage: '', customer: ''
 };
@@ -95,7 +95,7 @@ export default function InventoryFormPanel({
         status: itemToEdit.status || 'Active',
         price: itemToEdit.price || 0,
         price2: itemToEdit.price2 || 0,
-        weight: itemToEdit.weight || 0, // <-- Mapped Weight
+        weight: itemToEdit.weight || 0, 
         min: itemToEdit.min || 0,
         max: itemToEdit.max || 0,
         lowPoint: itemToEdit.lowPoint || 0,
@@ -191,6 +191,26 @@ export default function InventoryFormPanel({
     setIsImageLoading(false);
   };
 
+  // Convert separate lbs/oz inputs into total ounces with auto-rollover logic
+  const handleWeightChange = (type, value) => {
+    const numVal = value === '' ? '' : parseInt(value, 10);
+    const currentLbs = Math.floor((Number(formData.weight) || 0) / 16);
+    const currentOz = (Number(formData.weight) || 0) % 16;
+
+    let newTotal = 0;
+    if (type === 'lbs') {
+      newTotal = (numVal === '' ? 0 : numVal * 16) + currentOz;
+    } else {
+      // If user inputs 16oz or clicks the arrows past bounds, it auto-converts to lbs
+      newTotal = (currentLbs * 16) + (numVal === '' ? 0 : numVal);
+    }
+    
+    // Prevent negative total weights
+    if (newTotal < 0) newTotal = 0;
+
+    setFormData(prev => ({ ...prev, weight: newTotal }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.productCode || !formData.description || !formData.customer) {
@@ -210,7 +230,7 @@ export default function InventoryFormPanel({
       itemName: formData.description,
       price: Number(formData.price) || 0,
       price2: Number(formData.price2) || 0,
-      weight: Number(formData.weight) || 0, // <-- Inject Weight Payload
+      weight: Number(formData.weight) || 0, 
       min: Number(formData.min) || 0,
       max: Number(formData.max) || 0,
       lowPoint: Number(formData.lowPoint) || 0,
@@ -244,9 +264,12 @@ export default function InventoryFormPanel({
   const inputClass = "w-full border border-slate-300 rounded-[4px] px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold";
   const disabledInputClass = "w-full border border-slate-200 bg-slate-100 rounded-[4px] px-3 py-1.5 text-sm text-slate-500 cursor-not-allowed";
 
-  // --- PORTAL RENDER ---
   // If we are in an environment without `document`, don't crash
   if (typeof document === 'undefined') return null;
+
+  // Extract lbs and oz for rendering
+  const lbs = Math.floor((Number(formData.weight) || 0) / 16);
+  const oz = (Number(formData.weight) || 0) % 16;
 
   const modalContent = (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm">
@@ -458,10 +481,33 @@ export default function InventoryFormPanel({
                 <input type="number" step="0.01" value={formData.price2} onChange={e => setFormData({...formData, price2: e.target.value})} className={`w-2/3 ${inputClass}`} disabled={isSubmitting} />
               </div>
               
-              {/* NEW WEIGHT INPUT */}
+              {/* REFINED SPLIT WEIGHT INPUT */}
               <div className="flex items-center">
-                <label className="w-1/3 text-sm font-semibold text-slate-600">Weight (oz)</label>
-                <input type="number" step="0.01" value={formData.weight} onChange={e => setFormData({...formData, weight: e.target.value})} className={`w-2/3 ${inputClass}`} disabled={isSubmitting} />
+                <label className="w-1/3 text-sm font-semibold text-slate-600">Weight</label>
+                <div className="w-2/3 flex gap-2">
+                  <div className="flex-1 flex items-center border border-slate-300 rounded-[4px] focus-within:border-brand-gold focus-within:ring-1 focus-within:ring-brand-gold bg-white transition-all overflow-hidden shadow-inner">
+                    <input 
+                      type="number" min="0" step="1"
+                      value={lbs === 0 && oz === 0 && !formData.weight ? '' : lbs}
+                      onChange={(e) => handleWeightChange('lbs', e.target.value)}
+                      className="w-full bg-transparent px-3 py-1.5 text-sm text-slate-800 outline-none text-center"
+                      placeholder="0"
+                      disabled={isSubmitting}
+                    />
+                    <span className="text-xs font-bold text-slate-400 pr-3 select-none">lb</span>
+                  </div>
+                  <div className="flex-1 flex items-center border border-slate-300 rounded-[4px] focus-within:border-brand-gold focus-within:ring-1 focus-within:ring-brand-gold bg-white transition-all overflow-hidden shadow-inner">
+                    <input 
+                      type="number" step="1"
+                      value={oz === 0 && lbs === 0 && !formData.weight ? '' : oz}
+                      onChange={(e) => handleWeightChange('oz', e.target.value)}
+                      className="w-full bg-transparent px-3 py-1.5 text-sm text-slate-800 outline-none text-center"
+                      placeholder="0"
+                      disabled={isSubmitting}
+                    />
+                    <span className="text-xs font-bold text-slate-400 pr-3 select-none">oz</span>
+                  </div>
+                </div>
               </div>
 
               <div className="flex items-center">
