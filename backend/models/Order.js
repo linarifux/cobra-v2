@@ -54,6 +54,16 @@ const orderSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
+    // NEW: Rush Order Flag
+    isRushOrder: {
+      type: Boolean,
+      default: false
+    },
+    // NEW: International Order Flag
+    isInternational: {
+      type: Boolean,
+      default: false
+    },
     shippingAddress: {
       recipientName: { type: String, required: true },
       email: { type: String, required: true },
@@ -72,7 +82,7 @@ const orderSchema = new mongoose.Schema(
       serviceCode: { type: String }, 
       trackingNumber: { type: String, default: '' },
       shippingCost: { type: Number, default: 0 },
-      // NEW: Package configuration tracking
+      // Package configuration tracking
       cartoons: { type: Number, default: 0 },
       totalBoxes: { type: Number, default: 0 },
       totalWeightOunces: { type: Number, default: 0 },

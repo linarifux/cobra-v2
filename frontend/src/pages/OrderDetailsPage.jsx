@@ -7,7 +7,7 @@ import {
   ArrowLeft, Truck, MapPin, User, CreditCard, 
   Trash2, Edit2, Check, Plus, MessageSquare, Ban,
   Mail, Phone, X, Weight, Loader2, Save, ExternalLink, 
-  CloudUpload, CheckCircle2, PackageCheck, AlertTriangle, Clock, Printer, ChevronDown, Search, Briefcase
+  CloudUpload, CheckCircle2, PackageCheck, AlertTriangle, Clock, Printer, ChevronDown, Search, Briefcase, Globe
 } from 'lucide-react';
 
 import jsPDF from 'jspdf';
@@ -113,6 +113,8 @@ export default function OrderDetailsPage() {
   const [newItem, setNewItem] = useState({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
   const [editing, setEditing] = useState({ logistics: false, address: false });
   const [cartoonsCount, setCartoonsCount] = useState(0);
+  const [isRushOrder, setIsRushOrder] = useState(false);
+  const [isInternational, setIsInternational] = useState(false);
   
   // --- Create Shipment Modal State ---
   const [createShipmentModalOpen, setCreateShipmentModalOpen] = useState(false);
@@ -180,7 +182,9 @@ export default function OrderDetailsPage() {
   const tax = subtotal * 0.08; 
   const grandTotal = subtotal + shippingCost + tax;
   
-  const totalItemWeightOz = items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.quantity || item.qty || 1)), 0);
+  // PULL TOTAL WEIGHT FROM API RESPONSE
+  // Gracefully falls back to calculating manually if totalWeightOunces isn't set yet
+  const totalItemWeightOz = currentOrder?.shippingDetails?.totalWeightOunces || items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
   const totalPackageWeightOz = packages.reduce((acc, pkg) => acc + Number(pkg.weightInOunces || 0), 0);
   const isWeightMismatched = Math.abs(totalItemWeightOz - totalPackageWeightOz) > 1;
 
@@ -284,6 +288,8 @@ export default function OrderDetailsPage() {
       setOrderStatus(currentOrder.status || 'New');
       setSelectedUserId(currentOrder.user?._id || currentOrder.user || ''); 
       setCartoonsCount(currentOrder.shippingDetails?.cartoons || 0);
+      setIsRushOrder(currentOrder.isRushOrder || false);
+      setIsInternational(currentOrder.isInternational || false);
       
       setShipping({ 
         carrierId: currentOrder.shippingDetails?.carrierId?._id || currentOrder.shippingDetails?.carrierId || '',
@@ -333,7 +339,7 @@ export default function OrderDetailsPage() {
           height: p.height || 10
         })));
       } else {
-        const calculatedOz = mappedItems.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
+        const calculatedOz = currentOrder.shippingDetails?.totalWeightOunces || mappedItems.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
         if (packages.length === 1 && packages[0].weightInOunces === 16) {
            setPackages([{ id: generateLocalId(), packageCode: 'package', weightInOunces: calculatedOz > 0 ? calculatedOz : 16, length: 10, width: 10, height: 10 }]);
         }
@@ -391,7 +397,6 @@ export default function OrderDetailsPage() {
         if (!locationStr && invItem?.locationString) {
            locationStr = invItem.locationString;
         }
-
 
         return [
           " [    ] ", 
@@ -629,13 +634,15 @@ export default function OrderDetailsPage() {
     setIsSaving(true);
     const isChangingToCancelled = orderStatus === 'Cancelled' && currentOrder?.status !== 'Cancelled';
 
-    if (address.state.trim().length !== 2) {
+    if (address.state.trim().length !== 2 && !isInternational) {
       setIsSaving(false);
       return toast.error("State must be exactly a 2-character code (e.g., NY, CA). Please use the dropdown selector.");
     }
 
     const payload = {
       status: orderStatus,
+      isRushOrder: isRushOrder,
+      isInternational: isInternational,
       ...(selectedUserId ? { user: selectedUserId } : { user: null }),
       notes: notes,
       shippingAddress: {
@@ -689,6 +696,8 @@ export default function OrderDetailsPage() {
     
     const payload = {
       status: 'Cancelled',
+      isRushOrder: isRushOrder,
+      isInternational: isInternational,
       ...(selectedUserId ? { user: selectedUserId } : { user: null }),
       notes: notes,
       shippingAddress: {
@@ -1126,6 +1135,16 @@ export default function OrderDetailsPage() {
                     <Briefcase size={12} /> {currentOrder.chargeCode}
                   </span>
                 )}
+                {isRushOrder && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-100 border border-red-200 text-red-800 rounded-lg text-[10px] font-black tracking-widest shadow-sm transition-all duration-300">
+                    <AlertTriangle size={12} /> RUSH
+                  </span>
+                )}
+                {isInternational && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 border border-blue-200 text-blue-800 rounded-lg text-[10px] font-black tracking-widest shadow-sm transition-all duration-300">
+                    <Globe size={12} /> INTL
+                  </span>
+                )}
               </div>
               {orderCreatorName && (
                 <p className="text-[10px] font-bold text-slate-500 mt-1 flex items-center gap-1.5">
@@ -1141,20 +1160,47 @@ export default function OrderDetailsPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl flex flex-col justify-between min-h-[130px] transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
                <h3 className="text-[10px] font-black uppercase text-slate-400 mb-3 tracking-widest">Order Status</h3>
-               <select 
-                 value={orderStatus} 
-                 onChange={(e) => setOrderStatus(e.target.value)} 
-                 className="w-full bg-white text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 cursor-pointer outline-none focus:border-brand-gold transition-all shadow-sm"
-                >
-                    <option value="New">New</option>
-                    <option value="Pending">Pending</option>
-                    <option value="Picked">Picked</option>
-                    <option value="Shipped">Shipped</option>
-                    <option value="Hold">Hold</option>
-                    <option value="Cancelled">Cancelled</option>
-                    <option value="Delivered">Delivered</option>
-                    <option value="Billed">Billed</option>
-                </select>
+               <div className="mt-auto space-y-2">
+                 <select 
+                   value={orderStatus} 
+                   onChange={(e) => setOrderStatus(e.target.value)} 
+                   className="w-full bg-white text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 cursor-pointer outline-none focus:border-brand-gold transition-all shadow-sm"
+                  >
+                      <option value="New">New</option>
+                      <option value="Pending">Pending</option>
+                      <option value="Picked">Picked</option>
+                      <option value="Shipped">Shipped</option>
+                      <option value="Hold">Hold</option>
+                      <option value="Cancelled">Cancelled</option>
+                      <option value="Delivered">Delivered</option>
+                      <option value="Billed">Billed</option>
+                  </select>
+                  
+                  <div className="flex gap-2">
+                    <label className="flex-1 flex items-center justify-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer select-none bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 hover:bg-slate-100 transition-colors shadow-sm">
+                      <input 
+                        type="checkbox" 
+                        checked={isRushOrder}
+                        onChange={(e) => setIsRushOrder(e.target.checked)}
+                        className="accent-red-500 w-3.5 h-3.5 rounded-sm cursor-pointer" 
+                      /> 
+                      <span className="text-red-600 flex items-center gap-1 uppercase tracking-widest text-[9px] font-black">
+                        <AlertTriangle size={12}/> Rush
+                      </span>
+                    </label>
+                    <label className="flex-1 flex items-center justify-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer select-none bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 hover:bg-slate-100 transition-colors shadow-sm">
+                      <input 
+                        type="checkbox" 
+                        checked={isInternational}
+                        onChange={(e) => setIsInternational(e.target.checked)}
+                        className="accent-blue-600 w-3.5 h-3.5 rounded-sm cursor-pointer" 
+                      /> 
+                      <span className="text-blue-600 flex items-center gap-1 uppercase tracking-widest text-[9px] font-black">
+                        <Globe size={12}/> Intl
+                      </span>
+                    </label>
+                  </div>
+               </div>
             </div>
 
             <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl flex flex-col justify-between min-h-[130px] transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
@@ -1211,10 +1257,10 @@ export default function OrderDetailsPage() {
                <div className="text-xs font-bold text-slate-900 mt-auto grid grid-cols-4 gap-2 divide-x divide-slate-200/60">
                    <div className="col-span-2">
                      <p className="text-base sm:text-lg font-black text-slate-800 tracking-tight">
-                       {Math.floor(totalPackageWeightOz / 16)} <span className="text-[9px] font-bold text-slate-400 mr-1">lb</span>
-                       {+(totalPackageWeightOz % 16).toFixed(1)} <span className="text-[9px] font-bold text-slate-400">oz</span>
+                       {Math.floor(totalItemWeightOz / 16)} <span className="text-[9px] font-bold text-slate-400 mr-1">lb</span>
+                       {+(totalItemWeightOz % 16).toFixed(1)} <span className="text-[9px] font-bold text-slate-400">oz</span>
                      </p>
-                     <p className="text-slate-400 text-[8px] font-bold mt-0.5 uppercase tracking-wider">Est. Weight</p>
+                     <p className="text-slate-400 text-[8px] font-bold mt-0.5 uppercase tracking-wider">Total Weight</p>
                    </div>
                    <div className="pl-2 sm:pl-3">
                      <p className="text-lg sm:text-xl font-black text-slate-800 tracking-tight truncate">{packages.length}</p>

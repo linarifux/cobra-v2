@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, MapPin, CreditCard,
   Trash2, Plus, MessageSquare,
-  PackageCheck, Save, Loader2, Box, Building2, User, Briefcase, Truck, ChevronDown, Search, AlertTriangle
+  PackageCheck, Save, Loader2, Box, Building2, User, Briefcase, Truck, ChevronDown, Search, AlertTriangle, Globe
 } from 'lucide-react';
 import { toast } from 'sonner';
 import NotFoundPage from '../../pages/NotFoundPage';
@@ -66,7 +66,9 @@ export default function OrderForm() {
   const [customerId, setCustomerId] = useState('');
   const [divisionId, setDivisionId] = useState('');
   const [userId, setUserId] = useState('');
-  const [chargeCode, setChargeCode] = useState(''); // NEW STATE
+  const [chargeCode, setChargeCode] = useState(''); 
+  const [isRushOrder, setIsRushOrder] = useState(false);
+  const [isInternational, setIsInternational] = useState(false);
 
   const [orderStatus, setOrderStatus] = useState('New');
   const [shipping, setShipping] = useState({ carrierId: '', carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0 });
@@ -223,7 +225,9 @@ export default function OrderForm() {
       setCustomerId(currentOrder.customer?._id || currentOrder.customer || '');
       setDivisionId(currentOrder.division?._id || currentOrder.division || '');
       setUserId(currentOrder.user?._id || currentOrder.user || '');
-      setChargeCode(currentOrder.chargeCode || ''); // POPULATE CHARGE CODE
+      setChargeCode(currentOrder.chargeCode || ''); 
+      setIsRushOrder(currentOrder.isRushOrder || false);
+      setIsInternational(currentOrder.isInternational || false);
 
       // Calculate effective status to keep visually in sync with quantity constraints
       const effectiveStatus = currentOrder.qtyLimitExceeds && currentOrder.status === 'New' ? 'Pending' : (currentOrder.status || 'New');
@@ -270,14 +274,14 @@ export default function OrderForm() {
     setCustomerId(e.target.value);
     setDivisionId('');
     setUserId('');
-    setChargeCode(''); // Reset charge code
+    setChargeCode('');
     setShipping({ ...shipping, carrierId: '', carrierType: '', serviceCode: '' });
   };
 
   const handleDivisionChange = (e) => {
     setDivisionId(e.target.value);
     setUserId('');
-    setChargeCode(''); // Reset charge code
+    setChargeCode('');
     setShipping({ ...shipping, carrierId: '', carrierType: '', serviceCode: '' });
   };
 
@@ -312,7 +316,7 @@ export default function OrderForm() {
     }
 
     // STRICT 2-CHARACTER STATE VALIDATION
-    if (address.state.trim().length !== 2) {
+    if (address.state.trim().length !== 2 && !isInternational) {
       return toast.error("State must be exactly a 2-character code (e.g., NY, CA). Please use the dropdown selector.");
     }
 
@@ -329,7 +333,9 @@ export default function OrderForm() {
       user: userId || null,
       chargeCode: chargeCode.trim(), 
       status: orderStatus,
-      qtyLimitExceeds: isCurrentQtyLimitExceeded, // Included in payload to enforce workflow locks
+      isRushOrder: isRushOrder, 
+      isInternational: isInternational,
+      qtyLimitExceeds: isCurrentQtyLimitExceeded,
       notes: notes,
       shippingAddress: {
         recipientName: address.name, email: address.email, phone: address.phone,
@@ -462,7 +468,6 @@ export default function OrderForm() {
                   >
                     <option value="" disabled>Select Division...</option>
                     {contextualDivisions.map(d => (
-                      
                       <option key={d._id} value={d._id}>{d.divisionName}</option>
                     ))}
                   </select>
@@ -504,30 +509,60 @@ export default function OrderForm() {
 
               <hr className="border-slate-100 my-2" />
 
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center justify-between mb-1.5">
-                  <span>Order Status</span>
-                  {isCurrentQtyLimitExceeded && (
-                    <span className="text-amber-500 flex items-center gap-1 text-[9px]"><AlertTriangle size={10} /> Qty Limit Exceeded</span>
-                  )}
-                </label>
-                <select
-                  value={orderStatus}
-                  onChange={(e) => setOrderStatus(e.target.value)}
-                  className="w-full bg-white text-xs font-bold px-4 py-3 rounded-xl border border-slate-200 cursor-pointer outline-none focus:border-brand-gold transition-all shadow-sm"
-                >
-                  <option value="New">New</option>
-                  <option value="Pending">Pending</option>
-                  <option value="Picked">Picked</option>
-                  <option value="Shipped">Shipped</option>
-                  <option value="Hold">Hold</option>
-                  <option value="Cancelled">Cancelled</option>
-                  <option value="Delivered">Delivered</option>
-                  <option value="Billed">Billed</option>
-                </select>
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <div className="col-span-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center justify-between mb-1.5">
+                    <span>Order Status</span>
+                    {isCurrentQtyLimitExceeded && (
+                      <span className="text-amber-500 flex items-center gap-1 text-[9px]"><AlertTriangle size={10} /> Qty Limit Exceeded</span>
+                    )}
+                  </label>
+                  <select
+                    value={orderStatus}
+                    onChange={(e) => setOrderStatus(e.target.value)}
+                    className="w-full bg-white text-xs font-bold px-4 py-3 rounded-xl border border-slate-200 cursor-pointer outline-none focus:border-brand-gold transition-all shadow-sm"
+                  >
+                    <option value="New">New</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Picked">Picked</option>
+                    <option value="Shipped">Shipped</option>
+                    <option value="Hold">Hold</option>
+                    <option value="Cancelled">Cancelled</option>
+                    <option value="Delivered">Delivered</option>
+                    <option value="Billed">Billed</option>
+                  </select>
+                </div>
+                
+                <div className="col-span-1">
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 hover:bg-slate-100 transition-colors shadow-sm w-full">
+                    <input 
+                      type="checkbox" 
+                      checked={isRushOrder}
+                      onChange={(e) => setIsRushOrder(e.target.checked)}
+                      className="accent-red-500 w-4 h-4 rounded-sm cursor-pointer" 
+                    /> 
+                    <span className="text-red-600 flex items-center gap-1.5 uppercase tracking-widest text-[10px] font-black">
+                      <AlertTriangle size={14}/> Rush Order
+                    </span>
+                  </label>
+                </div>
+
+                <div className="col-span-1">
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 hover:bg-slate-100 transition-colors shadow-sm w-full">
+                    <input 
+                      type="checkbox" 
+                      checked={isInternational}
+                      onChange={(e) => setIsInternational(e.target.checked)}
+                      className="accent-blue-600 w-4 h-4 rounded-sm cursor-pointer" 
+                    /> 
+                    <span className="text-blue-600 flex items-center gap-1.5 uppercase tracking-widest text-[10px] font-black">
+                      <Globe size={14}/> International
+                    </span>
+                  </label>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 mt-3">
                 <div className="col-span-2">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 flex justify-between">
                     <span className="flex items-center gap-1.5"><Truck size={12} /> Shipping Service</span>
