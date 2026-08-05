@@ -70,7 +70,7 @@ const mapPackages = (packages, totalWeightInOunces = 16) => {
 // =====================================================================
 // CENTRALIZED CORE LOGIC FOR CREATING SHIPMENTS 
 // =====================================================================
-export const executeShipmentCreation = async (order, frontendPackages = [], isResidential = false, carrierCodeOverride = null, serviceCodeOverride = null) => {
+export const executeShipmentCreation = async (order, frontendPackages = [], isResidential = false, carrierCodeOverride = null, serviceCodeOverride = null, extraDetails = {}) => {
   const displayId = order.orderNumber || order._id.toString();
   const { recipientName, line1, line2, city, state, zip, country, phone, email } = order.shippingAddress || {};
   
@@ -171,10 +171,24 @@ export const executeShipmentCreation = async (order, frontendPackages = [], isRe
   }
 
   // Update local Order model states
-  // Removed `order.status = 'Pending'` so that we do not downgrade the Picked status
   order.shippingDetails.carrierType = finalCarrierType;
   order.shippingDetails.serviceCode = finalServiceCode;
   
+  // Update internal metrics payload 
+  if (extraDetails.cartoons !== undefined) order.shippingDetails.cartoons = extraDetails.cartoons;
+  if (extraDetails.totalBoxes !== undefined) order.shippingDetails.totalBoxes = extraDetails.totalBoxes;
+  if (extraDetails.totalWeightOunces !== undefined) order.shippingDetails.totalWeightOunces = extraDetails.totalWeightOunces;
+  
+  if (frontendPackages && frontendPackages.length > 0) {
+    order.shippingDetails.packages = frontendPackages.map(p => ({
+      packageCode: p.packageCode || 'package',
+      weightInOunces: Number(p.weightInOunces) || 16,
+      length: Number(p.length) || 10,
+      width: Number(p.width) || 10,
+      height: Number(p.height) || 10
+    }));
+  }
+
   order.shipstationDetails = {
     orderId: processedShipment.shipment_id || processedShipment.shipmentId,
     orderKey: processedShipment.external_shipment_id || processedShipment.shipmentId || '',
@@ -370,7 +384,7 @@ export const getCheckoutRates = catchAsync(async (req, res, next) => {
 
 export const createOrderShipment = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
-  const { packages, isResidential, carrierCode, serviceCode } = req.body;
+  const { packages, isResidential, carrierCode, serviceCode, cartoons, totalBoxes, totalWeightOunces } = req.body;
 
   const order = await Order.findById(orderId).populate('division customer');
   if (!order) return next(new AppError('Order not found in database.', 404));
@@ -381,7 +395,14 @@ export const createOrderShipment = catchAsync(async (req, res, next) => {
   }
 
   try {
-    const result = await executeShipmentCreation(order, packages, isResidential, carrierCode, serviceCode);
+    const result = await executeShipmentCreation(
+      order, 
+      packages, 
+      isResidential, 
+      carrierCode, 
+      serviceCode, 
+      { cartoons, totalBoxes, totalWeightOunces }
+    );
     res.status(200).json({ status: 'success', message: 'Shipment successfully created in ShipStation.', data: result });
   } catch (error) {
     return next(new AppError(`ShipStation Rejected: ${error.message}`, 400));
@@ -390,7 +411,7 @@ export const createOrderShipment = catchAsync(async (req, res, next) => {
 
 export const generateOrderLabel = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
-  const { packages, weightInOunces, carrierCode, serviceCode } = req.body; 
+  const { packages, weightInOunces, carrierCode, serviceCode, cartoons, totalBoxes, totalWeightOunces } = req.body; 
 
   const order = await Order.findById(orderId).populate('division customer');
   if (!order) return next(new AppError('Order not found', 404));
@@ -439,6 +460,21 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
     order.shippingDetails.trackingNumber = labelResponse.tracking_number || labelResponse.trackingNumber;
     order.shippingDetails.shippingCost = labelResponse.shipment_cost?.amount || labelResponse.shipmentCost || order.shippingDetails.shippingCost; 
     
+    // Update internal metrics payload 
+    if (cartoons !== undefined) order.shippingDetails.cartoons = cartoons;
+    if (totalBoxes !== undefined) order.shippingDetails.totalBoxes = totalBoxes;
+    if (totalWeightOunces !== undefined) order.shippingDetails.totalWeightOunces = totalWeightOunces;
+    
+    if (packages && packages.length > 0) {
+      order.shippingDetails.packages = packages.map(p => ({
+        packageCode: p.packageCode || 'package',
+        weightInOunces: Number(p.weightInOunces) || 16,
+        length: Number(p.length) || 10,
+        width: Number(p.width) || 10,
+        height: Number(p.height) || 10
+      }));
+    }
+
     order.shipstationDetails = {
         ...order.shipstationDetails,
         labelId: labelResponse.label_id || labelResponse.labelId,

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CloudUpload, X, MapPin, Truck, PackageCheck, MessageSquare, Loader2, Plus, Trash2, Scale, Maximize } from 'lucide-react';
@@ -22,6 +22,7 @@ export default function CreateShipmentModal({
 
   console.log(packages);
   
+  const [cartoonsCount, setCartoonsCount] = useState(0);
 
   // Grab the carrier list and the newly fetched package types from Redux
   const { items: carriersData, packageTypes, packageStatus } = useSelector(state => state.carriers || {});
@@ -121,7 +122,7 @@ export default function CreateShipmentModal({
                   </div>
 
                   {/* SUMMARY BOX: Total Weight & Final Dimensions */}
-                  <div className="grid grid-cols-2 gap-3 mb-5">
+                  <div className="grid grid-cols-2 gap-3 mb-3">
                     <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100 flex items-center gap-3">
                       <div className="p-2 bg-blue-100 text-blue-500 rounded-lg"><Scale size={16} /></div>
                       <div>
@@ -136,6 +137,19 @@ export default function CreateShipmentModal({
                         <p className="text-sm font-bold text-emerald-700">{finalLength} × {finalWidth} × {finalHeight} <span className="text-[10px] text-emerald-500 font-medium">in</span></p>
                       </div>
                     </div>
+                  </div>
+
+                  {/* Cartoons Input */}
+                  <div className="mb-5">
+                    <label className="text-[9px] font-black uppercase text-slate-400 mb-1.5 block">Cartoons</label>
+                    <input 
+                      type="number" 
+                      min="0"
+                      value={cartoonsCount}
+                      onChange={(e) => setCartoonsCount(e.target.value)}
+                      className="w-full bg-white p-2.5 rounded-lg text-xs font-bold border border-slate-200 outline-none focus:border-blue-500 shadow-sm transition-all"
+                      placeholder="Total Cartoons"
+                    />
                   </div>
                   
                   <div className="space-y-4">
@@ -269,7 +283,7 @@ export default function CreateShipmentModal({
               </button>
               <button 
                 type="button" 
-                onClick={onSubmit}
+                onClick={() => onSubmit(cartoonsCount)}
                 disabled={isCreatingShipment} 
                 className="flex-[2] flex justify-center items-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-blue-500/30 transition-all disabled:opacity-70"
               >

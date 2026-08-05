@@ -112,6 +112,7 @@ export default function OrderDetailsPage() {
   const [fulfillOpen, setFulfillOpen] = useState(false);
   const [newItem, setNewItem] = useState({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
   const [editing, setEditing] = useState({ logistics: false, address: false });
+  const [cartoonsCount, setCartoonsCount] = useState(0);
   
   // --- Create Shipment Modal State ---
   const [createShipmentModalOpen, setCreateShipmentModalOpen] = useState(false);
@@ -179,9 +180,16 @@ export default function OrderDetailsPage() {
   const tax = subtotal * 0.08; 
   const grandTotal = subtotal + shippingCost + tax;
   
-  const totalItemWeightOz = items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
+  const totalItemWeightOz = items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.quantity || item.qty || 1)), 0);
   const totalPackageWeightOz = packages.reduce((acc, pkg) => acc + Number(pkg.weightInOunces || 0), 0);
   const isWeightMismatched = Math.abs(totalItemWeightOz - totalPackageWeightOz) > 1;
+
+  // --- Aggregate Summary Calculations ---
+  const summaryLbs = Math.floor(totalPackageWeightOz / 16);
+  const summaryOz = (totalPackageWeightOz % 16).toFixed(1);
+  const finalLength = Math.max(0, ...packages.map(p => Number(p.length) || 0));
+  const finalWidth = Math.max(0, ...packages.map(p => Number(p.width) || 0));
+  const finalHeight = packages.reduce((sum, p) => sum + (Number(p.height) || 0), 0);
 
   const orderUserId = currentOrder?.user?._id || currentOrder?.user;
   const orderCreator = useMemo(() => {
@@ -222,6 +230,15 @@ export default function OrderDetailsPage() {
       }
     }
   }, [fulfillOpen, shipping?.carrierId, carriersData, dispatch]);
+
+  // --- FIX: Bulletproof Array Extraction to prevent .map() crashes ---
+  const safePackageTypes = useMemo(() => {
+    if (!packageTypes) return [];
+    if (Array.isArray(packageTypes)) return packageTypes;
+    if (Array.isArray(packageTypes.packages)) return packageTypes.packages;
+    if (Array.isArray(packageTypes.data)) return packageTypes.data;
+    return [];
+  }, [packageTypes]);
 
   useEffect(() => {
     const fetchLocations = async () => {
@@ -266,6 +283,7 @@ export default function OrderDetailsPage() {
     if (currentOrder) {
       setOrderStatus(currentOrder.status || 'New');
       setSelectedUserId(currentOrder.user?._id || currentOrder.user || ''); 
+      setCartoonsCount(currentOrder.shippingDetails?.cartoons || 0);
       
       setShipping({ 
         carrierId: currentOrder.shippingDetails?.carrierId?._id || currentOrder.shippingDetails?.carrierId || '',
@@ -302,12 +320,23 @@ export default function OrderDetailsPage() {
         };
       }) || [];
 
-      
       setItems(mappedItems);
 
-      const calculatedOz = mappedItems.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
-      if (packages.length === 1 && packages[0].weightInOunces === 16) {
-         setPackages([{ id: generateLocalId(), packageCode: 'package', weightInOunces: calculatedOz > 0 ? calculatedOz : 16, length: 10, width: 10, height: 10 }]);
+      // Hydrate packages array from order details if present
+      if (currentOrder.shippingDetails?.packages && currentOrder.shippingDetails.packages.length > 0) {
+        setPackages(currentOrder.shippingDetails.packages.map(p => ({
+          id: generateLocalId(),
+          packageCode: p.packageCode || 'package',
+          weightInOunces: p.weightInOunces || 16,
+          length: p.length || 10,
+          width: p.width || 10,
+          height: p.height || 10
+        })));
+      } else {
+        const calculatedOz = mappedItems.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
+        if (packages.length === 1 && packages[0].weightInOunces === 16) {
+           setPackages([{ id: generateLocalId(), packageCode: 'package', weightInOunces: calculatedOz > 0 ? calculatedOz : 16, length: 10, width: 10, height: 10 }]);
+        }
       }
     }
   }, [currentOrder]); 
@@ -618,7 +647,17 @@ export default function OrderDetailsPage() {
       shippingDetails: {
         ...currentOrder.shippingDetails,
         carrierType: shipping.carrierType, serviceCode: shipping.serviceCode,
-        trackingNumber: shipping.trackingNumber, shippingCost: Number(shipping.shippingCost)
+        trackingNumber: shipping.trackingNumber, shippingCost: Number(shipping.shippingCost),
+        cartoons: Number(cartoonsCount) || 0,
+        totalBoxes: packages.length,
+        totalWeightOunces: totalPackageWeightOz,
+        packages: packages.map(p => ({
+          packageCode: p.packageCode || 'package',
+          weightInOunces: Number(p.weightInOunces) || 16,
+          length: Number(p.length) || 10,
+          width: Number(p.width) || 10,
+          height: Number(p.height) || 10
+        }))
       },
       items: items.map(item => ({
         sku: item.sku, name: item.name, quantity: Number(item.qty),
@@ -661,7 +700,17 @@ export default function OrderDetailsPage() {
       shippingDetails: {
         ...currentOrder.shippingDetails,
         carrierType: shipping.carrierType, serviceCode: shipping.serviceCode,
-        trackingNumber: shipping.trackingNumber, shippingCost: Number(shipping.shippingCost)
+        trackingNumber: shipping.trackingNumber, shippingCost: Number(shipping.shippingCost),
+        cartoons: Number(cartoonsCount) || 0,
+        totalBoxes: packages.length,
+        totalWeightOunces: totalPackageWeightOz,
+        packages: packages.map(p => ({
+          packageCode: p.packageCode || 'package',
+          weightInOunces: Number(p.weightInOunces) || 16,
+          length: Number(p.length) || 10,
+          width: Number(p.width) || 10,
+          height: Number(p.height) || 10
+        }))
       },
       items: items.map(item => ({
         sku: item.sku, name: item.name, quantity: Number(item.qty),
@@ -703,12 +752,13 @@ export default function OrderDetailsPage() {
     }
   };
 
-  const handleCreateShipmentSubmit = async () => {
+  const handleCreateShipmentSubmit = async (modalCartoonsCount) => {
     if (orderStatus !== 'Picked') return toast.warning("Order status must be 'Picked' before you can create a shipment.");
     if (!shipping.carrierType || !shipping.serviceCode) return toast.warning("Please configure shipping carrier and service code on the order.");
     if (!fulfillmentData.shipFromId) return toast.warning("Please select a Ship From warehouse location.");
 
     setIsCreatingShipment(true);
+    
     const payload = {
       packages: packages.map(p => ({
         packageCode: p.packageCode || 'package',
@@ -719,7 +769,10 @@ export default function OrderDetailsPage() {
       })),
       isResidential: fulfillmentData.isResidential,
       carrierCode: shipping.carrierType,
-      serviceCode: shipping.serviceCode
+      serviceCode: shipping.serviceCode,
+      cartoons: Number(modalCartoonsCount) || Number(cartoonsCount) || 0,
+      totalBoxes: packages.length,
+      totalWeightOunces: totalPackageWeightOz
     };
 
     try {
@@ -740,7 +793,19 @@ export default function OrderDetailsPage() {
     setIsGeneratingLabel(true);
     const payload = {
       isResidential: fulfillmentData.isResidential,
-      shipFromId: fulfillmentData.shipFromId
+      shipFromId: fulfillmentData.shipFromId,
+      packages: packages.map(p => ({
+        packageCode: p.packageCode || 'package',
+        weightInOunces: Number(p.weightInOunces),
+        length: Number(p.length),
+        width: Number(p.width),
+        height: Number(p.height)
+      })),
+      carrierCode: shipping.carrierType,
+      serviceCode: shipping.serviceCode,
+      cartoons: Number(cartoonsCount) || 0,
+      totalBoxes: packages.length,
+      weightInOunces: totalPackageWeightOz
     };
 
     try {
@@ -1106,6 +1171,7 @@ export default function OrderDetailsPage() {
                        <input className="w-full bg-white p-2 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm" value={shipping.serviceCode} onChange={(e) => setShipping({...shipping, serviceCode: e.target.value})} placeholder="Service Code" />
                        <input className="w-full bg-white p-2 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm" value={shipping.trackingNumber} onChange={(e) => setShipping({...shipping, trackingNumber: e.target.value})} placeholder="Tracking Number" />
                        <input type="number" className="w-full bg-white p-2 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm" value={shipping.shippingCost} onChange={(e) => setShipping({...shipping, shippingCost: e.target.value})} placeholder="Shipping Cost ($)" />
+                       <input type="number" className="w-full bg-white p-2 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm" value={cartoonsCount} onChange={(e) => setCartoonsCount(e.target.value)} placeholder="Cartoons" />
                    </div>
                ) : (
                    <div className="text-sm font-bold text-slate-900 min-w-0 flex flex-col justify-between h-full mt-auto">
@@ -1139,12 +1205,25 @@ export default function OrderDetailsPage() {
 
             <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl flex flex-col justify-between min-h-[130px] transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 flex items-center justify-between">
-                 <span className="flex items-center gap-1.5"><Weight size={14}/> Est. Weight</span>
+                 <span className="flex items-center gap-1.5"><Weight size={14}/> Shipment Metrics</span>
                  {isWeightMismatched && <AlertTriangle size={12} className="text-amber-500" title="Item weight and package weight do not match" />}
                </h3>
-               <div className="text-xs font-bold text-slate-900 mt-auto">
-                   <p className="text-2xl font-black text-slate-800 tracking-tight truncate">{(totalItemWeightOz / 16).toFixed(2)} <span className="text-xs font-bold text-slate-400">lbs</span></p>
-                   <p className="text-slate-400 text-[9px] font-medium mt-1 uppercase tracking-wider">Calculated from items</p>
+               <div className="text-xs font-bold text-slate-900 mt-auto grid grid-cols-4 gap-2 divide-x divide-slate-200/60">
+                   <div className="col-span-2">
+                     <p className="text-base sm:text-lg font-black text-slate-800 tracking-tight">
+                       {Math.floor(totalPackageWeightOz / 16)} <span className="text-[9px] font-bold text-slate-400 mr-1">lb</span>
+                       {+(totalPackageWeightOz % 16).toFixed(1)} <span className="text-[9px] font-bold text-slate-400">oz</span>
+                     </p>
+                     <p className="text-slate-400 text-[8px] font-bold mt-0.5 uppercase tracking-wider">Est. Weight</p>
+                   </div>
+                   <div className="pl-2 sm:pl-3">
+                     <p className="text-lg sm:text-xl font-black text-slate-800 tracking-tight truncate">{packages.length}</p>
+                     <p className="text-slate-400 text-[8px] font-bold mt-0.5 uppercase tracking-wider">Boxes</p>
+                   </div>
+                   <div className="pl-2 sm:pl-3">
+                     <p className="text-lg sm:text-xl font-black text-slate-800 tracking-tight truncate">{cartoonsCount}</p>
+                     <p className="text-slate-400 text-[8px] font-bold mt-0.5 uppercase tracking-wider">Cartoons</p>
+                   </div>
                 </div>
             </div>
           </div>

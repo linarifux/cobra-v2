@@ -71,7 +71,18 @@ const orderSchema = new mongoose.Schema(
       carrierType: { type: String }, 
       serviceCode: { type: String }, 
       trackingNumber: { type: String, default: '' },
-      shippingCost: { type: Number, default: 0 }
+      shippingCost: { type: Number, default: 0 },
+      // NEW: Package configuration tracking
+      cartoons: { type: Number, default: 0 },
+      totalBoxes: { type: Number, default: 0 },
+      totalWeightOunces: { type: Number, default: 0 },
+      packages: [{
+        packageCode: { type: String },
+        weightInOunces: { type: Number },
+        length: { type: Number },
+        width: { type: Number },
+        height: { type: Number }
+      }]
     },
     notes: {
       type: String,

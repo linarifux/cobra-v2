@@ -39,6 +39,7 @@ export const createOrder = catchAsync(async (req, res, next) => {
   if (req.body.qtyLimitExceeds === true) {
     order.status = 'Pending';
   }
+  
 
   // 1. Save the order strictly to the local database
   await order.save();
