@@ -1260,7 +1260,7 @@ export default function OrderDetailsPage() {
                        {Math.floor(totalItemWeightOz / 16)} <span className="text-[9px] font-bold text-slate-400 mr-1">lb</span>
                        {+(totalItemWeightOz % 16).toFixed(1)} <span className="text-[9px] font-bold text-slate-400">oz</span>
                      </p>
-                     <p className="text-slate-400 text-[8px] font-bold mt-0.5 uppercase tracking-wider">Total Weight</p>
+                     <p className="text-slate-400 text-[8px] font-bold mt-0.5 uppercase tracking-wider">EST Total Weight</p>
                    </div>
                    <div className="pl-2 sm:pl-3">
                      <p className="text-lg sm:text-xl font-black text-slate-800 tracking-tight truncate">{packages.length}</p>
