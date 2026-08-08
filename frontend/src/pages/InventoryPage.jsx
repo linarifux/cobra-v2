@@ -168,7 +168,8 @@ export default function InventoryPage() {
     return apiInventory.map(item => ({
       id: item._id,
       code: item.productCode || item.sku || 'N/A',
-      desc: item.itemName || item.description,
+      desc: item.description,
+      desc2: item.description2,
       customer: item.customer?.customerName || 'Unassigned',
       customerId: item.customer?._id || '',
       division: item.division?.divisionName || 'Unassigned',

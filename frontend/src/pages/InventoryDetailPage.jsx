@@ -266,11 +266,14 @@ export default function InventoryDetail() {
                 </span>
               </div>
               <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white leading-tight">
-                {item.description || item.itemName || 'Unnamed Asset'}
+                {item?.description}
               </h1>
+              <h3 className="text-xl md:text-2xl font-black tracking-tight text-white leading-tight">
+                {item?.description2}
+              </h3>
               <div className="flex items-center gap-2 text-xs text-slate-400 font-medium">
                 <History size={14} className="text-slate-500" />
-                <span>Last audited <strong className="text-slate-200">{new Date(item.lastAuditedAt || item.updatedAt).toLocaleString()}</strong> by <strong className="text-brand-gold">{item.lastAuditedBy || 'System Protocol'}</strong></span>
+                <span>Last audited <strong className="text-slate-200">{new Date(item?.lastAuditedAt || item?.updatedAt).toLocaleString()}</strong> by <strong className="text-brand-gold">{item?.lastAuditedBy || 'System Protocol'}</strong></span>
               </div>
             </div>
           </div>
