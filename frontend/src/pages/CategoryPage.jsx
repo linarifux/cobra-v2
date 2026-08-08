@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Loader2 } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
+
 import CategoryHeader from "../components/category/CategoryHeader";
 import CategoryForm from "../components/category/CategoryForm";
 import FilterBoard from "../components/category/FilterBoard";
@@ -17,7 +19,7 @@ import {
   deleteCategory as deleteCatAction,
 } from "../store/slices/categorySlice";
 import { fetchDivisions } from "../store/slices/divisionSlice";
-import { fetchCustomers } from "../store/slices/customerSlice"; // NEW: Import Customers
+import { fetchCustomers } from "../store/slices/customerSlice"; 
 
 export default function CategoryPage() {
   const dispatch = useDispatch();
@@ -40,11 +42,11 @@ export default function CategoryPage() {
     name: "",
     parent: "None",
     division: "",
-    customer: "", // NEW: Added customer to form state
+    customer: "", 
   });
 
   // Filter States
-  const [customerFilter, setCustomerFilter] = useState("All"); // NEW: Customer Filter
+  const [customerFilter, setCustomerFilter] = useState("All"); 
   const [divisionFilter, setDivisionFilter] = useState("All");
   const [levelFilter, setLevelFilter] = useState("All");
 
@@ -224,31 +226,33 @@ export default function CategoryPage() {
   }
 
   return (
-    <div className="h-full max-w-[1400px] mx-auto p-6 space-y-6 animate-fade-in">
+    <div className="h-full max-w-[1400px] mx-auto p-6 space-y-6 animate-fade-in relative">
       <CategoryHeader
         showAddForm={showAddForm}
         onToggleForm={() => (showAddForm ? cancelForm() : setShowAddForm(true))}
       />
 
-      {showAddForm && (
-        <CategoryForm
-          formData={formData}
-          setFormData={setFormData}
-          apiCustomers={apiCustomers} // Pass customers down to form
-          divisions={formAvailableDivisions} // ONLY divisions for the selected customer
-          categories={formAvailableCategories} // ONLY categories for the selected division
-          editingId={editingId}
-          onSave={handleAddOrUpdate}
-          onCancel={cancelForm}
-          isSubmitting={isSubmitting}
-        />
-      )}
+      <AnimatePresence>
+        {showAddForm && (
+          <CategoryForm
+            formData={formData}
+            setFormData={setFormData}
+            apiCustomers={apiCustomers} 
+            divisions={formAvailableDivisions} 
+            categories={formAvailableCategories} 
+            editingId={editingId}
+            onSave={handleAddOrUpdate}
+            onCancel={cancelForm}
+            isSubmitting={isSubmitting}
+          />
+        )}
+      </AnimatePresence>
 
       <FilterBoard
-        apiCustomers={apiCustomers} // Pass customers down to filter board
+        apiCustomers={apiCustomers} 
         customerFilter={customerFilter}
         setCustomerFilter={setCustomerFilter}
-        divisions={divisionNames} // Filtered down to the selected customer
+        divisions={divisionNames} 
         divisionFilter={divisionFilter}
         setDivisionFilter={setDivisionFilter}
         levelFilter={levelFilter}
