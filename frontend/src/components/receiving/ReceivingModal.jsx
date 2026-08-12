@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom'; // <-- NEW IMPORT
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -10,11 +11,14 @@ import {
 import { createReceivingLog, updateReceivingLog } from '../../store/slices/receivingSlice';
 import { fetchInventory } from '../../store/slices/inventorySlice'; 
 import { fetchVendors } from '../../store/slices/vendorSlice'; 
+import { fetchVendorCarriers } from '../../store/slices/vendorCarrierSlice';
 
 const INITIAL_FORM_STATE = {
   dateReceived: new Date().toISOString().split('T')[0],
   vendor: '',
+  fallbackVendor: '',
   carrier: '',
+  fallbackCarrier: '',
   vendorAddress: '',
   vendorCity: '',
   vendorState: '',
@@ -36,54 +40,16 @@ const INITIAL_FORM_STATE = {
   charge: ''
 };
 
-// Comprehensive list of standard carriers and services
-const CARRIER_SERVICES = [
-  "Amazon Logistics",
-  "DHL eCommerce",
-  "DHL Express",
-  "Estes Express Lines",
-  "FedEx 2Day",
-  "FedEx 2Day A.M.",
-  "FedEx Express Saver",
-  "FedEx First Overnight",
-  "FedEx Freight",
-  "FedEx Ground",
-  "FedEx Home Delivery",
-  "FedEx International",
-  "FedEx Priority Overnight",
-  "FedEx SmartPost",
-  "FedEx Standard Overnight",
-  "Old Dominion Freight Line",
-  "UPS 2nd Day Air",
-  "UPS 2nd Day Air A.M.",
-  "UPS 3 Day Select",
-  "UPS Freight",
-  "UPS Ground",
-  "UPS Mail Innovations",
-  "UPS Next Day Air",
-  "UPS Next Day Air Early",
-  "UPS Next Day Air Saver",
-  "UPS Standard",
-  "UPS Worldwide Expedited",
-  "UPS Worldwide Express",
-  "USPS First-Class Mail",
-  "USPS International",
-  "USPS Media Mail",
-  "USPS Parcel Select",
-  "USPS Priority Mail",
-  "USPS Priority Mail Express",
-  "USPS Retail Ground",
-  "XPO Logistics",
-  "YRC Freight"
-];
-
 export default function ReceivingModal({ isOpen, onClose, record }) {
   const dispatch = useDispatch();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
   
-  // Custom Dropdown States
+  // Custom Dropdown & Search View States
   const [locSearchTerm, setLocSearchTerm] = useState('');
+  const [vendorSearch, setVendorSearch] = useState('');
+  const [carrierSearch, setCarrierSearch] = useState('');
+  
   const [isLocDropdownOpen, setIsLocDropdownOpen] = useState(false);
   const [isCarrierDropdownOpen, setIsCarrierDropdownOpen] = useState(false);
   const [isVendorDropdownOpen, setIsVendorDropdownOpen] = useState(false); 
@@ -94,15 +60,17 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
   const { items: locations = [] } = useSelector(state => state.locations || {});
   const { items: divisions = [] } = useSelector(state => state.divisions || {});
   const { items: vendors = [], status: vendorStatus } = useSelector(state => state.vendors || {}); 
+  const { items: vendorCarriers = [], status: carrierStatus } = useSelector(state => state.vendorCarriers || {});
 
-  // Fetch Vendors if not loaded
+  // Fetch missing relational data
   useEffect(() => {
-    if (isOpen && vendorStatus === 'idle') {
-      dispatch(fetchVendors());
+    if (isOpen) {
+      if (vendorStatus === 'idle') dispatch(fetchVendors());
+      if (carrierStatus === 'idle') dispatch(fetchVendorCarriers());
     }
-  }, [isOpen, vendorStatus, dispatch]);
+  }, [isOpen, vendorStatus, carrierStatus, dispatch]);
 
-  // On Mount / Record Change
+  // Map Record to Form State
   useEffect(() => {
     if (isOpen) {
       if (record) {
@@ -124,7 +92,7 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
 
         const mappedLocations = record.locations?.map(l => l._id || l) || (record.location ? [record.location._id || record.location] : []);
 
-        // Legacy support for single string CityStateZip
+        // Legacy extraction for old string records
         let city = record.vendorCity || '';
         let state = record.vendorState || '';
         let zip = record.vendorZipCode || '';
@@ -138,10 +106,16 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
           }
         }
 
+        // Determine correct display strings
+        const initVendorStr = record.fallbackVendor || record.vendor?.vendorName || (typeof record.vendor === 'string' ? record.vendor : '');
+        const initCarrierStr = record.fallbackCarrier || record.carrier?.carrierName || (typeof record.carrier === 'string' ? record.carrier : '');
+
         setFormData({
           dateReceived: new Date(record.dateReceived).toISOString().split('T')[0],
-          vendor: record.vendor || '',
-          carrier: record.carrier || '',
+          vendor: record.vendor?._id || record.vendor || '',
+          fallbackVendor: initVendorStr,
+          carrier: record.carrier?._id || record.carrier || '',
+          fallbackCarrier: initCarrierStr,
           vendorAddress: record.vendorAddress || '',
           vendorCity: city,
           vendorState: state,
@@ -162,8 +136,14 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
           palletProcessingFee: record.palletProcessingFee || '',
           charge: record.charge || ''
         });
+
+        setVendorSearch(initVendorStr);
+        setCarrierSearch(initCarrierStr);
+
       } else {
         setFormData(INITIAL_FORM_STATE);
+        setVendorSearch('');
+        setCarrierSearch('');
       }
       setLocSearchTerm('');
     }
@@ -205,14 +185,14 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
   }, [locations, locSearchTerm]);
 
   const filteredCarriers = useMemo(() => {
-    if (!formData.carrier) return CARRIER_SERVICES;
-    return CARRIER_SERVICES.filter(c => c.toLowerCase().includes(formData.carrier.toLowerCase()));
-  }, [formData.carrier]);
+    if (!carrierSearch) return vendorCarriers.filter(c => c.isActive);
+    return vendorCarriers.filter(c => c.isActive && c.carrierName.toLowerCase().includes(carrierSearch.toLowerCase()));
+  }, [vendorCarriers, carrierSearch]);
 
   const filteredVendors = useMemo(() => {
-    if (!formData.vendor) return vendors;
-    return vendors.filter(v => v.vendorName.toLowerCase().includes(formData.vendor.toLowerCase()));
-  }, [vendors, formData.vendor]);
+    if (!vendorSearch) return vendors.filter(v => v.isActive);
+    return vendors.filter(v => v.isActive && v.vendorName.toLowerCase().includes(vendorSearch.toLowerCase()));
+  }, [vendors, vendorSearch]);
 
   // Handlers
   const handleCustomerChange = (e) => setFormData({ ...formData, customer: e.target.value, division: '', inventoryItem: '', description: '', description2: ''});
@@ -224,11 +204,12 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
     if (inv) setFormData({ ...formData, inventoryItem: inv._id, description: inv.description || inv.itemName || '', description2: inv.description2 || ''});
   };
 
-  // Vendor Auto-Fill Handler
   const handleVendorSelect = (vendorObj) => {
+    setVendorSearch(vendorObj.vendorName);
     setFormData({
       ...formData,
-      vendor: vendorObj.vendorName,
+      vendor: vendorObj._id,
+      fallbackVendor: vendorObj.vendorName,
       vendorPhone: vendorObj.phone || '',
       vendorAddress: vendorObj.address?.street || '',
       vendorCity: vendorObj.address?.city || '',
@@ -238,13 +219,8 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
     setIsVendorDropdownOpen(false);
   };
 
-  // ==========================================
-  // ROBUST STORAGE LIMIT VALIDATION
-  // ==========================================
   const handleAddLocation = (loc) => {
     const incomingPallets = Number(formData.pallets) || 0;
-    
-    // Support generic field names depending on your Location schema (e.g. capacity vs maxPallets)
     const maxLimit = loc.capacity || loc.maxSkids || loc.maxPallets; 
     const currentUsage = loc.utilized || loc.currentSkids || loc.currentPallets || 0;
 
@@ -289,16 +265,18 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
   const handleSaveShipment = async (e) => {
     e.preventDefault();
     if (!formData.inventoryItem) return alert("Please select an Inventory Asset.");
+    if (!formData.fallbackVendor) return alert("Please provide a Vendor name.");
+    
     setIsSubmitting(true);
     
-    // Safely combine city/state/zip for legacy compatibility if the backend schema requires it
-    const csz = [formData.vendorCity, formData.vendorState, formData.vendorZipCode].filter(Boolean).join(', ');
-
-    const payload = { 
-      ...formData,
-      vendorCityStateZip: csz 
-    };
+    const payload = { ...formData };
     
+    if (!payload.vendor) delete payload.vendor;
+    if (!payload.carrier) delete payload.carrier;
+
+    const csz = [formData.vendorCity, formData.vendorState, formData.vendorZipCode].filter(Boolean).join(', ');
+    payload.vendorCityStateZip = csz;
+
     payload.location = formData.locations.length > 0 ? formData.locations[0] : null; 
     payload.quantity = Number(formData.quantity) || 0;
     payload.numberOfCartons = Number(formData.numberOfCartons) || 0;
@@ -328,6 +306,7 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
     }
   };
 
+  if (typeof document === 'undefined') return null;
   if (!isOpen) return null;
 
   // PREMIUM UI UTILITY CLASSES
@@ -337,8 +316,9 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
   const cardClass = "bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-5";
   const cardHeaderClass = "text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 border-b border-slate-100 pb-3";
 
-  return (
-    <div className="fixed inset-0 z-[100] flex justify-end">
+  // Render via createPortal to break out of CSS transforms/animations
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 h-[100dvh] w-screen overflow-hidden">
       {/* Backdrop */}
       <motion.div 
         initial={{ opacity: 0 }} 
@@ -348,17 +328,17 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
         onClick={onClose} 
       />
 
-      {/* Main Modal Panel */}
+      {/* Centered Form Panel (Removed Drawer classes) */}
       <motion.div 
-        initial={{ x: '100%' }} 
-        animate={{ x: 0 }} 
-        exit={{ x: '100%' }} 
-        transition={{ type: 'spring', damping: 30, stiffness: 250 }} 
-        className="relative w-full max-w-2xl h-full bg-slate-50/95 backdrop-blur-2xl shadow-2xl border-l border-slate-200 flex flex-col"
+        initial={{ opacity: 0, scale: 0.95, y: 20 }} 
+        animate={{ opacity: 1, scale: 1, y: 0 }} 
+        exit={{ opacity: 0, scale: 0.95, y: 20 }} 
+        transition={{ type: 'spring', bounce: 0.3, duration: 0.5 }} 
+        className="relative w-full max-w-4xl bg-slate-50/95 backdrop-blur-2xl shadow-2xl border border-slate-200 flex flex-col rounded-[2rem] max-h-[90dvh] z-10 overflow-hidden"
       >
         
-        {/* Sticky Header */}
-        <div className="flex justify-between items-center px-8 py-6 bg-white border-b border-slate-200 shadow-sm z-10 shrink-0">
+        {/* Header */}
+        <div className="flex justify-between items-center px-8 py-6 bg-white border-b border-slate-200 shadow-sm shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-slate-900 text-brand-gold rounded-xl shadow-inner">
               <Package size={22} />
@@ -390,18 +370,19 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
                 <input required type="date" value={formData.dateReceived} onChange={(e) => setFormData({...formData, dateReceived: e.target.value})} disabled={isSubmitting} className={inputClass} />
               </div>
 
-              {/* Enhanced Searchable Carrier Combobox */}
+              {/* Enhanced Database Carrier Combobox */}
               <div className="relative">
-                <label className={labelClass}>Carrier / Service <span className="text-red-400">*</span></label>
+                <label className={labelClass}>Carrier <span className="text-red-400">*</span></label>
                 <div className="relative">
                   <Truck size={16} className="absolute left-4 top-3 text-slate-400 z-10" />
                   <input 
                     required 
                     type="text" 
                     placeholder="Search or type carrier..." 
-                    value={formData.carrier} 
+                    value={carrierSearch} 
                     onChange={(e) => {
-                      setFormData({...formData, carrier: e.target.value});
+                      setCarrierSearch(e.target.value);
+                      setFormData({...formData, carrier: '', fallbackCarrier: e.target.value});
                       setIsCarrierDropdownOpen(true);
                     }} 
                     onFocus={() => setIsCarrierDropdownOpen(true)}
@@ -421,21 +402,22 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
                         {filteredCarriers.length > 0 ? (
                           filteredCarriers.map(carrier => (
                             <li 
-                              key={carrier} 
+                              key={carrier._id} 
                               onClick={() => {
-                                setFormData({...formData, carrier});
+                                setCarrierSearch(carrier.carrierName);
+                                setFormData({...formData, carrier: carrier._id, fallbackCarrier: carrier.carrierName});
                                 setIsCarrierDropdownOpen(false);
                               }}
                               className="px-4 py-3 border-b last:border-b-0 border-slate-100 flex items-center gap-2.5 hover:bg-slate-50 hover:text-brand-gold cursor-pointer transition-colors text-sm font-black text-slate-700"
                             >
                               <Truck size={14} className="text-slate-400 shrink-0"/>
-                              {carrier}
+                              {carrier.carrierName}
                             </li>
                           ))
                         ) : (
-                          <li className="px-4 py-4 flex flex-col items-center justify-center gap-1">
-                            <span className="text-xs font-bold text-slate-500">Use custom carrier:</span>
-                            <span className="text-sm font-black text-brand-gold">"{formData.carrier}"</span>
+                          <li className="px-4 py-4 flex flex-col items-center justify-center gap-1 bg-slate-50/50">
+                            <span className="text-xs font-bold text-slate-500">Use unregistered carrier:</span>
+                            <span className="text-sm font-black text-brand-gold">"{carrierSearch}"</span>
                           </li>
                         )}
                       </motion.ul>
@@ -446,10 +428,10 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
             </div>
 
             <div className="p-5 bg-slate-50/80 rounded-2xl border border-slate-200/60 space-y-4">
-              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200/80 pb-2">Vendor Details</h4>
+              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200/80 pb-2">Supplier Network</h4>
               <div className="grid grid-cols-2 gap-4">
                 
-                {/* Searchable Vendor Combobox */}
+                {/* Searchable Database Vendor Combobox */}
                 <div className="col-span-2 sm:col-span-1 relative">
                   <label className={labelClass}>Vendor Name <span className="text-red-400">*</span></label>
                   <div className="relative">
@@ -458,9 +440,10 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
                       required 
                       type="text" 
                       placeholder="Search or type vendor..." 
-                      value={formData.vendor} 
+                      value={vendorSearch} 
                       onChange={(e) => {
-                        setFormData({...formData, vendor: e.target.value});
+                        setVendorSearch(e.target.value);
+                        setFormData({...formData, vendor: '', fallbackVendor: e.target.value});
                         setIsVendorDropdownOpen(true);
                       }} 
                       onFocus={() => setIsVendorDropdownOpen(true)}
@@ -493,9 +476,9 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
                               </li>
                             ))
                           ) : (
-                            <li className="px-4 py-4 flex flex-col items-center justify-center gap-1">
-                              <span className="text-xs font-bold text-slate-500">Use custom vendor:</span>
-                              <span className="text-sm font-black text-brand-gold">"{formData.vendor}"</span>
+                            <li className="px-4 py-4 flex flex-col items-center justify-center gap-1 bg-slate-50/50">
+                              <span className="text-xs font-bold text-slate-500">Use unregistered vendor:</span>
+                              <span className="text-sm font-black text-brand-gold">"{vendorSearch}"</span>
                             </li>
                           )}
                         </motion.ul>
@@ -768,6 +751,7 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
         </div>
 
       </motion.div>
-    </div>
+    </div>,
+    document.body
   );
 }
