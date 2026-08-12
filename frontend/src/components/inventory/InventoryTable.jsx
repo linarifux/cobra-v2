@@ -90,8 +90,8 @@ export default function InventoryTable({
                           <span className="inline-flex items-center gap-1 mt-1 text-[10px] bg-white/60 border border-slate-200/60 text-slate-600 font-bold tracking-wide uppercase px-1.5 py-0.5 rounded-md">
                             <Tag size={10} className="text-slate-400" />{" "}
                             {item?.category && `${item.category}`}
-                            {item?.category2 && ` / ${item.category2}`}
-                            {item?.category3 && ` / ${item.category3}`}
+                            {item?.category2 && ` > ${item.category2}`}
+                            {item?.category3 && ` > ${item.category3}`}
                           </span>
                         </div>
                       </div>
