@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { 
   Store, Plus, Search, Edit2, Trash2, MapPin, 
-  Phone, Mail, Loader2, X, Save, Building2, ArrowLeft
+  Phone, Mail, Loader2, X, Save, Building2, ArrowLeft, Truck
 } from 'lucide-react';
 
 import { fetchVendors, createVendor, updateVendor, deleteVendor } from '../store/slices/vendorSlice';
@@ -127,7 +127,7 @@ export default function VendorsPage() {
       </div>
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 flex items-center gap-3 tracking-tight">
             <div className="p-2 bg-brand-gold/10 rounded-xl">
@@ -138,8 +138,8 @@ export default function VendorsPage() {
           <p className="text-slate-500 text-sm mt-1 font-medium">Manage inbound vendors and supplier contacts for receiving.</p>
         </div>
         
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <div className="relative flex-1 sm:w-64">
+        <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+          <div className="relative flex-1 sm:flex-none sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input 
               type="text" 
@@ -149,9 +149,18 @@ export default function VendorsPage() {
               className="w-full pl-10 pr-4 py-2.5 bg-white/60 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-brand-gold transition-all shadow-sm"
             />
           </div>
+          
+          {/* NEW: Manage Carriers Button */}
+          <button 
+            onClick={() => navigate('/vendor-carriers')}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 bg-white/60 hover:bg-white border border-slate-200 text-slate-600 hover:text-brand-gold rounded-xl text-xs font-black uppercase tracking-widest shadow-sm transition-all shrink-0 backdrop-blur-md"
+          >
+            <Truck size={16} /> <span className="hidden sm:inline">Manage</span> Carriers
+          </button>
+
           <button 
             onClick={() => openModal()}
-            className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-lg hover:shadow-slate-900/20 shrink-0"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-lg hover:shadow-slate-900/20 shrink-0"
           >
             <Plus size={16} /> Add Vendor
           </button>

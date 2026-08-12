@@ -37,6 +37,7 @@ import OrderForm from './components/order/OrderForm';
 // IMPORT THE GLOBAL CONFIRM PROVIDER
 import { ConfirmProvider } from './providers/ConfirmProvider';
 import TestCarrier from './pages/TestCarrier';
+import VendorCarriersPage from './pages/VendorCarriersPage';
 
 /**
  * ProtectedRoute Wrapper
@@ -108,9 +109,6 @@ export default function App() {
               <Route path="/customers/:customerId/divisions" element={<DivisionsPage />} />
               <Route path="/customers/:id/edit" element={<EditCustomerDetailsPage />} />
 
-              {/* testing carriers */}
-              <Route path='/test-carriers' element={<TestCarrier />} />
-              {/* testing carriers */}
               
               {/* Division Routes */}
               <Route path="/divisions/:divisionId" element={<DivisionDetail />} />
@@ -121,7 +119,8 @@ export default function App() {
               
               <Route path="/receiving" element={<ReceivingOrders />} />
               <Route path="/receiving/:id" element={<ReceivingOrderDetail />} />
-              <Route path="/vendors" element={<VendorsPage />} /> {/* <-- NEW ROUTE */}
+              <Route path="/vendors" element={<VendorsPage />} />
+              <Route path="/vendor-carriers" element={<VendorCarriersPage />} />
               
               <Route path="/locations" element={<WarehouseLocations />} />
               <Route path="/shipping" element={<div className="p-6">ShipStation Integration Module</div>} />

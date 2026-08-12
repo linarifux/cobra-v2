@@ -17,6 +17,7 @@ import typePieceReducer from './slices/typePieceSlice';
 import uploadReducer from './slices/uploadSlice';
 import cartReducer from './slices/cartSlice';
 import vendorReducer from './slices/vendorSlice';
+import vendorCarrierReducer from './slices/vendorCarrierSlice';
 
 export const store = configureStore({
   reducer: {
@@ -38,6 +39,9 @@ export const store = configureStore({
     cart: cartReducer,
 
     // 3. Vendors
-    vendors: vendorReducer
+    vendors: vendorReducer,
+
+    // 4. Vendor Carriers
+    vendorCarriers: vendorCarrierReducer
   },
 });
