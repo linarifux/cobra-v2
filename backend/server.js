@@ -26,7 +26,7 @@ import uploadRoutes from './routes/uploadRoutes.js'
 import typePieceRouter from './routes/typePieceRoutes.js';
 import shipStationRoutes from './routes/shipStationRoutes.js';
 import cartRoutes from './routes/cartRoutes.js';
-import testCarrierRoutes from './routes/testCarrierRoute.js'
+import vendorRoutes from './routes/vendorRoutes.js';
 
 
 // 1. Initialize Database Connection
@@ -91,8 +91,7 @@ app.use('/api/v1/upload', uploadRoutes)
 app.use('/api/v1/type-pieces', typePieceRouter);
 app.use('/api/v1/shipstation', shipStationRoutes);
 app.use('/api/v1/cart', cartRoutes);
-app.use('/api/v1/test-carriers', testCarrierRoutes)
-
+app.use('/api/v1/vendors', vendorRoutes);
 
 // 5. Global Error Handler
 app.use(globalErrorHandler);

@@ -24,6 +24,7 @@ import InventoryDetailPage from './pages/InventoryDetailPage';
 import CategoryPage from './pages/CategoryPage';
 import ReceivingOrders from './pages/ReceivingOrders';
 import ReceivingOrderDetail from './pages/ReceivingOrderDetail';
+import VendorsPage from './pages/VendorsPage'; // <-- NEW IMPORT
 import WarehouseLocations from './pages/WarehouseLocations';
 import AdminUsersPage from './pages/AdminUsersPage';
 import AccountSettingsPage from './pages/AccountSettingsPage';
@@ -117,8 +118,11 @@ export default function App() {
               <Route path="/inventory" element={<InventoryPage />} />
               <Route path="/inventory/:inventoryId" element={<InventoryDetailPage />} />
               <Route path="/categories" element={<CategoryPage />} />
+              
               <Route path="/receiving" element={<ReceivingOrders />} />
               <Route path="/receiving/:id" element={<ReceivingOrderDetail />} />
+              <Route path="/vendors" element={<VendorsPage />} /> {/* <-- NEW ROUTE */}
+              
               <Route path="/locations" element={<WarehouseLocations />} />
               <Route path="/shipping" element={<div className="p-6">ShipStation Integration Module</div>} />
               <Route path="/staff" element={<AdminUsersPage />} />

@@ -16,6 +16,7 @@ import receivingReducer from './slices/receivingSlice';
 import typePieceReducer from './slices/typePieceSlice';
 import uploadReducer from './slices/uploadSlice';
 import cartReducer from './slices/cartSlice';
+import vendorReducer from './slices/vendorSlice';
 
 export const store = configureStore({
   reducer: {
@@ -35,5 +36,8 @@ export const store = configureStore({
     typePieces: typePieceReducer,
     upload: uploadReducer,
     cart: cartReducer,
+
+    // 3. Vendors
+    vendors: vendorReducer
   },
 });

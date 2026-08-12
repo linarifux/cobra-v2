@@ -3,19 +3,22 @@ import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Package, Plus, Trash2, X, Loader2, DollarSign, 
-  Filter, AlertCircle, Calendar, Truck, Building2, MapPin, Check 
+  Filter, AlertCircle, Calendar, Truck, Building2, MapPin, Check, Store 
 } from 'lucide-react';
 
 // Redux Thunks
 import { createReceivingLog, updateReceivingLog } from '../../store/slices/receivingSlice';
 import { fetchInventory } from '../../store/slices/inventorySlice'; 
+import { fetchVendors } from '../../store/slices/vendorSlice'; 
 
 const INITIAL_FORM_STATE = {
   dateReceived: new Date().toISOString().split('T')[0],
   vendor: '',
   carrier: '',
   vendorAddress: '',
-  vendorCityStateZip: '',
+  vendorCity: '',
+  vendorState: '',
+  vendorZipCode: '',
   vendorPhone: '',
   customer: '',
   division: '',
@@ -33,19 +36,71 @@ const INITIAL_FORM_STATE = {
   charge: ''
 };
 
+// Comprehensive list of standard carriers and services
+const CARRIER_SERVICES = [
+  "Amazon Logistics",
+  "DHL eCommerce",
+  "DHL Express",
+  "Estes Express Lines",
+  "FedEx 2Day",
+  "FedEx 2Day A.M.",
+  "FedEx Express Saver",
+  "FedEx First Overnight",
+  "FedEx Freight",
+  "FedEx Ground",
+  "FedEx Home Delivery",
+  "FedEx International",
+  "FedEx Priority Overnight",
+  "FedEx SmartPost",
+  "FedEx Standard Overnight",
+  "Old Dominion Freight Line",
+  "UPS 2nd Day Air",
+  "UPS 2nd Day Air A.M.",
+  "UPS 3 Day Select",
+  "UPS Freight",
+  "UPS Ground",
+  "UPS Mail Innovations",
+  "UPS Next Day Air",
+  "UPS Next Day Air Early",
+  "UPS Next Day Air Saver",
+  "UPS Standard",
+  "UPS Worldwide Expedited",
+  "UPS Worldwide Express",
+  "USPS First-Class Mail",
+  "USPS International",
+  "USPS Media Mail",
+  "USPS Parcel Select",
+  "USPS Priority Mail",
+  "USPS Priority Mail Express",
+  "USPS Retail Ground",
+  "XPO Logistics",
+  "YRC Freight"
+];
+
 export default function ReceivingModal({ isOpen, onClose, record }) {
   const dispatch = useDispatch();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
   
+  // Custom Dropdown States
   const [locSearchTerm, setLocSearchTerm] = useState('');
   const [isLocDropdownOpen, setIsLocDropdownOpen] = useState(false);
+  const [isCarrierDropdownOpen, setIsCarrierDropdownOpen] = useState(false);
+  const [isVendorDropdownOpen, setIsVendorDropdownOpen] = useState(false); 
 
   // Redux Data
   const { items: customers = [] } = useSelector(state => state.customers || {});
   const { items: inventory = [] } = useSelector(state => state.inventory || {});
   const { items: locations = [] } = useSelector(state => state.locations || {});
   const { items: divisions = [] } = useSelector(state => state.divisions || {});
+  const { items: vendors = [], status: vendorStatus } = useSelector(state => state.vendors || {}); 
+
+  // Fetch Vendors if not loaded
+  useEffect(() => {
+    if (isOpen && vendorStatus === 'idle') {
+      dispatch(fetchVendors());
+    }
+  }, [isOpen, vendorStatus, dispatch]);
 
   // On Mount / Record Change
   useEffect(() => {
@@ -69,12 +124,28 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
 
         const mappedLocations = record.locations?.map(l => l._id || l) || (record.location ? [record.location._id || record.location] : []);
 
+        // Legacy support for single string CityStateZip
+        let city = record.vendorCity || '';
+        let state = record.vendorState || '';
+        let zip = record.vendorZipCode || '';
+        if (!city && !state && !zip && record.vendorCityStateZip) {
+          const parts = record.vendorCityStateZip.split(',');
+          city = parts[0]?.trim() || '';
+          if (parts[1]) {
+            const sz = parts[1].trim().split(' ');
+            state = sz[0] || '';
+            zip = sz[1] || '';
+          }
+        }
+
         setFormData({
           dateReceived: new Date(record.dateReceived).toISOString().split('T')[0],
           vendor: record.vendor || '',
           carrier: record.carrier || '',
           vendorAddress: record.vendorAddress || '',
-          vendorCityStateZip: record.vendorCityStateZip || '',
+          vendorCity: city,
+          vendorState: state,
+          vendorZipCode: zip,
           vendorPhone: record.vendorPhone || '',
           customer: record.customer?._id || record.customer || '',
           division: mappedDivision,
@@ -133,6 +204,16 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
     );
   }, [locations, locSearchTerm]);
 
+  const filteredCarriers = useMemo(() => {
+    if (!formData.carrier) return CARRIER_SERVICES;
+    return CARRIER_SERVICES.filter(c => c.toLowerCase().includes(formData.carrier.toLowerCase()));
+  }, [formData.carrier]);
+
+  const filteredVendors = useMemo(() => {
+    if (!formData.vendor) return vendors;
+    return vendors.filter(v => v.vendorName.toLowerCase().includes(formData.vendor.toLowerCase()));
+  }, [vendors, formData.vendor]);
+
   // Handlers
   const handleCustomerChange = (e) => setFormData({ ...formData, customer: e.target.value, division: '', inventoryItem: '', description: '', description2: ''});
   const handleDivisionChange = (e) => setFormData({ ...formData, division: e.target.value, inventoryItem: '', description: '', description2: ''});
@@ -141,6 +222,20 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
     if (!invId) return setFormData({ ...formData, inventoryItem: '', description: '', description2: ''});
     const inv = availableInventory.find(i => i._id === invId);
     if (inv) setFormData({ ...formData, inventoryItem: inv._id, description: inv.description || inv.itemName || '', description2: inv.description2 || ''});
+  };
+
+  // Vendor Auto-Fill Handler
+  const handleVendorSelect = (vendorObj) => {
+    setFormData({
+      ...formData,
+      vendor: vendorObj.vendorName,
+      vendorPhone: vendorObj.phone || '',
+      vendorAddress: vendorObj.address?.street || '',
+      vendorCity: vendorObj.address?.city || '',
+      vendorState: vendorObj.address?.state || '',
+      vendorZipCode: vendorObj.address?.zipCode || ''
+    });
+    setIsVendorDropdownOpen(false);
   };
 
   // ==========================================
@@ -196,7 +291,14 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
     if (!formData.inventoryItem) return alert("Please select an Inventory Asset.");
     setIsSubmitting(true);
     
-    const payload = { ...formData };
+    // Safely combine city/state/zip for legacy compatibility if the backend schema requires it
+    const csz = [formData.vendorCity, formData.vendorState, formData.vendorZipCode].filter(Boolean).join(', ');
+
+    const payload = { 
+      ...formData,
+      vendorCityStateZip: csz 
+    };
+    
     payload.location = formData.locations.length > 0 ? formData.locations[0] : null; 
     payload.quantity = Number(formData.quantity) || 0;
     payload.numberOfCartons = Number(formData.numberOfCartons) || 0;
@@ -230,12 +332,13 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
 
   // PREMIUM UI UTILITY CLASSES
   const inputClass = "w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 outline-none focus:bg-white focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all shadow-sm disabled:opacity-60 disabled:bg-slate-100 placeholder:text-slate-400";
+  const readOnlyClass = "w-full px-4 py-2.5 bg-slate-100/70 opacity-80 border border-slate-200 rounded-xl text-sm font-semibold text-slate-500 outline-none cursor-not-allowed shadow-inner";
   const labelClass = "text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block";
   const cardClass = "bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-5";
   const cardHeaderClass = "text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 border-b border-slate-100 pb-3";
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
+    <div className="fixed inset-0 z-[100] flex justify-end">
       {/* Backdrop */}
       <motion.div 
         initial={{ opacity: 0 }} 
@@ -286,33 +389,142 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
                 <label className={labelClass}>Date Received <span className="text-red-400">*</span></label>
                 <input required type="date" value={formData.dateReceived} onChange={(e) => setFormData({...formData, dateReceived: e.target.value})} disabled={isSubmitting} className={inputClass} />
               </div>
-              <div>
-                <label className={labelClass}>Carrier <span className="text-red-400">*</span></label>
+
+              {/* Enhanced Searchable Carrier Combobox */}
+              <div className="relative">
+                <label className={labelClass}>Carrier / Service <span className="text-red-400">*</span></label>
                 <div className="relative">
-                  <Truck size={16} className="absolute left-4 top-3 text-slate-400" />
-                  <input required type="text" placeholder="e.g. FedEx Freight" value={formData.carrier} onChange={(e) => setFormData({...formData, carrier: e.target.value})} disabled={isSubmitting} className={`${inputClass} pl-11`} />
+                  <Truck size={16} className="absolute left-4 top-3 text-slate-400 z-10" />
+                  <input 
+                    required 
+                    type="text" 
+                    placeholder="Search or type carrier..." 
+                    value={formData.carrier} 
+                    onChange={(e) => {
+                      setFormData({...formData, carrier: e.target.value});
+                      setIsCarrierDropdownOpen(true);
+                    }} 
+                    onFocus={() => setIsCarrierDropdownOpen(true)}
+                    onBlur={() => setTimeout(() => setIsCarrierDropdownOpen(false), 200)}
+                    disabled={isSubmitting} 
+                    className={`${inputClass} pl-11 relative z-0`} 
+                  />
+                  
+                  <AnimatePresence>
+                    {isCarrierDropdownOpen && (
+                      <motion.ul 
+                        initial={{ opacity: 0, y: -5 }} 
+                        animate={{ opacity: 1, y: 0 }} 
+                        exit={{ opacity: 0, y: -5 }} 
+                        className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto custom-scrollbar overflow-hidden"
+                      >
+                        {filteredCarriers.length > 0 ? (
+                          filteredCarriers.map(carrier => (
+                            <li 
+                              key={carrier} 
+                              onClick={() => {
+                                setFormData({...formData, carrier});
+                                setIsCarrierDropdownOpen(false);
+                              }}
+                              className="px-4 py-3 border-b last:border-b-0 border-slate-100 flex items-center gap-2.5 hover:bg-slate-50 hover:text-brand-gold cursor-pointer transition-colors text-sm font-black text-slate-700"
+                            >
+                              <Truck size={14} className="text-slate-400 shrink-0"/>
+                              {carrier}
+                            </li>
+                          ))
+                        ) : (
+                          <li className="px-4 py-4 flex flex-col items-center justify-center gap-1">
+                            <span className="text-xs font-bold text-slate-500">Use custom carrier:</span>
+                            <span className="text-sm font-black text-brand-gold">"{formData.carrier}"</span>
+                          </li>
+                        )}
+                      </motion.ul>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
             </div>
 
             <div className="p-5 bg-slate-50/80 rounded-2xl border border-slate-200/60 space-y-4">
               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200/80 pb-2">Vendor Details</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
+              <div className="grid grid-cols-2 gap-4">
+                
+                {/* Searchable Vendor Combobox */}
+                <div className="col-span-2 sm:col-span-1 relative">
                   <label className={labelClass}>Vendor Name <span className="text-red-400">*</span></label>
-                  <input required type="text" placeholder="Supplier Inc." value={formData.vendor} onChange={(e) => setFormData({...formData, vendor: e.target.value})} disabled={isSubmitting} className={inputClass} />
+                  <div className="relative">
+                    <Store size={16} className="absolute left-4 top-3 text-slate-400 z-10" />
+                    <input 
+                      required 
+                      type="text" 
+                      placeholder="Search or type vendor..." 
+                      value={formData.vendor} 
+                      onChange={(e) => {
+                        setFormData({...formData, vendor: e.target.value});
+                        setIsVendorDropdownOpen(true);
+                      }} 
+                      onFocus={() => setIsVendorDropdownOpen(true)}
+                      onBlur={() => setTimeout(() => setIsVendorDropdownOpen(false), 200)}
+                      disabled={isSubmitting} 
+                      className={`${inputClass} pl-11 relative z-0`} 
+                    />
+                    
+                    <AnimatePresence>
+                      {isVendorDropdownOpen && (
+                        <motion.ul 
+                          initial={{ opacity: 0, y: -5 }} 
+                          animate={{ opacity: 1, y: 0 }} 
+                          exit={{ opacity: 0, y: -5 }} 
+                          className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto custom-scrollbar overflow-hidden"
+                        >
+                          {filteredVendors.length > 0 ? (
+                            filteredVendors.map(v => (
+                              <li 
+                                key={v._id} 
+                                onClick={() => handleVendorSelect(v)}
+                                className="px-4 py-3 border-b last:border-b-0 border-slate-100 flex items-center justify-between hover:bg-slate-50 hover:text-brand-gold cursor-pointer transition-colors text-sm font-black text-slate-700"
+                              >
+                                <div className="flex flex-col">
+                                  <span>{v.vendorName}</span>
+                                  {(v.contactName || v.email) && (
+                                    <span className="text-[10px] font-bold text-slate-400 mt-0.5">{v.contactName || v.email}</span>
+                                  )}
+                                </div>
+                              </li>
+                            ))
+                          ) : (
+                            <li className="px-4 py-4 flex flex-col items-center justify-center gap-1">
+                              <span className="text-xs font-bold text-slate-500">Use custom vendor:</span>
+                              <span className="text-sm font-black text-brand-gold">"{formData.vendor}"</span>
+                            </li>
+                          )}
+                        </motion.ul>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </div>
-                <div>
+
+                <div className="col-span-2 sm:col-span-1">
                   <label className={labelClass}>Phone Number</label>
-                  <input type="text" placeholder="(555) 123-4567" value={formData.vendorPhone} onChange={(e) => setFormData({...formData, vendorPhone: e.target.value})} disabled={isSubmitting} className={inputClass} />
+                  <input readOnly tabIndex="-1" value={formData.vendorPhone} placeholder="Auto-filled" className={readOnlyClass} />
                 </div>
-                <div>
-                  <label className={labelClass}>Address</label>
-                  <input type="text" placeholder="123 Supply St." value={formData.vendorAddress} onChange={(e) => setFormData({...formData, vendorAddress: e.target.value})} disabled={isSubmitting} className={inputClass} />
+                <div className="col-span-2">
+                  <label className={labelClass}>Street Address</label>
+                  <input readOnly tabIndex="-1" value={formData.vendorAddress} placeholder="Auto-filled" className={readOnlyClass} />
                 </div>
-                <div>
-                  <label className={labelClass}>City, State, ZIP</label>
-                  <input type="text" placeholder="New York, NY 10001" value={formData.vendorCityStateZip} onChange={(e) => setFormData({...formData, vendorCityStateZip: e.target.value})} disabled={isSubmitting} className={inputClass} />
+                <div className="col-span-2 grid grid-cols-3 gap-4">
+                  <div className="col-span-3 sm:col-span-1">
+                    <label className={labelClass}>City</label>
+                    <input readOnly tabIndex="-1" value={formData.vendorCity} placeholder="Auto-filled" className={readOnlyClass} />
+                  </div>
+                  <div className="col-span-3 sm:col-span-1">
+                    <label className={labelClass}>State</label>
+                    <input readOnly tabIndex="-1" value={formData.vendorState} placeholder="Auto-filled" className={readOnlyClass} />
+                  </div>
+                  <div className="col-span-3 sm:col-span-1">
+                    <label className={labelClass}>ZIP Code</label>
+                    <input readOnly tabIndex="-1" value={formData.vendorZipCode} placeholder="Auto-filled" className={readOnlyClass} />
+                  </div>
                 </div>
               </div>
             </div>
