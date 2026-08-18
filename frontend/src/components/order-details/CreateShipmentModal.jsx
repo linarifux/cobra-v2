@@ -20,7 +20,6 @@ export default function CreateShipmentModal({
 }) {
   const dispatch = useDispatch();
 
-  console.log(packages);
   
   const [cartoonsCount, setCartoonsCount] = useState(0);
 
