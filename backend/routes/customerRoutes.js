@@ -5,24 +5,27 @@ import {
   getCustomer,
   updateCustomer,
   updateCustomerCarriers,
+  getCustomerCarriers, // <-- NEW: Import the GET controller for carriers
   deleteCustomer
 } from '../controllers/customerController.js';
 
-// import { getCarriersForCustomer } from '../controllers/carrierController.js'; 
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
 import divisionRouter from './divisionRoutes.js';
 import inventoryRouter from './inventoryRoutes.js';
 import orderRouter from './orderRoutes.js';
 import addressRouter from './addressRoutes.js';
-import userRouter from './userRoutes.js'; // <-- NEW: Import User Router
+import userRouter from './userRoutes.js';
 
 const router = express.Router();
 
+// 1. Require a valid login token for ALL customer routes
+router.use(protect);
 
 // ---------------------------------------------------------
 // NESTED ROUTE REDIRECTS
 // ---------------------------------------------------------
+// These automatically handle GET /:customerId/inventory and GET /:customerId/users
 router.use('/:customerId/divisions', divisionRouter);
 router.use('/:customerId/orders', orderRouter);
 router.use('/:customerId/inventory', inventoryRouter);
@@ -33,30 +36,23 @@ router.use('/:customerId/users', userRouter);
 // CUSTOMER-SPECIFIC CUSTOM ENDPOINTS
 // ---------------------------------------------------------
 
-// GET: Fetch the flattened list of allowed active services for a customer
-// router.route('/:customerId/carriers')
-//   .get(getCarriersForCustomer);
-
-// PUT: Update the assigned carriers/services array on the Customer document
+// Manage Carrier configurations directly on the Customer document
 router.route('/:id/carriers')
-  .put(updateCustomerCarriers);
-
+  .get(getCustomerCarriers)
+  .put(restrictTo('admin', 'super_admin', 'manager'), updateCustomerCarriers);
 
 // ---------------------------------------------------------
 // STANDARD CRUD ENDPOINTS
 // ---------------------------------------------------------
 
-// 1. Require a valid login token for ALL customer routes (Uncomment when auth is active)
-router.use(protect); 
-
 // 2. Base routes accessible by admin, staff, and warehouse
 router.route('/')
   .get(getAllCustomers)
-  .post(createCustomer);
+  .post(restrictTo('admin', 'super_admin', 'manager'), createCustomer);
 
 router.route('/:id')
   .get(getCustomer)
-  .put(updateCustomer)
+  .put(restrictTo('admin', 'super_admin', 'manager'), updateCustomer)
   // 3. Chain restrictTo before the controller for sensitive actions
   .delete(restrictTo('admin', 'super_admin'), deleteCustomer);
 

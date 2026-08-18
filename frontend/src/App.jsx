@@ -38,6 +38,7 @@ import OrderForm from './components/order/OrderForm';
 import { ConfirmProvider } from './providers/ConfirmProvider';
 import TestCarrier from './pages/TestCarrier';
 import VendorCarriersPage from './pages/VendorCarriersPage';
+import Billing from './pages/Billing';
 
 /**
  * ProtectedRoute Wrapper
@@ -117,6 +118,7 @@ export default function App() {
               <Route path="/inventory/:inventoryId" element={<InventoryDetailPage />} />
               <Route path="/categories" element={<CategoryPage />} />
               
+              <Route path="/billing" element={<Billing />} />
               <Route path="/receiving" element={<ReceivingOrders />} />
               <Route path="/receiving/:id" element={<ReceivingOrderDetail />} />
               <Route path="/vendors" element={<VendorsPage />} />

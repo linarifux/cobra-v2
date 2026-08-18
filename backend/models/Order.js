@@ -36,7 +36,6 @@ const orderSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      // UPDATED ENUM LIST
       enum: ['New', 'Pending', 'Picked', 'Shipped', 'Hold', 'Cancelled', 'Delivered', 'Billed'],
       default: 'New'
     },
@@ -54,12 +53,10 @@ const orderSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
-    // NEW: Rush Order Flag
     isRushOrder: {
       type: Boolean,
       default: false
     },
-    // NEW: International Order Flag
     isInternational: {
       type: Boolean,
       default: false
@@ -75,6 +72,21 @@ const orderSchema = new mongoose.Schema(
       zip: { type: String, required: true },
       country: { type: String, default: 'US' }
     },
+    
+    // NEW: Comprehensive Order Processing Fees Breakdown
+    processingFees: {
+      baseFee: { type: Number, default: 0 },            // Base fee for 1st 3 line items
+      weightSurcharge: { type: Number, default: 0 },    // Surcharge for weight > 20 lbs
+      lineItemSurcharge: { type: Number, default: 0 },  // Surcharge for line items > 3
+      packageSurcharge: { type: Number, default: 0 },   // Surcharge for packages > 1
+      pieceSurcharge: { type: Number, default: 0 },     // Per piece fee
+      cartonSurcharge: { type: Number, default: 0 },    // Per carton fee
+      rushFee: { type: Number, default: 0 },            // Flat fee if isRushOrder is true
+      internationalFee: { type: Number, default: 0 },   // Flat fee if isInternational is true
+      palletFee: { type: Number, default: 0 },          // Fee for pallet processing
+      totalProcessingFee: { type: Number, default: 0 }  // Grand total of all processing fees
+    },
+
     // Integration with the Carrier module
     shippingDetails: {
       carrierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Carrier' },
@@ -84,6 +96,7 @@ const orderSchema = new mongoose.Schema(
       shippingCost: { type: Number, default: 0 },
       // Package configuration tracking
       cartoons: { type: Number, default: 0 },
+      pallets: { type: Number, default: 0 }, // NEW: Added to track pallet processing fee trigger
       totalBoxes: { type: Number, default: 0 },
       totalWeightOunces: { type: Number, default: 0 },
       packages: [{
@@ -113,8 +126,23 @@ const orderSchema = new mongoose.Schema(
 );
 
 orderSchema.pre('save', function() {
+  // 1. Calculate Product Total Amount
   if (this.items && this.items.length > 0) {
     this.totalAmount = this.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0);
+  }
+
+  // 2. Auto-calculate Grand Total for Processing Fees
+  if (this.processingFees) {
+    this.processingFees.totalProcessingFee = 
+      (this.processingFees.baseFee || 0) +
+      (this.processingFees.weightSurcharge || 0) +
+      (this.processingFees.lineItemSurcharge || 0) +
+      (this.processingFees.packageSurcharge || 0) +
+      (this.processingFees.pieceSurcharge || 0) +
+      (this.processingFees.cartonSurcharge || 0) +
+      (this.processingFees.rushFee || 0) +
+      (this.processingFees.internationalFee || 0) +
+      (this.processingFees.palletFee || 0);
   }
 });
 

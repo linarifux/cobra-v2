@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom'; // CRITICAL FIX
 import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { 
@@ -9,10 +10,9 @@ import { toast } from 'sonner';
 
 import PageHeader from '../components/PageHeader';
 import { useConfirm } from '../providers/ConfirmProvider';
-// Make sure you have updateCustomer and deleteCustomer exported from your slice!
 import { fetchCustomers, createCustomer, updateCustomer, deleteCustomer } from '../store/slices/customerSlice';
+import { AnimatePresence } from 'framer-motion';
 
-// Abstract initial state outside the component
 const INITIAL_FORM_STATE = {
   customerName: '',
   contactName: '',
@@ -30,27 +30,25 @@ export default function CustomersPage() {
   const dispatch = useDispatch();
   const confirm = useConfirm();
   
-  // Safely default items to an empty array to prevent undefined crashes
   const { items: customersData = [], status, error } = useSelector((state) => state.customers);
 
-  // Filters State
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
   const [filterCategory, setFilterCategory] = useState('All');
 
-  // Modal & Form State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
 
-  // Always fetch fresh data when entering the directory
+  // Guarantee fresh data on mount if the state was reset by navigating back from Details page
   useEffect(() => {
-    dispatch(fetchCustomers());
-  }, [dispatch]);
+    if (status === 'idle') {
+      dispatch(fetchCustomers());
+    }
+  }, [status, dispatch]);
 
-  // Safely memoize and filter the customer list
   const filteredCustomers = useMemo(() => {
     if (!Array.isArray(customersData)) return [];
 
@@ -70,7 +68,6 @@ export default function CustomersPage() {
     });
   }, [searchQuery, filterStatus, filterCategory, customersData]);
 
-  // --- Handlers ---
   const handleOpenAdd = () => {
     setIsEditMode(false);
     setEditingId(null);
@@ -121,7 +118,10 @@ export default function CustomersPage() {
 
   const handleFormSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.customerName.trim()) return; 
+    if (!formData.customerName.trim()) {
+      toast.error("Customer Name is required.");
+      return; 
+    }
     
     setIsSubmitting(true);
 
@@ -159,16 +159,6 @@ export default function CustomersPage() {
     }
   };
 
-  // Prevent background scrolling when modal is open
-  useEffect(() => {
-    if (isModalOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-    return () => { document.body.style.overflow = 'unset'; };
-  }, [isModalOpen]);
-
   return (
     <div className="h-full p-6 space-y-6 relative">
       <PageHeader 
@@ -176,7 +166,6 @@ export default function CustomersPage() {
         subtitle="Manage your customer base, categories, and active order volumes." 
       />
 
-      {/* KPI Stats Bar */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
           { label: 'Active Partners', val: customersData.length.toString(), color: 'text-emerald-600' },
@@ -191,7 +180,6 @@ export default function CustomersPage() {
         ))}
       </div>
 
-      {/* Advanced Control Panel */}
       <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-4 rounded-3xl flex flex-col md:flex-row gap-4 shadow-sm">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
@@ -227,16 +215,15 @@ export default function CustomersPage() {
           <button className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl text-xs font-bold border border-slate-200 hover:bg-slate-50 transition-colors shadow-sm">
             <Download size={14} /> Export
           </button>
-          {/* <button 
+          <button 
             onClick={handleOpenAdd}
             className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors shadow-md"
           >
             <Plus size={14} /> Add Customer
-          </button> */}
+          </button>
         </div>
       </div>
 
-      {/* State Handling */}
       {status === 'loading' && customersData.length === 0 && (
         <div className="flex justify-center items-center py-20 text-slate-400">
           <Loader2 className="animate-spin text-brand-gold" size={32} />
@@ -249,7 +236,6 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {/* Render table if not strictly failed */}
       {status !== 'failed' && (customersData.length > 0 || status === 'succeeded') && (
         <div className="bg-white/40 backdrop-blur-2xl border border-white/60 rounded-3xl overflow-hidden shadow-sm animate-fade-in">
           <div className="overflow-x-auto">
@@ -346,101 +332,118 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {/* Add/Edit Customer Modal */}
-      <div className={`fixed inset-0 z-50 flex items-center justify-center transition-all duration-300 ${isModalOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
-        <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => !isSubmitting && setIsModalOpen(false)} />
-        
-        <div className={`relative w-full max-w-2xl bg-white/95 backdrop-blur-xl border border-white/50 p-6 md:p-8 rounded-3xl shadow-2xl transition-transform duration-300 ${isModalOpen ? 'scale-100 translate-y-0' : 'scale-95 translate-y-4'}`}>
-          <div className="flex justify-between items-center mb-6">
-            <div>
-              <h2 className="text-xl font-black text-slate-900 tracking-tight">
-                {isEditMode ? 'Edit Customer Profile' : 'Register New Customer'}
-              </h2>
-              <p className="text-xs font-medium text-slate-500 mt-1">
-                {isEditMode ? 'Update the details for this partner.' : 'Add a new partner to your fulfillment network.'}
-              </p>
-            </div>
-            <button 
+      {/* CRITICAL FIX: Add/Edit Customer Modal correctly Portal'd to prevent clipping/trapping bugs */}
+      <AnimatePresence>
+        {isModalOpen && typeof document !== 'undefined' && createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 h-[100dvh] w-screen overflow-hidden">
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }} 
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
               onClick={() => !isSubmitting && setIsModalOpen(false)} 
-              className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition-colors"
+            />
+            
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }} 
+              animate={{ opacity: 1, scale: 1, y: 0 }} 
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: 'spring', bounce: 0.3, duration: 0.5 }}
+              className="relative w-full max-w-2xl bg-white rounded-[2rem] shadow-2xl overflow-hidden flex flex-col border border-slate-200 max-h-[90dvh]"
             >
-              <X size={18} />
-            </button>
-          </div>
-          
-          <form onSubmit={handleFormSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="md:col-span-2">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Customer / Company Name <span className="text-red-500">*</span></label>
-                <input required type="text" value={formData.customerName} onChange={(e) => setFormData({...formData, customerName: e.target.value})} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all" placeholder="e.g. Global Feeds Corp" />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Primary Contact Name</label>
-                <input type="text" value={formData.contactName} onChange={(e) => setFormData({...formData, contactName: e.target.value})} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all" placeholder="John Doe" />
+              <div className="flex justify-between items-center px-6 py-5 border-b border-slate-100 bg-slate-50/80 shrink-0">
+                <div>
+                  <h2 className="text-xl font-black text-slate-900 tracking-tight">
+                    {isEditMode ? 'Edit Customer Profile' : 'Register New Customer'}
+                  </h2>
+                  <p className="text-xs font-medium text-slate-500 mt-1">
+                    {isEditMode ? 'Update the details for this partner.' : 'Add a new partner to your fulfillment network.'}
+                  </p>
+                </div>
+                <button 
+                  onClick={() => !isSubmitting && setIsModalOpen(false)} 
+                  className="p-2 bg-white border border-slate-200 text-slate-400 hover:text-slate-600 rounded-full transition-colors shadow-sm"
+                >
+                  <X size={18} />
+                </button>
               </div>
               
-              <div>
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Contact Email</label>
-                <input type="email" value={formData.contactEmail} onChange={(e) => setFormData({...formData, contactEmail: e.target.value})} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all" placeholder="john@company.com" />
-              </div>
+              <form onSubmit={handleFormSubmit} className="p-6 space-y-4 flex-1 overflow-y-auto custom-scrollbar">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="md:col-span-2">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Customer / Company Name <span className="text-red-500">*</span></label>
+                    <input required type="text" value={formData.customerName} onChange={(e) => setFormData({...formData, customerName: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="e.g. Global Feeds Corp" disabled={isSubmitting} />
+                  </div>
 
-              <div className="md:col-span-2">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Phone Number</label>
-                <input type="text" value={formData.contactNumber} onChange={(e) => setFormData({...formData, contactNumber: e.target.value})} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all" placeholder="(555) 123-4567" />
-              </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Primary Contact Name</label>
+                    <input type="text" value={formData.contactName} onChange={(e) => setFormData({...formData, contactName: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="John Doe" disabled={isSubmitting} />
+                  </div>
+                  
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Contact Email</label>
+                    <input type="email" value={formData.contactEmail} onChange={(e) => setFormData({...formData, contactEmail: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="john@company.com" disabled={isSubmitting} />
+                  </div>
 
-              <div className="md:col-span-2 border-t border-slate-100 pt-4 mt-2">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-900 mb-3 block">Corporate Address</label>
-              </div>
+                  <div className="md:col-span-2">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Phone Number</label>
+                    <input type="text" value={formData.contactNumber} onChange={(e) => setFormData({...formData, contactNumber: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="(555) 123-4567" disabled={isSubmitting} />
+                  </div>
 
-              <div className="md:col-span-2">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Address Line 1</label>
-                <input type="text" value={formData.addressLine1} onChange={(e) => setFormData({...formData, addressLine1: e.target.value})} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all" placeholder="123 Logistics Way" />
-              </div>
+                  <div className="md:col-span-2 border-t border-slate-100 pt-4 mt-2">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-900 mb-3 block">Corporate Address</label>
+                  </div>
 
-              <div className="md:col-span-2">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Address Line 2 (Optional)</label>
-                <input type="text" value={formData.addressLine2} onChange={(e) => setFormData({...formData, addressLine2: e.target.value})} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all" placeholder="Suite 400" />
-              </div>
+                  <div className="md:col-span-2">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Address Line 1</label>
+                    <input type="text" value={formData.addressLine1} onChange={(e) => setFormData({...formData, addressLine1: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="123 Logistics Way" disabled={isSubmitting} />
+                  </div>
 
-              <div>
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">City</label>
-                <input type="text" value={formData.city} onChange={(e) => setFormData({...formData, city: e.target.value})} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all" placeholder="Chicago" />
-              </div>
+                  <div className="md:col-span-2">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Address Line 2 (Optional)</label>
+                    <input type="text" value={formData.addressLine2} onChange={(e) => setFormData({...formData, addressLine2: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="Suite 400" disabled={isSubmitting} />
+                  </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">State / Prov</label>
-                  <input type="text" value={formData.state} onChange={(e) => setFormData({...formData, state: e.target.value})} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all" placeholder="IL" />
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">City</label>
+                    <input type="text" value={formData.city} onChange={(e) => setFormData({...formData, city: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="Chicago" disabled={isSubmitting} />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">State / Prov</label>
+                      <input type="text" value={formData.state} onChange={(e) => setFormData({...formData, state: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="IL" disabled={isSubmitting} />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">ZIP / Postal</label>
+                      <input type="text" value={formData.zip} onChange={(e) => setFormData({...formData, zip: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="60601" disabled={isSubmitting} />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">ZIP / Postal</label>
-                  <input type="text" value={formData.zip} onChange={(e) => setFormData({...formData, zip: e.target.value})} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all" placeholder="60601" />
-                </div>
-              </div>
-            </div>
 
-            <div className="pt-6 flex gap-3">
-              <button 
-                type="button" 
-                onClick={() => setIsModalOpen(false)}
-                disabled={isSubmitting}
-                className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button 
-                type="submit" 
-                disabled={isSubmitting}
-                className="flex-[2] flex justify-center items-center gap-2 px-4 py-3 bg-brand-gold hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-brand-gold/20 transition-all disabled:opacity-70"
-              >
-                {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : (isEditMode ? 'Save Updates' : 'Register Customer Node')}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
+                <div className="pt-6 pb-2 flex gap-3 shrink-0">
+                  <button 
+                    type="button" 
+                    onClick={() => setIsModalOpen(false)}
+                    disabled={isSubmitting}
+                    className="flex-1 px-4 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit" 
+                    disabled={isSubmitting || !formData.customerName.trim()}
+                    className="flex-[2] flex justify-center items-center gap-2 px-4 py-3.5 bg-slate-900 hover:bg-slate-800 text-brand-gold rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-slate-900/20 transition-all disabled:opacity-70 active:scale-95"
+                  >
+                    {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : (isEditMode ? 'Save Updates' : 'Register Customer Node')}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>,
+          document.body
+        )}
+      </AnimatePresence>
       
     </div>
   );

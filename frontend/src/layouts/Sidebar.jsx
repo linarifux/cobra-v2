@@ -30,7 +30,8 @@ const navigation = [
   { name: 'Customers', href: '/customers', icon: UserCheck },
   // { name: 'Divisions', href: '/divisions', icon: LayoutGrid },
   { name: 'Locations', href: '/locations', icon: ShelvingUnit },
-  { name: 'ShipStation', href: '/shipping', icon: Package },
+  // { name: 'ShipStation', href: '/shipping', icon: Package },
+  { name: 'Billing', href: '/billing', icon: FileSpreadsheet }, // <-- NEW ROUTE
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
@@ -100,7 +101,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
         <nav className="relative z-10 flex-1 overflow-y-auto py-8 px-3 scrollbar-hide">
           <ul className="space-y-3">
             {navigation.map((item, index) => {
-              const isActive = location.pathname === item.href;
+              const isActive = location.pathname === item.href || location.pathname.startsWith(item.href + '/');
               return (
                 <li 
                   key={item.name} 
@@ -172,7 +173,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
               : "w-auto opacity-100 md:w-0 md:opacity-0"
           )}>
             <p className="text-xs font-black text-white uppercase tracking-wider">Admin</p>
-            <p className="text-[10px] text-slate-400 font-bold">System Manager</p>
+            <p className="text-[10px] text-slate-600 font-bold">System Manager</p>
           </div>
         </div>
         

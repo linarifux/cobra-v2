@@ -1,12 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
+import { createPortal } from 'react-dom'; 
 import { useNavigate, useParams } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useDispatch, useSelector } from 'react-redux';
 import { 
   Layers, Plus, Search, Filter, Edit2, Trash2, 
   ToggleLeft, ToggleRight, Loader2, AlertTriangle, RefreshCw, MapPin, User, ArrowLeft 
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { AnimatePresence, motion } from 'framer-motion';
 
 // Redux Thunks
 import { fetchDivisions, createDivision, updateDivision, deleteDivision } from '../store/slices/divisionSlice';
@@ -22,36 +23,44 @@ export default function DivisionsPage() {
   const confirm = useConfirm();
   const navigate = useNavigate();
   
-  // NEW: Grab the customerId from the URL (e.g., /customers/123/divisions)
   const { customerId } = useParams();
   
   // --- Redux State ---
   const { items: divisions = [], status: divStatus, error: divError } = useSelector(state => state.divisions || {});
-  
   const { items: customers = [], status: custStatus } = useSelector(state => state.customers || {});
   const { items: users = [], status: userStatus } = useSelector(state => state.users || {});
 
-  const loadAllData = () => {
-    // NEW: Pass the customerId down to the thunk to hit the nested API route
-    if (divStatus === 'idle' || divStatus === 'failed') dispatch(fetchDivisions(customerId));
-    if (custStatus === 'idle' || custStatus === 'failed') dispatch(fetchCustomers());
-    if (userStatus === 'idle' || userStatus === 'failed') dispatch(fetchUsers());
-  };
+  // --- Strict Loading State ---
+  const [isPageLoading, setIsPageLoading] = useState(true);
 
+  // CRITICAL FIX: Unconditionally fetch data on mount and URL change.
+  // We use `isPageLoading` to lock the UI until all fresh network requests resolve.
   useEffect(() => {
-    loadAllData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let isMounted = true;
+
+    const fetchFreshData = async () => {
+      setIsPageLoading(true);
+      try {
+        await Promise.all([
+          dispatch(fetchDivisions(customerId)).unwrap(),
+          dispatch(fetchCustomers()).unwrap(),
+          dispatch(fetchUsers()).unwrap()
+        ]);
+      } catch (err) {
+        console.error("Failed to fetch fresh directory data", err);
+      } finally {
+        if (isMounted) setIsPageLoading(false);
+      }
+    };
+
+    fetchFreshData();
+
+    return () => {
+      isMounted = false;
+    };
   }, [dispatch, customerId]);
 
-  // NEW: Intelligent Auto-Redirect UX
-  // If the customer has exactly ONE division, skip this directory and go straight to details
-  useEffect(() => {
-    if (divStatus === 'succeeded' && divisions.length === 1) {
-      navigate(`/divisions/${divisions[0]._id}`, { replace: true });
-    }
-  }, [divStatus, divisions, navigate]);
-
-  const isGlobalLoading = [divStatus, custStatus, userStatus].some(s => s === 'idle' || s === 'loading');
+  const isGlobalLoading = isPageLoading || [divStatus, custStatus, userStatus].some(s => s === 'loading');
   const hasGlobalError = [divStatus, custStatus, userStatus].some(s => s === 'failed');
 
   // Filter Order Portal Staff for Managers
@@ -67,27 +76,44 @@ export default function DivisionsPage() {
 
   // --- Form State Management ---
   const INITIAL_FORM_STATE = { 
-    divisionName: '', divisionCode: '', managers: [], status: 'Active', customer: customerId || '', // Default to active customer
+    divisionName: '', 
+    divisionCode: '', 
+    managers: [], 
+    status: 'Active', 
+    customer: customerId || '', // Default to active customer
     contactName: '', contactEmail: '', contactNumber: '', line1: '', line2: '', city: '', state: '', zip: ''
   };
+  
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // --- Data Filtering ---
+  // --- STRICT DATA FILTERING ---
   const filteredDivisions = useMemo(() => {
     if (!Array.isArray(divisions)) return [];
+    
     return divisions.filter(div => {
+      const divCustId = String(div.customer?._id || div.customer);
+
+      if (customerId && divCustId !== String(customerId)) return false;
+
       const searchTarget = searchTerm.toLowerCase();
       const matchesSearch = [
         div.divisionName, div.divisionCode, div.customer?.customerName
       ].some(val => val?.toLowerCase().includes(searchTarget));
 
-      const matchesCustomer = customerFilter === 'All' || (div.customer?._id || div.customer) === customerFilter;
+      const matchesCustomer = customerId ? true : (customerFilter === 'All' || divCustId === customerFilter);
       const matchesStatus = statusFilter === 'All' || div.status === statusFilter;
 
       return matchesSearch && matchesCustomer && matchesStatus;
     }).sort((a, b) => a.divisionName.localeCompare(b.divisionName));
-  }, [divisions, searchTerm, customerFilter, statusFilter]);
+  }, [divisions, searchTerm, customerFilter, statusFilter, customerId]);
+
+  // --- Auto-Redirect UX ---
+  useEffect(() => {
+    if (!isGlobalLoading && divStatus === 'succeeded' && filteredDivisions.length === 1 && customerId) {
+      navigate(`/divisions/${filteredDivisions[0]._id}`, { replace: true });
+    }
+  }, [divStatus, filteredDivisions, navigate, customerId, isGlobalLoading]);
 
   // --- Handlers ---
   const openNewModal = () => {
@@ -132,7 +158,6 @@ export default function DivisionsPage() {
     if (await confirm({ title: 'Delete Division?', message: 'Are you sure you want to permanently delete this division?', confirmText: 'Delete', variant: 'danger' })) {
       const syncProcess = async () => {
         await dispatch(deleteDivision(id)).unwrap();
-        // Clean user references
         const usersToUpdate = orderPortalStaff.filter(u => u.divisions?.some(d => String(d._id || d) === String(id)));
         const updatePromises = usersToUpdate.map(user => {
           const updatedDivs = user.divisions.map(d => String(d._id || d)).filter(dId => dId !== String(id));
@@ -176,7 +201,6 @@ export default function DivisionsPage() {
         savedDivId = createdDiv._id;
       }
 
-      // Sync Users (M2M)
       const oldManagerIds = selectedDivision 
         ? orderPortalStaff.filter(u => u.divisions?.some(d => String(d._id || d) === String(savedDivId))).map(u => String(u._id))
         : [];
@@ -216,8 +240,19 @@ export default function DivisionsPage() {
   };
 
   // --- Renders ---
-  // Wait to render the main UI if we are in the middle of a length === 1 auto-redirect
-  if (divStatus === 'succeeded' && divisions.length === 1) {
+
+  // High-priority blocking loader
+  if (isGlobalLoading) {
+    return (
+      <div className="h-full flex flex-col justify-center items-center min-h-[60vh] gap-4">
+        <Loader2 className="animate-spin text-brand-gold" size={36} />
+        <p className="text-sm font-black text-slate-700 uppercase tracking-widest">Compiling Directory...</p>
+      </div>
+    );
+  }
+
+  // Hide the page entirely if we are currently redirecting through the 1-division shortcut
+  if (divStatus === 'succeeded' && filteredDivisions.length === 1 && customerId) {
     return (
       <div className="h-full flex flex-col justify-center items-center min-h-[60vh] gap-4">
         <Loader2 className="animate-spin text-brand-gold" size={36} />
@@ -226,26 +261,20 @@ export default function DivisionsPage() {
     );
   }
 
-  if (hasGlobalError && !isGlobalLoading) {
+  if (hasGlobalError) {
     return (
       <div className="h-full flex items-center justify-center min-h-[60vh]">
         <div className="bg-red-50 p-8 rounded-3xl text-center shadow-lg border border-red-200">
           <AlertTriangle className="text-red-500 mb-4 mx-auto" size={40} />
           <h2 className="text-red-800 text-lg font-black mb-2">Sync Failed</h2>
           <p className="text-red-600/80 text-xs font-medium mb-6">{divError || 'Check connection.'}</p>
-          <button onClick={loadAllData} className="flex mx-auto items-center gap-2 px-6 py-2.5 bg-red-600 text-white rounded-xl text-xs font-black uppercase">
+          <button 
+            onClick={() => window.location.reload()} 
+            className="flex mx-auto items-center gap-2 px-6 py-2.5 bg-red-600 text-white rounded-xl text-xs font-black uppercase"
+          >
             <RefreshCw size={14} /> Retry
           </button>
         </div>
-      </div>
-    );
-  }
-
-  if (isGlobalLoading) {
-    return (
-      <div className="h-full flex flex-col justify-center items-center min-h-[60vh] gap-4">
-        <Loader2 className="animate-spin text-brand-gold" size={36} />
-        <p className="text-sm font-black text-slate-700 uppercase tracking-widest">Loading Divisions...</p>
       </div>
     );
   }
@@ -292,13 +321,17 @@ export default function DivisionsPage() {
             />
           </div>
         </div>
-        <div className="flex-1 min-w-[180px]">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block ml-1 flex items-center gap-1.5"><Filter size={10} className="text-brand-gold"/> Depositor / Customer</label>
-          <select value={customerFilter} onChange={(e) => setCustomerFilter(e.target.value)} className="w-full px-4 py-2.5 bg-white/60 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-brand-gold/50 outline-none cursor-pointer">
-            <option value="All">All Customers</option>
-            {customers.map(c => <option key={c._id} value={c._id}>{c.customerName}</option>)}
-          </select>
-        </div>
+        
+        {!customerId && (
+          <div className="flex-1 min-w-[180px]">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block ml-1 flex items-center gap-1.5"><Filter size={10} className="text-brand-gold"/> Depositor / Customer</label>
+            <select value={customerFilter} onChange={(e) => setCustomerFilter(e.target.value)} className="w-full px-4 py-2.5 bg-white/60 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-brand-gold/50 outline-none cursor-pointer">
+              <option value="All">All Customers</option>
+              {customers.map(c => <option key={c._id} value={c._id}>{c.customerName}</option>)}
+            </select>
+          </div>
+        )}
+
         <div className="flex-1 min-w-[140px]">
           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block ml-1 flex items-center gap-1.5"><Filter size={10} className="text-brand-gold"/> Status</label>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full px-4 py-2.5 bg-white/60 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-brand-gold/50 outline-none cursor-pointer">
@@ -384,7 +417,6 @@ export default function DivisionsPage() {
                     </td>
                     
                     <td className="p-5 text-right">
-                      {/* e.stopPropagation() prevents the row click from firing when interacting with these buttons */}
                       <div className="flex items-center justify-end gap-2">
                         <button onClick={(e) => { e.stopPropagation(); handleToggleStatus(div); }} className={`p-2 rounded-xl transition-all border ${div.status === 'Active' ? 'text-slate-500 bg-white border-slate-200 hover:text-slate-900 hover:border-slate-300 shadow-sm' : 'text-slate-400 bg-slate-50 border-slate-200 hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50'}`} title={div.status === 'Active' ? "Deactivate" : "Activate"}>
                           {div.status === 'Active' ? <ToggleRight size={16} className="text-emerald-500" /> : <ToggleLeft size={16} />}
@@ -413,23 +445,37 @@ export default function DivisionsPage() {
         </div>
       </div>
 
-      {/* --- Overlay Modal for Add/Edit Form --- */}
       <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => !isSubmitting && setIsModalOpen(false)} />
-            <motion.div initial={{ scale: 0.95, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 20 }} className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto custom-scrollbar bg-white/80 backdrop-blur-2xl border border-white rounded-[2.5rem] shadow-2xl">
-              <AddDivisionForm 
-                newDivision={formData} 
-                setNewDivision={setFormData} 
-                onSubmit={handleFormSubmit} 
-                staffList={orderPortalStaff} 
-                customersList={customers}
-                isSubmitting={isSubmitting}
-                onCancel={() => setIsModalOpen(false)}
-              />
+        {isModalOpen && typeof document !== 'undefined' && createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 h-[100dvh] w-screen overflow-hidden">
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }} 
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
+              onClick={() => !isSubmitting && setIsModalOpen(false)} 
+            />
+            
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0, y: 20 }} 
+              animate={{ scale: 1, opacity: 1, y: 0 }} 
+              exit={{ scale: 0.95, opacity: 0, y: 20 }} 
+              className="relative w-full max-w-5xl max-h-[90dvh] flex flex-col bg-white/95 backdrop-blur-2xl border border-white rounded-[2.5rem] shadow-2xl overflow-hidden"
+            >
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8">
+                <AddDivisionForm 
+                  newDivision={formData} 
+                  setNewDivision={setFormData} 
+                  onSubmit={handleFormSubmit} 
+                  staffList={orderPortalStaff} 
+                  customersList={customers}
+                  isSubmitting={isSubmitting}
+                  onCancel={() => setIsModalOpen(false)}
+                />
+              </div>
             </motion.div>
-          </div>
+          </div>,
+          document.body
         )}
       </AnimatePresence>
 

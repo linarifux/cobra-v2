@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import api from '../../utils/api'; // Adjust the import path based on your folder structure
+import api from '../../utils/api'; 
 
 // 1. Fetch All Customers
 export const fetchCustomers = createAsyncThunk(
@@ -124,7 +124,6 @@ const customerSlice = createSlice({
   initialState: {
     items: [],
     currentCustomer: null,
-    // Store relational data specifically for the currently viewed customer
     customerCarriers: [],
     customerInventory: [],
     customerUsers: [],
@@ -132,11 +131,14 @@ const customerSlice = createSlice({
     error: null
   },
   reducers: {
+    // CRITICAL FIX: Ensure the entire slice state resets so pages force a fresh data sync
     clearCurrentCustomer: (state) => {
       state.currentCustomer = null;
       state.customerCarriers = [];
       state.customerInventory = [];
       state.customerUsers = [];
+      state.status = 'idle'; 
+      state.error = null;
     }
   },
   extraReducers: (builder) => {
