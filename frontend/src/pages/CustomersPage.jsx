@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { createPortal } from 'react-dom'; // CRITICAL FIX
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { 
@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import PageHeader from '../components/PageHeader';
 import { useConfirm } from '../providers/ConfirmProvider';
 import { fetchCustomers, createCustomer, updateCustomer, deleteCustomer } from '../store/slices/customerSlice';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 
 const INITIAL_FORM_STATE = {
   customerName: '',
@@ -332,118 +332,120 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {/* CRITICAL FIX: Add/Edit Customer Modal correctly Portal'd to prevent clipping/trapping bugs */}
-      <AnimatePresence>
-        {isModalOpen && typeof document !== 'undefined' && createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 h-[100dvh] w-screen overflow-hidden">
-            <motion.div 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }} 
-              exit={{ opacity: 0 }} 
-              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
-              onClick={() => !isSubmitting && setIsModalOpen(false)} 
-            />
-            
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }} 
-              animate={{ opacity: 1, scale: 1, y: 0 }} 
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              transition={{ type: 'spring', bounce: 0.3, duration: 0.5 }}
-              className="relative w-full max-w-2xl bg-white rounded-[2rem] shadow-2xl overflow-hidden flex flex-col border border-slate-200 max-h-[90dvh]"
-            >
-              <div className="flex justify-between items-center px-6 py-5 border-b border-slate-100 bg-slate-50/80 shrink-0">
-                <div>
-                  <h2 className="text-xl font-black text-slate-900 tracking-tight">
-                    {isEditMode ? 'Edit Customer Profile' : 'Register New Customer'}
-                  </h2>
-                  <p className="text-xs font-medium text-slate-500 mt-1">
-                    {isEditMode ? 'Update the details for this partner.' : 'Add a new partner to your fulfillment network.'}
-                  </p>
-                </div>
-                <button 
-                  onClick={() => !isSubmitting && setIsModalOpen(false)} 
-                  className="p-2 bg-white border border-slate-200 text-slate-400 hover:text-slate-600 rounded-full transition-colors shadow-sm"
-                >
-                  <X size={18} />
-                </button>
-              </div>
+      {/* CRITICAL FIX: AnimatePresence wraps the conditionally rendered contents INSIDE the Portal root */}
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {isModalOpen && (
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 h-[100dvh] w-screen overflow-hidden">
+              <motion.div 
+                initial={{ opacity: 0 }} 
+                animate={{ opacity: 1 }} 
+                exit={{ opacity: 0 }} 
+                className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
+                onClick={() => !isSubmitting && setIsModalOpen(false)} 
+              />
               
-              <form onSubmit={handleFormSubmit} className="p-6 space-y-4 flex-1 overflow-y-auto custom-scrollbar">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="md:col-span-2">
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Customer / Company Name <span className="text-red-500">*</span></label>
-                    <input required type="text" value={formData.customerName} onChange={(e) => setFormData({...formData, customerName: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="e.g. Global Feeds Corp" disabled={isSubmitting} />
-                  </div>
-
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95, y: 20 }} 
+                animate={{ opacity: 1, scale: 1, y: 0 }} 
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                transition={{ type: 'spring', bounce: 0.3, duration: 0.5 }}
+                className="relative w-full max-w-2xl bg-white rounded-[2rem] shadow-2xl overflow-hidden flex flex-col border border-slate-200 max-h-[90dvh]"
+              >
+                <div className="flex justify-between items-center px-6 py-5 border-b border-slate-100 bg-slate-50/80 shrink-0">
                   <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Primary Contact Name</label>
-                    <input type="text" value={formData.contactName} onChange={(e) => setFormData({...formData, contactName: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="John Doe" disabled={isSubmitting} />
+                    <h2 className="text-xl font-black text-slate-900 tracking-tight">
+                      {isEditMode ? 'Edit Customer Profile' : 'Register New Customer'}
+                    </h2>
+                    <p className="text-xs font-medium text-slate-500 mt-1">
+                      {isEditMode ? 'Update the details for this partner.' : 'Add a new partner to your fulfillment network.'}
+                    </p>
                   </div>
-                  
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Contact Email</label>
-                    <input type="email" value={formData.contactEmail} onChange={(e) => setFormData({...formData, contactEmail: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="john@company.com" disabled={isSubmitting} />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Phone Number</label>
-                    <input type="text" value={formData.contactNumber} onChange={(e) => setFormData({...formData, contactNumber: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="(555) 123-4567" disabled={isSubmitting} />
-                  </div>
-
-                  <div className="md:col-span-2 border-t border-slate-100 pt-4 mt-2">
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-900 mb-3 block">Corporate Address</label>
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Address Line 1</label>
-                    <input type="text" value={formData.addressLine1} onChange={(e) => setFormData({...formData, addressLine1: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="123 Logistics Way" disabled={isSubmitting} />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Address Line 2 (Optional)</label>
-                    <input type="text" value={formData.addressLine2} onChange={(e) => setFormData({...formData, addressLine2: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="Suite 400" disabled={isSubmitting} />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">City</label>
-                    <input type="text" value={formData.city} onChange={(e) => setFormData({...formData, city: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="Chicago" disabled={isSubmitting} />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">State / Prov</label>
-                      <input type="text" value={formData.state} onChange={(e) => setFormData({...formData, state: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="IL" disabled={isSubmitting} />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">ZIP / Postal</label>
-                      <input type="text" value={formData.zip} onChange={(e) => setFormData({...formData, zip: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="60601" disabled={isSubmitting} />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-6 pb-2 flex gap-3 shrink-0">
                   <button 
-                    type="button" 
-                    onClick={() => setIsModalOpen(false)}
-                    disabled={isSubmitting}
-                    className="flex-1 px-4 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50"
+                    onClick={() => !isSubmitting && setIsModalOpen(false)} 
+                    className="p-2 bg-white border border-slate-200 text-slate-400 hover:text-slate-600 rounded-full transition-colors shadow-sm"
                   >
-                    Cancel
-                  </button>
-                  <button 
-                    type="submit" 
-                    disabled={isSubmitting || !formData.customerName.trim()}
-                    className="flex-[2] flex justify-center items-center gap-2 px-4 py-3.5 bg-slate-900 hover:bg-slate-800 text-brand-gold rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-slate-900/20 transition-all disabled:opacity-70 active:scale-95"
-                  >
-                    {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : (isEditMode ? 'Save Updates' : 'Register Customer Node')}
+                    <X size={18} />
                   </button>
                 </div>
-              </form>
-            </motion.div>
-          </div>,
-          document.body
-        )}
-      </AnimatePresence>
+                
+                <form onSubmit={handleFormSubmit} className="p-6 space-y-4 flex-1 overflow-y-auto custom-scrollbar">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Customer / Company Name <span className="text-red-500">*</span></label>
+                      <input required type="text" value={formData.customerName} onChange={(e) => setFormData({...formData, customerName: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="e.g. Global Feeds Corp" disabled={isSubmitting} />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Primary Contact Name</label>
+                      <input type="text" value={formData.contactName} onChange={(e) => setFormData({...formData, contactName: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="John Doe" disabled={isSubmitting} />
+                    </div>
+                    
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Contact Email</label>
+                      <input type="email" value={formData.contactEmail} onChange={(e) => setFormData({...formData, contactEmail: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="john@company.com" disabled={isSubmitting} />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Phone Number</label>
+                      <input type="text" value={formData.contactNumber} onChange={(e) => setFormData({...formData, contactNumber: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="(555) 123-4567" disabled={isSubmitting} />
+                    </div>
+
+                    <div className="md:col-span-2 border-t border-slate-100 pt-4 mt-2">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-900 mb-3 block">Corporate Address</label>
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Address Line 1</label>
+                      <input type="text" value={formData.addressLine1} onChange={(e) => setFormData({...formData, addressLine1: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="123 Logistics Way" disabled={isSubmitting} />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">Address Line 2 (Optional)</label>
+                      <input type="text" value={formData.addressLine2} onChange={(e) => setFormData({...formData, addressLine2: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="Suite 400" disabled={isSubmitting} />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">City</label>
+                      <input type="text" value={formData.city} onChange={(e) => setFormData({...formData, city: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="Chicago" disabled={isSubmitting} />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">State / Prov</label>
+                        <input type="text" value={formData.state} onChange={(e) => setFormData({...formData, state: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="IL" disabled={isSubmitting} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 block">ZIP / Postal</label>
+                        <input type="text" value={formData.zip} onChange={(e) => setFormData({...formData, zip: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-sm font-semibold outline-none focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/10 transition-all placeholder:text-slate-400" placeholder="60601" disabled={isSubmitting} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-6 pb-2 flex gap-3 shrink-0">
+                    <button 
+                      type="button" 
+                      onClick={() => setIsModalOpen(false)}
+                      disabled={isSubmitting}
+                      className="flex-1 px-4 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      type="submit" 
+                      disabled={isSubmitting || !formData.customerName.trim()}
+                      className="flex-[2] flex justify-center items-center gap-2 px-4 py-3.5 bg-slate-900 hover:bg-slate-800 text-brand-gold rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-slate-900/20 transition-all disabled:opacity-70 active:scale-95"
+                    >
+                      {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : (isEditMode ? 'Save Updates' : 'Register Customer Node')}
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
       
     </div>
   );

@@ -4,7 +4,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { 
   Layers, Plus, Search, Filter, Edit2, Trash2, 
-  ToggleLeft, ToggleRight, Loader2, AlertTriangle, RefreshCw, MapPin, User, ArrowLeft 
+  ToggleLeft, ToggleRight, Loader2, AlertTriangle, 
+  RefreshCw, MapPin, User, ArrowLeft, Building, Mail, Phone 
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -65,6 +66,22 @@ export default function DivisionsPage() {
 
   // Filter Order Portal Staff for Managers
   const orderPortalStaff = useMemo(() => users.filter(user => user.portal === 'order'), [users]);
+
+  // Derive the active customer if we are looking at a scoped directory
+  const activeCustomer = useMemo(() => {
+    if (!customerId || customers.length === 0) return null;
+    return customers.find(c => String(c._id) === String(customerId));
+  }, [customerId, customers]);
+
+  // Utility to format address cleanly for the Customer Header
+  const formatAddress = (address) => {
+    if (!address || (!address.line1 && !address.city)) return 'No location provided';
+    const street = address.line2 ? `${address.line1 || ''}, ${address.line2}` : (address.line1 || '');
+    return `${street}, ${address.city || ''}, ${address.state || ''} ${address.zip || ''}`
+      .replace(/^,\s*/, '')
+      .replace(/,\s*$/, '')
+      .trim();
+  };
 
   // --- UI & Filter State ---
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -285,19 +302,70 @@ export default function DivisionsPage() {
       {/* --- Top Navigation Header --- */}
       <div className="flex items-center justify-between pb-1">
         <button 
-          onClick={() => navigate(-1)}
+          onClick={() => navigate(customerId ? '/customers' : -1)}
           className="flex items-center gap-2 px-3 py-1.5 text-slate-500 hover:text-slate-900 transition-colors duration-200 shrink-0 rounded-xl hover:bg-slate-100"
         >
-          <ArrowLeft size={16} /> <span className="text-[11px] font-black uppercase tracking-widest">Back</span>
+          <ArrowLeft size={16} /> 
+          <span className="text-[11px] font-black uppercase tracking-widest">
+            {customerId ? 'Back to Customers' : 'Back'}
+          </span>
         </button>
       </div>
+
+      {/* NEW: Customer Details Header Panel (Only shown if filtering by specific customer) */}
+      {activeCustomer && (
+        <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-[2rem] shadow-sm flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 transition-all duration-300">
+           <div className="flex items-start gap-4">
+             <div className="w-14 h-14 bg-gradient-to-br from-slate-800 to-slate-900 text-brand-gold rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-slate-900/20">
+               <Building size={24} strokeWidth={2}/>
+             </div>
+             <div>
+               <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Customer Profile</h3>
+               <p className="font-black text-2xl tracking-tight text-slate-900 truncate max-w-md">
+                 {activeCustomer.customerName}
+               </p>
+               <span className={`inline-flex items-center text-[9px] font-black px-2.5 py-1 rounded-md mt-2 border uppercase tracking-widest shadow-sm ${
+                 (activeCustomer.status || 'Active') === 'Active' 
+                   ? 'bg-emerald-50 text-emerald-600 border-emerald-200' 
+                   : 'bg-slate-100 text-slate-500 border-slate-200'
+               }`}>
+                 {activeCustomer.status || 'Active'} Partner
+               </span>
+             </div>
+           </div>
+           
+           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full xl:w-auto xl:min-w-[500px]">
+             <div className="flex items-center gap-3 bg-white/60 p-3.5 rounded-xl border border-white/80 shadow-sm">
+               <User size={16} className="text-brand-gold shrink-0"/> 
+               <div className="min-w-0">
+                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Primary Contact</p>
+                 <p className="truncate font-bold text-xs text-slate-700">{activeCustomer.contactName || 'No contact specified'}</p>
+               </div>
+             </div>
+             <div className="flex items-center gap-3 bg-white/60 p-3.5 rounded-xl border border-white/80 shadow-sm">
+               <Mail size={16} className="text-brand-gold shrink-0"/> 
+               <div className="min-w-0">
+                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Contact Email</p>
+                 <p className="truncate font-bold text-xs text-slate-700">{activeCustomer.contactEmail || 'No email provided'}</p>
+               </div>
+             </div>
+             <div className="flex items-center gap-3 bg-white/60 p-3.5 rounded-xl border border-white/80 shadow-sm">
+               <Phone size={16} className="text-brand-gold shrink-0"/> 
+               <div className="min-w-0">
+                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Phone</p>
+                 <p className="truncate font-bold text-xs text-slate-700">{activeCustomer.contactNumber || 'No phone provided'}</p>
+               </div>
+             </div>
+           </div>
+        </div>
+      )}
 
       {/* 1. Main Title Block */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-900 rounded-[2rem] p-6 md:p-8 shadow-2xl border border-slate-800/60 overflow-hidden relative">
         <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-brand-gold/10 to-transparent pointer-events-none" />
         <div className="relative z-10">
           <h1 className="text-3xl font-black text-white tracking-tight flex items-center gap-3">
-            <Layers className="text-brand-gold" size={32} /> Division Directory
+            <Layers className="text-brand-gold" size={32} /> {activeCustomer ? 'Customer Divisions' : 'Global Directory'}
           </h1>
           <p className="text-slate-400 font-medium text-sm mt-1">Manage corporate boundaries, branch logistics, and segment access.</p>
         </div>
@@ -417,6 +485,7 @@ export default function DivisionsPage() {
                     </td>
                     
                     <td className="p-5 text-right">
+                      {/* e.stopPropagation() prevents the row click from firing when interacting with these buttons */}
                       <div className="flex items-center justify-end gap-2">
                         <button onClick={(e) => { e.stopPropagation(); handleToggleStatus(div); }} className={`p-2 rounded-xl transition-all border ${div.status === 'Active' ? 'text-slate-500 bg-white border-slate-200 hover:text-slate-900 hover:border-slate-300 shadow-sm' : 'text-slate-400 bg-slate-50 border-slate-200 hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50'}`} title={div.status === 'Active' ? "Deactivate" : "Activate"}>
                           {div.status === 'Active' ? <ToggleRight size={16} className="text-emerald-500" /> : <ToggleLeft size={16} />}
@@ -445,6 +514,7 @@ export default function DivisionsPage() {
         </div>
       </div>
 
+      {/* --- Overlay Modal for Add/Edit Form (Wrapped in Portal) --- */}
       <AnimatePresence>
         {isModalOpen && typeof document !== 'undefined' && createPortal(
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 h-[100dvh] w-screen overflow-hidden">
