@@ -125,13 +125,6 @@ export default function DivisionsPage() {
     }).sort((a, b) => a.divisionName.localeCompare(b.divisionName));
   }, [divisions, searchTerm, customerFilter, statusFilter, customerId]);
 
-  // --- Auto-Redirect UX ---
-  useEffect(() => {
-    if (!isGlobalLoading && divStatus === 'succeeded' && filteredDivisions.length === 1 && customerId) {
-      navigate(`/divisions/${filteredDivisions[0]._id}`, { replace: true });
-    }
-  }, [divStatus, filteredDivisions, navigate, customerId, isGlobalLoading]);
-
   // --- Handlers ---
   const openNewModal = () => {
     setSelectedDivision(null);
@@ -264,16 +257,6 @@ export default function DivisionsPage() {
       <div className="h-full flex flex-col justify-center items-center min-h-[60vh] gap-4">
         <Loader2 className="animate-spin text-brand-gold" size={36} />
         <p className="text-sm font-black text-slate-700 uppercase tracking-widest">Compiling Directory...</p>
-      </div>
-    );
-  }
-
-  // Hide the page entirely if we are currently redirecting through the 1-division shortcut
-  if (divStatus === 'succeeded' && filteredDivisions.length === 1 && customerId) {
-    return (
-      <div className="h-full flex flex-col justify-center items-center min-h-[60vh] gap-4">
-        <Loader2 className="animate-spin text-brand-gold" size={36} />
-        <p className="text-sm font-black text-slate-700 uppercase tracking-widest">Routing to Division...</p>
       </div>
     );
   }
