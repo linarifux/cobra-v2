@@ -515,39 +515,42 @@ export default function DivisionsPage() {
       </div>
 
       {/* --- Overlay Modal for Add/Edit Form (Wrapped in Portal) --- */}
-      <AnimatePresence>
-        {isModalOpen && typeof document !== 'undefined' && createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 h-[100dvh] w-screen overflow-hidden">
-            <motion.div 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }} 
-              exit={{ opacity: 0 }} 
-              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
-              onClick={() => !isSubmitting && setIsModalOpen(false)} 
-            />
-            
-            <motion.div 
-              initial={{ scale: 0.95, opacity: 0, y: 20 }} 
-              animate={{ scale: 1, opacity: 1, y: 0 }} 
-              exit={{ scale: 0.95, opacity: 0, y: 20 }} 
-              className="relative w-full max-w-5xl max-h-[90dvh] flex flex-col bg-white/95 backdrop-blur-2xl border border-white rounded-[2.5rem] shadow-2xl overflow-hidden"
-            >
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8">
-                <AddDivisionForm 
-                  newDivision={formData} 
-                  setNewDivision={setFormData} 
-                  onSubmit={handleFormSubmit} 
-                  staffList={orderPortalStaff} 
-                  customersList={customers}
-                  isSubmitting={isSubmitting}
-                  onCancel={() => setIsModalOpen(false)}
-                />
-              </div>
-            </motion.div>
-          </div>,
-          document.body
-        )}
-      </AnimatePresence>
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {isModalOpen && (
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 h-[100dvh] w-screen overflow-hidden">
+              <motion.div 
+                initial={{ opacity: 0 }} 
+                animate={{ opacity: 1 }} 
+                exit={{ opacity: 0 }} 
+                className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
+                onClick={() => !isSubmitting && setIsModalOpen(false)} 
+              />
+              
+              <motion.div 
+                initial={{ scale: 0.95, opacity: 0, y: 20 }} 
+                animate={{ scale: 1, opacity: 1, y: 0 }} 
+                exit={{ scale: 0.95, opacity: 0, y: 20 }} 
+                transition={{ type: 'spring', bounce: 0.3, duration: 0.5 }}
+                className="relative w-full max-w-5xl max-h-[90dvh] flex flex-col bg-white/95 backdrop-blur-2xl border border-white rounded-[2.5rem] shadow-2xl overflow-hidden"
+              >
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8">
+                  <AddDivisionForm 
+                    newDivision={formData} 
+                    setNewDivision={setFormData} 
+                    onSubmit={handleFormSubmit} 
+                    staffList={orderPortalStaff} 
+                    customersList={customers}
+                    isSubmitting={isSubmitting}
+                    onCancel={() => setIsModalOpen(false)}
+                  />
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
 
     </div>
   );
