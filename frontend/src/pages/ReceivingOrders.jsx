@@ -103,24 +103,35 @@ export default function ReceivingOrders() {
     if (!Array.isArray(receivingData)) return [];
     return receivingData.filter(row => {
       const searchTarget = searchTerm.toLowerCase();
+      
+      // FIX: Force all search targets to be strings so we don't crash when .toLowerCase() is called on objects
       const matchesSearch = [
-        row.vendor, row.carrier, row.customer?.customerName, 
-        row.inventoryItem?.itemName, row.inventoryItem?.sku, 
-        row.inventoryItem?.productCode, row.receivingId
-      ].some(val => val?.toLowerCase().includes(searchTarget));
+        row.vendor?.vendorName || row.fallbackVendor, 
+        row.carrier?.carrierName || row.fallbackCarrier, 
+        row.customer?.customerName, 
+        row.inventoryItem?.itemName, 
+        row.inventoryItem?.sku, 
+        row.inventoryItem?.productCode, 
+        row.receivingId
+      ].some(val => String(val || '').toLowerCase().includes(searchTarget));
 
-      const rowDate = new Date(row.dateReceived).toISOString().split('T')[0];
-      const matchesFrom = !fromDate || rowDate >= fromDate;
-      const matchesTo = !toDate || rowDate <= toDate;
+      let matchesFrom = true;
+      let matchesTo = true;
+      
+      if (row.dateReceived) {
+          const rowDate = new Date(row.dateReceived).toISOString().split('T')[0];
+          matchesFrom = !fromDate || rowDate >= fromDate;
+          matchesTo = !toDate || rowDate <= toDate;
+      }
       
       // Relational Matches
       const rowCustId = row.customer?._id || row.customer;
-      const rowDivId = row?.inventoryItem?.division?._id;
+      const rowDivId = row?.inventoryItem?.division?._id || row?.inventoryItem?.division;
       const rowInvId = row.inventoryItem?._id || row.inventoryItem;
 
-      const matchesCustomer = customerFilter === 'All' || rowCustId === customerFilter;
-      const matchesDivision = divisionFilter === 'All' || rowDivId === divisionFilter;
-      const matchesItem = itemFilter === 'All' || rowInvId === itemFilter;
+      const matchesCustomer = customerFilter === 'All' || String(rowCustId) === String(customerFilter);
+      const matchesDivision = divisionFilter === 'All' || String(rowDivId) === String(divisionFilter);
+      const matchesItem = itemFilter === 'All' || String(rowInvId) === String(itemFilter);
 
       return matchesSearch && matchesFrom && matchesTo && matchesCustomer && matchesDivision && matchesItem;
     });
@@ -139,7 +150,12 @@ export default function ReceivingOrders() {
   const exportToCSV = () => {
     const headers = ['Date', 'Receiving ID', 'Vendor', 'Customer', 'Item', 'Qty'];
     const csv = [headers.join(','), ...filteredData.map(r => [
-      new Date(r.dateReceived).toLocaleDateString(), r.receivingId, `"${r.vendor}"`, `"${r.customer?.customerName}"`, `"${r.inventoryItem?.itemName}"`, r.quantity
+      new Date(r.dateReceived).toLocaleDateString(), 
+      r.receivingId, 
+      `"${r.vendor?.vendorName || r.fallbackVendor || ''}"`, 
+      `"${r.customer?.customerName || ''}"`, 
+      `"${r.inventoryItem?.itemName || ''}"`, 
+      r.quantity
     ].join(','))].join('\n');
     
     const url = window.URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));

@@ -13,6 +13,37 @@ import {
 import { fetchReceivingById, clearCurrentReceivingLog, sendReceivingEmail } from '../store/slices/receivingSlice';
 import { fetchUsers } from '../store/slices/userSlice'; 
 
+const generateLocalId = () => `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+const downloadBase64PDF = (base64Data, filename) => {
+  try {
+    let cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
+    while (cleanBase64.length % 4 > 0) cleanBase64 += '=';
+    
+    const byteCharacters = atob(cleanBase64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    
+    const blob = new Blob([byteArray], { type: 'application/pdf' });
+    const url = window.URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    
+    document.body.removeChild(link);
+    setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+  } catch (error) {
+    console.error("Failed to decode Base64 PDF:", error);
+    throw new Error("Invalid PDF data format.");
+  }
+};
+
 export default function ReceivingOrderDetail() {
   const { id } = useParams();
   const dispatch = useDispatch();
@@ -99,30 +130,16 @@ export default function ReceivingOrderDetail() {
   // --- DYNAMIC PORTAL USERS ---
   const portalUsers = useMemo(() => {
     const options = [];
-    
     if (!currentLog?.customer) return options;
 
     const currentCustomerId = currentLog.customer._id || currentLog.customer;
 
-    // // 1. Always ensure the primary company contact email is an option first
-    // if (currentLog.customer.contactEmail) {
-    //   options.push({
-    //     id: 'primary',
-    //     name: currentLog.customer.customerName || 'Primary Contact',
-    //     email: currentLog.customer.contactEmail,
-    //     role: 'Primary File'
-    //   });
-    // }
-
-    // 2. Find all order portal users that specifically belong to this customer
     if (allUsers && allUsers.length > 0) {
       const associatedUsers = allUsers.filter(user => {
         const userCustomerId = user.customer?._id || user.customer;
-        // Strictly target order portal users for this customer
         return user.portal === 'order' && userCustomerId === currentCustomerId;
       });
 
-      // 3. Append them to options, preventing duplicates if the email is the same as the primary
       associatedUsers.forEach(user => {
         if (!options.find(opt => opt.email === user.email)) {
           options.push({
@@ -134,7 +151,6 @@ export default function ReceivingOrderDetail() {
         }
       });
     }
-
     return options;
   }, [currentLog, allUsers]);
 
@@ -155,7 +171,6 @@ export default function ReceivingOrderDetail() {
   const openShareModal = () => {
     setStep(1);
     setGeneratedPdfBlob(null);
-    // Safely default to the first email if available to prevent crashes
     setSelectedEmail(portalUsers.length > 0 ? portalUsers[0].email : ''); 
     setIsModalOpen(true);
   };
@@ -231,6 +246,10 @@ export default function ReceivingOrderDetail() {
   }
 
   const primaryItem = enrichedItems[0] || {};
+  
+  // CRITICAL FIX: Safe extraction of relational fields for React components
+  const safeVendorName = currentLog.vendor?.vendorName || currentLog.fallbackVendor || '';
+  const safeCarrierName = currentLog.carrier?.carrierName || currentLog.fallbackCarrier || '';
 
   return (
     <>
@@ -288,8 +307,8 @@ export default function ReceivingOrderDetail() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           {[
             { label: 'Customer', val: currentLog.customer?.customerName || '—', icon: FileText },
-            { label: 'Carrier', val: currentLog.carrier || '—', icon: Truck },
-            { label: 'Vendor', val: currentLog.vendor || '—', icon: UserCircle },
+            { label: 'Carrier', val: safeCarrierName || '—', icon: Truck },
+            { label: 'Vendor', val: safeVendorName || '—', icon: UserCircle },
             { label: 'Total Weight', val: `${calculatedTotalWeight} lbs`, icon: Weight }, 
             { label: 'Skids Rcvd', val: `${currentLog.skids || 0} Skids`, icon: Package },
           ].map((stat, i) => (
@@ -598,9 +617,9 @@ export default function ReceivingOrderDetail() {
             </h1>
             
             {/* Vendor strictly on Admin print */}
-            {printMode === 'admin' && currentLog?.vendor && (
+            {printMode === 'admin' && safeVendorName && (
               <div style={{ position: 'absolute', right: '0', top: '0', fontSize: '10pt', fontWeight: 'bold', textTransform: 'uppercase' }}>
-                {currentLog.vendor}
+                {safeVendorName}
               </div>
             )}
           </div>
@@ -665,7 +684,7 @@ export default function ReceivingOrderDetail() {
                 <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px', borderTop: '1px solid #d1d5db', paddingTop: '16px' }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start' }}>
                     <span style={{ width: '130px', fontWeight: 'bold', flexShrink: 0 }}>Vendor Name:</span>
-                    <span style={{ flex: 1, textTransform: 'uppercase' }}>{currentLog?.vendor || ''}</span>
+                    <span style={{ flex: 1, textTransform: 'uppercase' }}>{safeVendorName}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'flex-start' }}>
                     <span style={{ width: '130px', fontWeight: 'bold', flexShrink: 0 }}>Address:</span>
@@ -705,7 +724,7 @@ export default function ReceivingOrderDetail() {
 
               <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: '8px' }}>
                 <span style={{ width: '140px', fontWeight: 'bold', flexShrink: 0 }}>Carrier:</span>
-                <span style={{ flex: 1, textTransform: 'uppercase' }}>{currentLog?.carrier || ''}</span>
+                <span style={{ flex: 1, textTransform: 'uppercase' }}>{safeCarrierName}</span>
               </div>
 
               {/* ADMIN ONLY RIGHT COLUMN */}

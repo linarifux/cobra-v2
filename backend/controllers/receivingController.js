@@ -54,6 +54,8 @@ export const createReceiving = catchAsync(async (req, res, next) => {
   // frontend can immediately display the names without a hard refresh.
   receiving = await receiving.populate([
     { path: 'customer', select: 'customerName' },
+    { path: 'vendor' }, // <-- Added Vendor
+    { path: 'carrier' }, // <-- Added Carrier
     { 
       path: 'inventoryItem', 
       select: 'itemName description sku productCode division category1 category2 category3 typePiece',
@@ -79,6 +81,8 @@ export const getAllReceiving = catchAsync(async (req, res, next) => {
   const receivingRecords = await Receiving.find()
     .sort({ dateReceived: -1 })
     .populate('customer', 'customerName contactEmail')
+    .populate('vendor')
+    .populate('carrier')
     .populate({
       path: 'inventoryItem',
       select: 'itemName description sku productCode unitCost price division category1 category2 category3 typePiece',
@@ -91,6 +95,7 @@ export const getAllReceiving = catchAsync(async (req, res, next) => {
     })
     .populate('locations', 'designation storageCategory');
 
+    console.log(receivingRecords)
   res.status(200).json({
     status: 'success',
     results: receivingRecords.length,
@@ -103,6 +108,8 @@ export const getAllReceiving = catchAsync(async (req, res, next) => {
 export const getReceivingById = catchAsync(async (req, res, next) => {
   const receiving = await Receiving.findById(req.params.id)
     .populate('customer', 'customerName contactEmail')
+    .populate('vendor') // <-- Added Vendor
+    .populate('carrier') // <-- Added Carrier
     .populate({
       path: 'inventoryItem',
       select: 'itemName description sku productCode unitCost price division category1 category2 category3 typePiece',
@@ -194,6 +201,8 @@ export const updateReceiving = catchAsync(async (req, res, next) => {
   // 4. Repopulate before sending the response
   receiving = await receiving.populate([
     { path: 'customer', select: 'customerName' },
+    { path: 'vendor' }, // <-- Added Vendor
+    { path: 'carrier' }, // <-- Added Carrier
     { 
       path: 'inventoryItem', 
       select: 'itemName description sku productCode division category1 category2 category3 typePiece',
