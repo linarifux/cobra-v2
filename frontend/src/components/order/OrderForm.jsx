@@ -135,16 +135,39 @@ export default function OrderForm() {
     }
   }, [divisionId, dispatch]);
 
+  // CRITICAL FIX: Contextually filter inventory strictly by Division (and fallback to Customer if no division is selected)
   const availableInventories = useMemo(() => {
-    return inventoryData.map(inv => ({
-      id: inv._id,
-      name: inv.itemName || 'Unnamed Item',
-      sku: inv.sku || '',
-      price: inv.unitCost || inv.price || 0,
-      weight: inv.weight || 0,
-      max: inv.max || 0 // Included to evaluate quantity limit exceedances 
-    })).sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' })); 
-  }, [inventoryData]);
+    if (!inventoryData?.length) return [];
+
+    return inventoryData
+      .filter(inv => {
+        let isMatch = true;
+
+        if (customerId) {
+          const invCustId = String(inv.customer?._id || inv.customer || '');
+          isMatch = isMatch && (invCustId === String(customerId));
+        }
+
+        if (divisionId) {
+          const invDivId = String(inv.division?._id || inv.division || '');
+          isMatch = isMatch && (invDivId === String(divisionId));
+        }
+
+        // If neither is selected, return nothing to prevent cross-contamination
+        if (!customerId && !divisionId) return false;
+
+        return isMatch;
+      })
+      .map(inv => ({
+        id: inv._id,
+        name: inv.itemName || 'Unnamed Item',
+        sku: inv.sku || '',
+        price: inv.unitCost || inv.price || 0,
+        weight: inv.weight || 0,
+        max: inv.max || 0 // Included to evaluate quantity limit exceedances 
+      }))
+      .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' })); 
+  }, [inventoryData, customerId, divisionId]);
 
   const filteredInventories = useMemo(() => {
     return availableInventories.filter(inv =>
@@ -254,7 +277,7 @@ export default function OrderForm() {
       setNotes(currentOrder.notes || '');
 
       const mappedItems = currentOrder.items?.map((i) => {
-        const matchedStock = availableInventories.find(inv => inv.sku === i.sku);
+        const matchedStock = inventoryData.find(inv => inv.sku === i.sku);
         return {
           id: generateLocalId(),
           name: i.name,
@@ -267,7 +290,7 @@ export default function OrderForm() {
 
       setItems(mappedItems);
     }
-  }, [currentOrder, availableInventories, isEditMode]);
+  }, [currentOrder, inventoryData, isEditMode]);
 
   // --- Handlers ---
   const handleCustomerChange = (e) => {
