@@ -41,17 +41,7 @@ const userSchema = new mongoose.Schema({
   divisions: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Division',
-    validate: [
-      function(val) {
-        // Handle Mongoose update context vs document context
-        const portalValue = this.get ? this.get('portal') : this._update?.portal || this.portal;
-        
-        // Temporarily bypassed for flexible creation workflows, but strict logic left intact:
-        // if (portalValue === 'order') return val && val.length > 0;
-        return true;
-      },
-      'Order portal users must have at least one division assigned'
-    ]
+    required: false
   }],
   // NEW: Optional charge code for order portal users
   chargeCode: {

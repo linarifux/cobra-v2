@@ -211,7 +211,6 @@ export default function UserModal({
                     </div>
                     <div className="relative">
                       <Briefcase size={16} className="absolute left-4 top-3.5 text-slate-400" />
-                      {/* FIX: Ensure `value` uses `|| ''` to prevent uncontrolled to controlled React warnings */}
                       <input 
                         type="text" 
                         value={formData.chargeCode || ''} 
@@ -227,8 +226,9 @@ export default function UserModal({
                 {formData.customer && (
                   <div className="space-y-3 pt-2 animate-in fade-in duration-300">
                     <div className="flex justify-between items-center bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200">
+                      {/* FIX: Removed the red * asterisk since divisions are optional in the DB */}
                       <label className="text-[10px] font-black uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
-                        <MapPin size={14} className="text-slate-400"/> Allowed Divisions <span className="text-red-500">*</span>
+                        <MapPin size={14} className="text-slate-400"/> Allowed Divisions
                       </label>
                       <span className="text-[10px] font-black text-blue-600 bg-blue-100 px-2.5 py-1 rounded-lg border border-blue-200 shadow-sm">
                         {formData.divisions.length} Selected
@@ -258,10 +258,12 @@ export default function UserModal({
                         ))}
                       </div>
                     ) : (
-                      <div className="p-5 rounded-2xl border-2 border-dashed border-red-200 bg-red-50/50 text-center text-xs font-bold text-red-600 flex flex-col items-center gap-2">
-                        <MapPin size={20} className="opacity-50" />
+                      <div className="p-5 rounded-2xl border-2 border-dashed border-amber-200 bg-amber-50/50 text-center text-xs font-bold text-amber-600 flex flex-col items-center gap-2">
+                        <MapPin size={20} className="opacity-50 text-amber-500" />
                         <p>No divisions exist for this customer yet.</p>
-                        <p className="text-[10px] font-medium text-red-500 mt-1">Divisions must be created in the directory before assigning users.</p>
+                        <p className="text-[10px] font-medium text-amber-600 mt-1">
+                          You can provision this user now and assign divisions later.
+                        </p>
                       </div>
                     )}
                   </div>

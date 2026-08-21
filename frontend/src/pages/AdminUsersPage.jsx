@@ -166,7 +166,6 @@ export default function AdminUsersPage() {
     
     if (formData.portal === 'order') {
       if (!formData.customer) return toast.error('Required Field', {description: 'Users on the Order Portal MUST be assigned to a Customer Account.'});
-      if (formData.divisions.length === 0) return toast.error('Required Field', {description: 'Please assign at least one division to this user.'});
     }
     
     try {
