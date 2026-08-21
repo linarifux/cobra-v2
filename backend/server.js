@@ -55,11 +55,9 @@ app.use(cors({
     "https://d1ymwhyqj02a47.cloudfront.net",
     "http://98.83.145.156:5000",
     "https://d3s3grz6mr9lfw.cloudfront.net",
-    "https://dsm.mi-orders.com",
-    "https://api.mi-orders.com",
-    "https://mi-orders.com",
-    "https://mind.mi-orders.com",
-    "https://cobra-2-assets.s3.us-east-1.amazonaws.com"
+    "https://cobra-2-assets.s3.us-east-1.amazonaws.com",
+    "https://mi-orders.com", // Matches the base domain exactly
+    /\.mi-orders\.com$/      // Matches ANY subdomain ending in .mi-orders.com
   ],
   credentials: true 
 }));
