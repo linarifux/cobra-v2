@@ -191,11 +191,11 @@ export default function InventoryFormPanel({
     setIsImageLoading(false);
   };
 
-  // Convert separate lbs/oz inputs into total ounces with auto-rollover logic
+  // Convert separate lbs/oz inputs into total ounces with auto-rollover & decimal logic
   const handleWeightChange = (type, value) => {
-    const numVal = value === '' ? '' : parseInt(value, 10);
+    const numVal = value === '' ? '' : parseFloat(value);
     const currentLbs = Math.floor((Number(formData.weight) || 0) / 16);
-    const currentOz = (Number(formData.weight) || 0) % 16;
+    const currentOz = Number(((Number(formData.weight) || 0) % 16).toFixed(2));
 
     let newTotal = 0;
     if (type === 'lbs') {
@@ -207,6 +207,9 @@ export default function InventoryFormPanel({
     
     // Prevent negative total weights
     if (newTotal < 0) newTotal = 0;
+
+    // Round to 2 decimal places to prevent floating-point math errors
+    newTotal = Math.round(newTotal * 100) / 100;
 
     setFormData(prev => ({ ...prev, weight: newTotal }));
   };
@@ -269,7 +272,7 @@ export default function InventoryFormPanel({
 
   // Extract lbs and oz for rendering
   const lbs = Math.floor((Number(formData.weight) || 0) / 16);
-  const oz = (Number(formData.weight) || 0) % 16;
+  const oz = Number(((Number(formData.weight) || 0) % 16).toFixed(2));
 
   const modalContent = (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm">
@@ -498,7 +501,7 @@ export default function InventoryFormPanel({
                   </div>
                   <div className="flex-1 flex items-center border border-slate-300 rounded-[4px] focus-within:border-brand-gold focus-within:ring-1 focus-within:ring-brand-gold bg-white transition-all overflow-hidden shadow-inner">
                     <input 
-                      type="number" step="1"
+                      type="number" step="0.01"
                       value={oz === 0 && lbs === 0 && !formData.weight ? '' : oz}
                       onChange={(e) => handleWeightChange('oz', e.target.value)}
                       className="w-full bg-transparent px-3 py-1.5 text-sm text-slate-800 outline-none text-center"
