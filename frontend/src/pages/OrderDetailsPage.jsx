@@ -164,7 +164,8 @@ export default function OrderDetailsPage() {
     const cartonSurcharge = cartonCount * getFee('Carton Surcharge', 2.05);
     const palletFee = palletCount * getFee('Pallet Fee', 8.40);
 
-    const rushFee = isRushOrder ? getFee('Rush Fee', 0) : 0;
+    // FIX: Set Rush Fee default to strictly $20 
+    const rushFee = isRushOrder ? getFee('Rush Fee', 20) : 0;
     const internationalFee = isInternational ? getFee('International Fee', 0) : 0;
 
     const totalProcessingFee = baseFee + weightSurcharge + lineItemSurcharge + 
@@ -662,7 +663,7 @@ export default function OrderDetailsPage() {
     }
   };
 
-  const handleCreateShipmentSubmit = async () => {
+  const handleCreateShipmentSubmit = async (modalCartoonsCount) => {
     if (orderStatus !== 'Picked') return toast.warning("Order status must be 'Picked' before you can create a shipment.");
     if (!shipping.carrierType || !shipping.serviceCode) return toast.warning("Please configure shipping carrier and service code on the order.");
     if (!fulfillmentData.shipFromId) return toast.warning("Please select a Ship From warehouse location.");
@@ -680,7 +681,7 @@ export default function OrderDetailsPage() {
       isResidential: fulfillmentData.isResidential,
       carrierCode: shipping.carrierType,
       serviceCode: shipping.serviceCode,
-      cartoons: Number(cartoonsCount) || 0,
+      cartoons: Number(modalCartoonsCount) || Number(cartoonsCount) || 0,
       pallets: Number(palletsCount) || 0,
       totalBoxes: packages.length,
       totalWeightOunces: totalPackageWeightOz,

@@ -282,7 +282,7 @@ export default function Billing() {
                 <th className="px-3 py-4 text-[11px] font-black text-slate-900">Charge Type</th>
                 <th className="px-3 py-4 text-[11px] font-black text-slate-900 text-right">Quantity</th>
                 <th className="px-3 py-4 text-[11px] font-black text-slate-900 text-right">Weight (lbs)</th>
-                <th className="px-3 py-4 text-[11px] font-black text-slate-900 text-right">Boxes</th>
+                <th className="px-3 py-4 text-[11px] font-black text-slate-900 text-right">Packages</th>
                 <th className="px-3 py-4 text-[11px] font-black text-slate-900 text-right">Carton Fee</th>
                 <th className="px-3 py-4 text-[11px] font-black text-slate-900 text-right">Total Order Processing</th>
                 <th className="px-3 py-4 text-[11px] font-black text-slate-900 text-right">Shipping Fee</th>

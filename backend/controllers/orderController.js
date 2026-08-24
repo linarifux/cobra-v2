@@ -1,7 +1,7 @@
 import Order from '../models/Order.js';
 import Customer from '../models/Customer.js';
 import Inventory from '../models/Inventory.js';
-import ChargeType from '../models/ChargeType.js'; // <-- NEW IMPORT
+import ChargeType from '../models/ChargeType.js'; 
 import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 import { cancelShipment, voidLabel } from '../services/shipStationService.js';
@@ -72,7 +72,7 @@ const calculateProcessingFees = async (orderData) => {
   fees.palletFee = palletCount * getFee('Pallet Fee', 8.40);
 
   // 7. Toggles
-  fees.rushFee = orderData.isRushOrder ? getFee('Rush Fee', 0) : 0;
+  fees.rushFee = orderData.isRushOrder ? getFee('Rush Fee', 20) : 0;
   fees.internationalFee = orderData.isInternational ? getFee('International Fee', 0) : 0;
 
   // Rounding utility to prevent floating-point precision issues
