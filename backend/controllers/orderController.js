@@ -171,6 +171,7 @@ export const getAllOrders = catchAsync(async (req, res, next) => {
       { 'shippingAddress.recipientName': { $regex: req.query.search, $options: 'i' } }
     ];
   }
+  
 
   const accessLevel = getAccessLevel(req.user);
 

@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CloudUpload, X, MapPin, Truck, PackageCheck, MessageSquare, Loader2, Plus, Trash2, Scale, Maximize } from 'lucide-react';
-import { fetchCarrierPackages } from '../../store/slices/carrierSlice'; // Adjust path if necessary
+import { fetchCarrierPackages } from '../../store/slices/carrierSlice';
 
 export default function CreateShipmentModal({
   isOpen,
@@ -16,12 +16,13 @@ export default function CreateShipmentModal({
   onAddPackage,
   onUpdatePackage,
   onRemovePackage,
-  onWeightChange
+  onWeightChange,
+  cartoonsCount,        // <-- ADDED
+  setCartoonsCount      // <-- ADDED
 }) {
   const dispatch = useDispatch();
 
-  
-  const [cartoonsCount, setCartoonsCount] = useState(0);
+  // REMOVED local state: const [cartoonsCount, setCartoonsCount] = useState(0);
 
   // Grab the carrier list and the newly fetched package types from Redux
   const { items: carriersData, packageTypes, packageStatus } = useSelector(state => state.carriers || {});
@@ -37,7 +38,7 @@ export default function CreateShipmentModal({
     }
   }, [isOpen, shipping?.carrierId, carriersData, dispatch]);
 
-  // --- FIX: Bulletproof Array Extraction to prevent .map() crashes ---
+  // --- Bulletproof Array Extraction to prevent .map() crashes ---
   const safePackageTypes = useMemo(() => {
     if (!packageTypes) return [];
     if (Array.isArray(packageTypes)) return packageTypes;
@@ -282,7 +283,7 @@ export default function CreateShipmentModal({
               </button>
               <button 
                 type="button" 
-                onClick={() => onSubmit(cartoonsCount)}
+                onClick={() => onSubmit()}  // <-- Removed the local state argument to force reliance on synced parent state
                 disabled={isCreatingShipment} 
                 className="flex-[2] flex justify-center items-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-blue-500/30 transition-all disabled:opacity-70"
               >

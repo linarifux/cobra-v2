@@ -18,7 +18,7 @@ import { fetchUsers } from '../store/slices/userSlice';
 import { fetchCarriers, fetchCarrierPackages } from '../store/slices/carrierSlice';
 import { fetchChargeTypes } from '../store/slices/chargeTypeSlice';
 
-import NotFoundPage from './NotFoundPage';
+import NotFoundPage from '../pages/NotFoundPage';
 import CreateShipmentModal from '../components/order-details/CreateShipmentModal';
 
 // Component Imports
@@ -38,23 +38,23 @@ const downloadBase64PDF = (base64Data, filename) => {
   try {
     let cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
     while (cleanBase64.length % 4 > 0) cleanBase64 += '=';
-    
+
     const byteCharacters = atob(cleanBase64);
     const byteNumbers = new Array(byteCharacters.length);
     for (let i = 0; i < byteCharacters.length; i++) {
       byteNumbers[i] = byteCharacters.charCodeAt(i);
     }
     const byteArray = new Uint8Array(byteNumbers);
-    
+
     const blob = new Blob([byteArray], { type: 'application/pdf' });
     const url = window.URL.createObjectURL(blob);
-    
+
     const link = document.createElement('a');
     link.href = url;
     link.setAttribute('download', filename);
     document.body.appendChild(link);
     link.click();
-    
+
     document.body.removeChild(link);
     setTimeout(() => window.URL.revokeObjectURL(url), 1000);
   } catch (error) {
@@ -75,23 +75,23 @@ export default function OrderDetailsPage() {
   const { items: inventoryData = [], status: inventoryStatus } = useSelector((state) => state.inventory || {});
   const { items: usersData = [], status: usersStatus } = useSelector((state) => state.users || {}); 
   const { items: carriersData = [], packageTypes = [] } = useSelector((state) => state.carriers || {});
-  
+
   // Access dynamic charge types from DB
   const { items: chargeTypes = [], status: chargeTypeStatus } = useSelector((state) => state.chargeTypes || {});
-  
+
   const [orderStatus, setOrderStatus] = useState('New');
   const [selectedUserId, setSelectedUserId] = useState(''); 
   const [shipping, setShipping] = useState({ carrierId: '', carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0, shipStationId: '' });
   const [address, setAddress] = useState({ name: '', email: '', phone: '', street: '', line2: '', city: '', state: '', zip: '', country: '' });
   const [items, setItems] = useState([]);
   const [notes, setNotes] = useState('');
-  
+
   const [fulfillOpen, setFulfillOpen] = useState(false);
   const [cartoonsCount, setCartoonsCount] = useState(0);
   const [palletsCount, setPalletsCount] = useState(0); 
   const [isRushOrder, setIsRushOrder] = useState(false);
   const [isInternational, setIsInternational] = useState(false);
-  
+
   const [createShipmentModalOpen, setCreateShipmentModalOpen] = useState(false);
   const [isCreatingShipment, setIsCreatingShipment] = useState(false);
 
@@ -108,7 +108,7 @@ export default function OrderDetailsPage() {
   const [isLoadingWarehouses, setIsLoadingWarehouses] = useState(false);
 
   const [fulfillmentData, setFulfillmentData] = useState({ shipFromId: '', isResidential: false });
-  
+
   const [packages, setPackages] = useState([
     { id: generateLocalId(), packageCode: 'package', weightInOunces: 16, length: 10, width: 10, height: 10 }
   ]);
@@ -124,7 +124,7 @@ export default function OrderDetailsPage() {
   const shippingCost = Number(shipping.shippingCost) || 0;
   const tax = subtotal * 0.08; 
   const grandTotal = subtotal + shippingCost + tax;
-  
+
   const totalItemWeightOz = currentOrder?.shippingDetails?.totalWeightOunces || items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
   const totalPackageWeightOz = packages.reduce((acc, pkg) => acc + Number(pkg.weightInOunces || 0), 0);
   const isWeightMismatched = Math.abs(totalItemWeightOz - totalPackageWeightOz) > 1;
@@ -134,7 +134,7 @@ export default function OrderDetailsPage() {
     if (!orderUserId || usersData.length === 0) return null;
     return usersData.find(u => u._id === orderUserId);
   }, [orderUserId, usersData]);
-  
+
   const orderCreatorName = orderCreator ? (orderCreator.name || orderCreator.firstName || orderCreator.email) : null;
 
   // --- Ensure Dynamic Charge Types are Loaded ---
@@ -221,7 +221,7 @@ export default function OrderDetailsPage() {
         const res = await api.get('/shipstation/warehouses');
         let fetchedWarehouses = res?.data?.data?.warehouses || [];
         if (fetchedWarehouses.warehouses) fetchedWarehouses = fetchedWarehouses.warehouses;
-        
+
         setWarehouses(fetchedWarehouses);
         if (fetchedWarehouses.length > 0) {
           setFulfillmentData(p => ({ ...p, shipFromId: fetchedWarehouses[0].warehouse_id }));
@@ -244,7 +244,7 @@ export default function OrderDetailsPage() {
       setPalletsCount(currentOrder.shippingDetails?.pallets || 0); 
       setIsRushOrder(currentOrder.isRushOrder || false);
       setIsInternational(currentOrder.isInternational || false);
-      
+
       setShipping({ 
         carrierId: currentOrder.shippingDetails?.carrierId?._id || currentOrder.shippingDetails?.carrierId || '',
         carrierType: currentOrder.shippingDetails?.carrierType || '', 
@@ -265,9 +265,9 @@ export default function OrderDetailsPage() {
         zip: currentOrder.shippingAddress?.zip || '',
         country: currentOrder.shippingAddress?.country || 'US'
       });
-      
+
       setNotes(currentOrder.notes || '');
-      
+
       const mappedItems = currentOrder.items?.map((i) => {
         const matchedStock = inventoryData.find(inv => inv.sku === i.sku);
         return {
@@ -304,12 +304,12 @@ export default function OrderDetailsPage() {
     setIsGeneratingDocs(true);
     try {
       const doc = new jsPDF();
-      
+
       doc.setFontSize(16);
       doc.setTextColor(0, 0, 0);
       doc.setFont('helvetica', 'bold');
       doc.text("PICKING LIST", 14, 20);
-      
+
       doc.setLineWidth(0.5);
       doc.setDrawColor(0, 0, 0);
       doc.line(14, 22, 196, 22);
@@ -354,7 +354,7 @@ export default function OrderDetailsPage() {
       });
 
       doc.addPage();
-      
+
       const customerName = currentOrder.customer?.customerName || 'Customer Order';
       const divisionName = currentOrder.division?.divisionName || 'Custom Division'
       const orderNo = currentOrder.orderNumber || 'N/A';
@@ -397,7 +397,7 @@ export default function OrderDetailsPage() {
 
       const addressBlockY = 55;
       doc.setFontSize(10);
-      
+
       doc.setFont('helvetica', 'bold');
       doc.text("SHIP FROM:", 14, addressBlockY);
       doc.setFont('helvetica', 'normal');
@@ -426,7 +426,7 @@ export default function OrderDetailsPage() {
       doc.setFontSize(9);
       doc.setFont('helvetica', 'bold');
       doc.text("Comments:", 14, commentsY);
-      
+
       if (notes) {
           doc.setFont('helvetica', 'normal');
           const splitNotes = doc.splitTextToSize(notes, 150);
@@ -500,7 +500,7 @@ export default function OrderDetailsPage() {
   const addPackage = () => setPackages(prev => [...prev, { id: generateLocalId(), packageCode: 'package', weightInOunces: 16, length: 10, width: 10, height: 10 }]);
   const updatePackage = (id, field, value) => setPackages(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
   const removePackage = (id) => setPackages(prev => prev.filter(p => p.id !== id));
-  
+
   const handleWeightChange = (id, currentTotalOz, type, value) => {
     const numVal = value === '' ? '' : Number(value);
     const currentLbs = Math.floor((Number(currentTotalOz) || 0) / 16);
@@ -512,7 +512,7 @@ export default function OrderDetailsPage() {
     } else {
       newTotal = (currentLbs * 16) + (numVal === '' ? 0 : numVal);
     }
-    
+
     updatePackage(id, 'weightInOunces', newTotal);
   };
 
@@ -567,6 +567,7 @@ export default function OrderDetailsPage() {
           height: Number(p.height) || 10
         }))
       },
+      processingFees: processingFeesPreview, // Sync correct UI fees back to the database
       items: items.map(item => ({
         sku: item.sku, name: item.name, quantity: Number(item.qty),
         unitPrice: Number(item.price), totalPrice: Number(item.qty) * Number(item.price)
@@ -575,15 +576,13 @@ export default function OrderDetailsPage() {
 
     try {
       await dispatch(updateOrder({ id: currentOrder._id, updateData: payload })).unwrap();
-      
+
       if (isChangingToCancelled) {
         await restoreInventoryStock();
         toast.success('Order cancelled. Items returned to stock and shipment reversed.');
       } else {
         toast.success('Order saved successfully.');
       }
-      
-      setEditing({ logistics: false, address: false }); 
     } catch (error) {
       toast.error(`Failed to save order: ${error}`);
     } finally {
@@ -594,7 +593,7 @@ export default function OrderDetailsPage() {
   const handleCancelOrder = async () => {
     if (!window.confirm("Are you sure you want to cancel this entire order? This will restock items and void any labels.")) return;
     setIsCancellingOrder(true);
-    
+
     const payload = {
       status: 'Cancelled',
       isRushOrder: isRushOrder,
@@ -623,6 +622,7 @@ export default function OrderDetailsPage() {
           height: Number(p.height) || 10
         }))
       },
+      processingFees: processingFeesPreview, // Sync correct UI fees back to the database
       items: items.map(item => ({
         sku: item.sku, name: item.name, quantity: Number(item.qty),
         unitPrice: Number(item.price), totalPrice: Number(item.qty) * Number(item.price)
@@ -634,7 +634,6 @@ export default function OrderDetailsPage() {
       await restoreInventoryStock();
       setOrderStatus('Cancelled');
       toast.success('Order cancelled. Items returned to stock.');
-      setEditing({ logistics: false, address: false }); 
     } catch (error) {
       toast.error(`Failed to cancel order: ${error}`);
     } finally {
@@ -653,7 +652,7 @@ export default function OrderDetailsPage() {
     try {
       if (needsRestock) await restoreInventoryStock();
       await api.delete(`/orders/${currentOrder._id}`);
-      
+
       toast.success(needsRestock ? 'Order deleted and items returned to stock.' : 'Order deleted successfully.');
       navigate('/orders');
     } catch (error) {
@@ -663,13 +662,13 @@ export default function OrderDetailsPage() {
     }
   };
 
-  const handleCreateShipmentSubmit = async (modalCartoonsCount) => {
+  const handleCreateShipmentSubmit = async () => {
     if (orderStatus !== 'Picked') return toast.warning("Order status must be 'Picked' before you can create a shipment.");
     if (!shipping.carrierType || !shipping.serviceCode) return toast.warning("Please configure shipping carrier and service code on the order.");
     if (!fulfillmentData.shipFromId) return toast.warning("Please select a Ship From warehouse location.");
 
     setIsCreatingShipment(true);
-    
+
     const payload = {
       packages: packages.map(p => ({
         packageCode: p.packageCode || 'package',
@@ -681,10 +680,14 @@ export default function OrderDetailsPage() {
       isResidential: fulfillmentData.isResidential,
       carrierCode: shipping.carrierType,
       serviceCode: shipping.serviceCode,
-      cartoons: Number(modalCartoonsCount) || Number(cartoonsCount) || 0,
+      cartoons: Number(cartoonsCount) || 0,
+      pallets: Number(palletsCount) || 0,
       totalBoxes: packages.length,
-      totalWeightOunces: totalPackageWeightOz
+      totalWeightOunces: totalPackageWeightOz,
+      processingFees: processingFeesPreview // Attach computed fees directly to shipment API call
     };
+
+
 
     try {
       await dispatch(createOrderShipment({ orderId: currentOrder._id, fulfillmentData: payload })).unwrap();
@@ -715,8 +718,10 @@ export default function OrderDetailsPage() {
       carrierCode: shipping.carrierType,
       serviceCode: shipping.serviceCode,
       cartoons: Number(cartoonsCount) || 0,
+      pallets: Number(palletsCount) || 0,
       totalBoxes: packages.length,
-      weightInOunces: totalPackageWeightOz
+      weightInOunces: totalPackageWeightOz,
+      processingFees: processingFeesPreview // Attach computed fees directly to label generation API call
     };
 
     try {
@@ -734,12 +739,12 @@ export default function OrderDetailsPage() {
           console.error("Failed standard decode, falling back.");
         }
       } 
-      
+
       if (!labelDownloaded && response.labelUrl) {
         window.open(response.labelUrl, "_blank");
         labelDownloaded = true;
       }
-      
+
       if (!labelDownloaded) {
         try {
           const fetchRaw = await dispatch(downloadPurchasedLabel(currentOrder._id)).unwrap();
@@ -755,7 +760,7 @@ export default function OrderDetailsPage() {
            console.error("Fallback download failed:", fallbackErr);
         }
       }
-      
+
       if (response.trackingNumber) {
         setShipping(prev => ({ ...prev, trackingNumber: response.trackingNumber }));
         setOrderStatus('Shipped');
@@ -846,7 +851,7 @@ export default function OrderDetailsPage() {
 
   return (
     <div className="h-full flex flex-col gap-5 animate-fade-in max-w-[1400px] mx-auto pb-10 px-4 box-border text-slate-900">
-      
+
       <OrderHeaderActions 
         orderStatus={orderStatus} 
         isSaving={isSaving} 
@@ -863,6 +868,7 @@ export default function OrderDetailsPage() {
         setFulfillOpen={setFulfillOpen} 
       />
 
+
       <CreateShipmentModal 
         isOpen={createShipmentModalOpen} 
         onClose={() => setCreateShipmentModalOpen(false)} 
@@ -876,6 +882,8 @@ export default function OrderDetailsPage() {
         onUpdatePackage={updatePackage} 
         onRemovePackage={removePackage} 
         onWeightChange={handleWeightChange} 
+        cartoonsCount={cartoonsCount}
+        setCartoonsCount={setCartoonsCount}
       />
 
       <LabelDrawer 
@@ -899,7 +907,7 @@ export default function OrderDetailsPage() {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start mt-2">
         <div className="xl:col-span-2 space-y-6 w-full min-w-0">
-          
+
           <OrderInfoPanel 
             currentOrder={currentOrder} 
             isRushOrder={isRushOrder} 
@@ -907,7 +915,7 @@ export default function OrderDetailsPage() {
             orderCreatorName={orderCreatorName} 
             creationDate={creationDate} 
           />
-          
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <OrderStatusPanel 
               orderStatus={orderStatus} 
@@ -935,7 +943,7 @@ export default function OrderDetailsPage() {
             address={address} 
             setAddress={setAddress} 
           />
-          
+
           <NotesAndFeesPanel 
             notes={notes} 
             setNotes={setNotes} 
@@ -952,7 +960,7 @@ export default function OrderDetailsPage() {
             inventoryData={inventoryData} 
             inventoryStatus={inventoryStatus} 
           />
-          
+
           <InvoicePanel 
             subtotal={subtotal} 
             shipping={shipping} 
@@ -965,4 +973,3 @@ export default function OrderDetailsPage() {
     </div>
   );
 }
-

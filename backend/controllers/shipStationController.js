@@ -174,10 +174,14 @@ export const executeShipmentCreation = async (order, frontendPackages = [], isRe
   order.shippingDetails.carrierType = finalCarrierType;
   order.shippingDetails.serviceCode = finalServiceCode;
   
-  // Update internal metrics payload 
+  // Update internal metrics & fees payload 
   if (extraDetails.cartoons !== undefined) order.shippingDetails.cartoons = extraDetails.cartoons;
+  if (extraDetails.pallets !== undefined) order.shippingDetails.pallets = extraDetails.pallets;
   if (extraDetails.totalBoxes !== undefined) order.shippingDetails.totalBoxes = extraDetails.totalBoxes;
   if (extraDetails.totalWeightOunces !== undefined) order.shippingDetails.totalWeightOunces = extraDetails.totalWeightOunces;
+  
+  // FIX: Sync frontend processing fees explicitly
+  if (extraDetails.processingFees) order.processingFees = extraDetails.processingFees;
   
   if (frontendPackages && frontendPackages.length > 0) {
     order.shippingDetails.packages = frontendPackages.map(p => ({
@@ -382,9 +386,11 @@ export const getCheckoutRates = catchAsync(async (req, res, next) => {
   }
 });
 
+
 export const createOrderShipment = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
-  const { packages, isResidential, carrierCode, serviceCode, cartoons, totalBoxes, totalWeightOunces } = req.body;
+  // FIX: Destructure processingFees and pallets from frontend payload
+  const { packages, isResidential, carrierCode, serviceCode, cartoons, pallets, totalBoxes, totalWeightOunces, processingFees } = req.body;
 
   const order = await Order.findById(orderId).populate('division customer');
   if (!order) return next(new AppError('Order not found in database.', 404));
@@ -401,7 +407,7 @@ export const createOrderShipment = catchAsync(async (req, res, next) => {
       isResidential, 
       carrierCode, 
       serviceCode, 
-      { cartoons, totalBoxes, totalWeightOunces }
+      { cartoons, pallets, totalBoxes, totalWeightOunces, processingFees } // Pass the UI-calculated fees into the shipment generator
     );
     res.status(200).json({ status: 'success', message: 'Shipment successfully created in ShipStation.', data: result });
   } catch (error) {
@@ -411,7 +417,8 @@ export const createOrderShipment = catchAsync(async (req, res, next) => {
 
 export const generateOrderLabel = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
-  const { packages, weightInOunces, carrierCode, serviceCode, cartoons, totalBoxes, totalWeightOunces } = req.body; 
+  // FIX: Destructure processingFees and pallets from frontend payload
+  const { packages, weightInOunces, carrierCode, serviceCode, cartoons, pallets, totalBoxes, totalWeightOunces, processingFees } = req.body; 
 
   const order = await Order.findById(orderId).populate('division customer');
   if (!order) return next(new AppError('Order not found', 404));
@@ -462,8 +469,12 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
     
     // Update internal metrics payload 
     if (cartoons !== undefined) order.shippingDetails.cartoons = cartoons;
+    if (pallets !== undefined) order.shippingDetails.pallets = pallets;
     if (totalBoxes !== undefined) order.shippingDetails.totalBoxes = totalBoxes;
     if (totalWeightOunces !== undefined) order.shippingDetails.totalWeightOunces = totalWeightOunces;
+
+    // FIX: Sync frontend processing fees explicitly
+    if (processingFees) order.processingFees = processingFees;
     
     if (packages && packages.length > 0) {
       order.shippingDetails.packages = packages.map(p => ({
