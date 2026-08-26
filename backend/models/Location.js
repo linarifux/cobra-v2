@@ -22,6 +22,10 @@ const materialRecordSchema = new mongoose.Schema({
 
 const locationSchema = new mongoose.Schema(
   {
+    locationUnit: {
+      type: String,
+      required: [true, 'Location unit is required']
+    },
     designation: {
       type: String,
       required: [true, 'Location designation is required'],

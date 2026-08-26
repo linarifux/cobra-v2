@@ -8,7 +8,7 @@ export default function LocationFilterBoard({ searchTerm, setSearchTerm, typeFil
         <Search className="absolute left-4 top-3 w-4 h-4 text-slate-400" />
         <input 
           type="text" 
-          placeholder="Search locations, shelves, SKU items, or lot numbers..." 
+          placeholder="Search location units, designations, shelves, SKU items, or lot numbers..." 
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full pl-11 pr-4 py-2.5 bg-white/60 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 transition-all" 

@@ -45,11 +45,13 @@ export default function WarehouseLocations() {
   const filteredLocations = useMemo(() => {
     return apiLocations.filter(loc => {
       const searchTarget = searchTerm.toLowerCase();
+      const locUnit = loc.locationUnit?.toLowerCase() || ''; // Added unit targeting
       const locName = loc.designation?.toLowerCase() || '';
       const locLevel = loc.level?.toLowerCase() || '';
 
       const matchesSearch = locName.includes(searchTarget) ||
                             locLevel.includes(searchTarget) ||
+                            locUnit.includes(searchTarget) || // Added unit matching check
                             (loc.assignedMaterials && loc.assignedMaterials.some(m => 
                               m.inventory?.itemName?.toLowerCase().includes(searchTarget) || 
                               m.inventory?.sku?.toLowerCase().includes(searchTarget) || 
@@ -74,6 +76,7 @@ export default function WarehouseLocations() {
       variant: 'danger'
     });
 
+    
     if (isConfirmed) {
       try {
         const deletePromise = dispatch(deleteLocation(id)).unwrap();

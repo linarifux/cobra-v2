@@ -44,6 +44,10 @@ export default function LocationGrid({ filteredLocations, openEditModal, handleD
               </div>
 
               <div className="mb-5">
+                {/* Location Unit Display added here */}
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 pr-16 truncate">
+                  {loc.locationUnit || 'Unassigned Unit'}
+                </p>
                 <h3 className="font-black text-slate-900 text-xl tracking-tight pr-16 truncate">{loc.designation}</h3>
                 <div className="flex flex-wrap gap-2 mt-2">
                   <span className="inline-block text-[9px] bg-slate-900 text-brand-gold border border-slate-800 px-2.5 py-1 rounded-md font-black uppercase tracking-widest shadow-sm">

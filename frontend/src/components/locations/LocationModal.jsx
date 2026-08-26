@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { createLocation, updateLocation } from '../../store/slices/locationSlice';
 
 const INITIAL_FORM_STATE = { 
+  locationUnit: '', 
   designation: '', 
   level: '', 
   storageCategory: 'Rack', 
@@ -21,6 +22,7 @@ const formatErrorMessage = (err) => {
   return 'An unexpected server error occurred. Please try again.';
 };
 
+
 export default function LocationModal({ isOpen, onClose, activeLocation, inventoryList }) {
   const dispatch = useDispatch();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -31,6 +33,7 @@ export default function LocationModal({ isOpen, onClose, activeLocation, invento
     if (isOpen) {
       if (activeLocation) {
         setFormData({
+          locationUnit: activeLocation.locationUnit || '',
           designation: activeLocation.designation || '',
           level: activeLocation.level || '', 
           storageCategory: activeLocation.storageCategory || 'Rack',
@@ -76,6 +79,9 @@ export default function LocationModal({ isOpen, onClose, activeLocation, invento
     e.preventDefault(); // Prevents page reload on form submit (Enter key)
 
     // 1. Proactive Frontend Validation
+    if (!formData.locationUnit || formData.locationUnit.trim() === '') {
+      return toast.warning('Missing Field', { description: 'Location Unit is required.' });
+    }
     if (!formData.designation || formData.designation.trim() === '') {
       return toast.warning('Missing Field', { description: 'Location Designation is required.' });
     }
@@ -91,6 +97,7 @@ export default function LocationModal({ isOpen, onClose, activeLocation, invento
       }));
 
     const payload = {
+      locationUnit: formData.locationUnit.trim(),
       designation: formData.designation.trim(),
       level: formData.level || 'N/A',
       storageCategory: formData.storageCategory,
@@ -148,6 +155,21 @@ export default function LocationModal({ isOpen, onClose, activeLocation, invento
           
           {/* Changed from <div> to <form> for native submit handling */}
           <form onSubmit={handleSave} className="space-y-6">
+            <div className="grid grid-cols-1 gap-4">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5 block pl-1">Location Unit <span className="text-red-400">*</span></label>
+                <input 
+                  type="text" 
+                  placeholder="e.g., Four, Five, Six, Nine"
+                  required
+                  disabled={isSubmitting}
+                  value={formData.locationUnit}
+                  onChange={(e) => setFormData({...formData, locationUnit: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50/50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-brand-gold/20 focus:border-brand-gold outline-none transition-all disabled:opacity-50" 
+                />
+              </div>
+            </div>
+            
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5 block pl-1">Designation <span className="text-red-400">*</span></label>
