@@ -39,6 +39,7 @@ export default function OrdersPage() {
   // Start with 'New' so it doesn't flash the entire database while loading
   const [filters, setFilters] = useState({
     status: 'New',
+    orderType: 'All', 
     customer: 'All', 
     division: 'All',
     user: 'All',     
@@ -130,6 +131,7 @@ export default function OrdersPage() {
     const hasPendingOrders = ordersData.some(o => (o.qtyLimitExceeds && o.status === 'New' ? 'Pending' : (o.status || 'New')) === 'Pending');
     setFilters({
       status: hasNewOrders ? 'New' : (hasPendingOrders ? 'Pending' : 'All'),
+      orderType: 'All',
       customer: 'All', 
       division: 'All',
       user: 'All',     
@@ -142,6 +144,7 @@ export default function OrdersPage() {
     let count = 0;
     if (searchQuery) count++;
     if (filters.status !== 'All') count++;
+    if (filters.orderType !== 'All') count++;
     if (filters.customer !== 'All') count++;
     if (filters.division !== 'All') count++;
     if (filters.user !== 'All') count++;
@@ -163,6 +166,7 @@ export default function OrdersPage() {
       const customerName = order.customer?.customerName || '';
       const orderNumber = order.orderNumber || '';
       const recipientName = order.shippingAddress?.recipientName || '';
+      const orderType = order.orderType || 'WEBORD';
       
       let orderDate = '';
       try {
@@ -171,8 +175,10 @@ export default function OrdersPage() {
 
       const matchSearch = customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          recipientName.toLowerCase().includes(searchQuery.toLowerCase());
+                          recipientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          orderType.toLowerCase().includes(searchQuery.toLowerCase());
                           
+      const matchOrderType = filters.orderType === 'All' || orderType === filters.orderType;
       const matchCustomer = filters.customer === 'All' || orderCustomerId === String(filters.customer);
       const matchDivision = filters.division === 'All' || orderDivisionId === String(filters.division);
       const matchUser = filters.user === 'All' || orderUserId === String(filters.user);
@@ -181,7 +187,7 @@ export default function OrdersPage() {
       const matchDateEnd = !filters.dateEnd || orderDate <= filters.dateEnd;
       
       // Only tally orders that pass the current top-bar filters (ignores the sidebar status filter itself)
-      if (matchSearch && matchCustomer && matchDivision && matchUser && matchDateStart && matchDateEnd) {
+      if (matchSearch && matchOrderType && matchCustomer && matchDivision && matchUser && matchDateStart && matchDateEnd) {
         const effectiveStatus = order.qtyLimitExceeds && order.status === 'New' ? 'Pending' : (order.status || 'New');
         
         counts.All++;
@@ -192,7 +198,7 @@ export default function OrdersPage() {
     });
 
     return counts;
-  }, [searchQuery, filters.customer, filters.division, filters.user, filters.dateStart, filters.dateEnd, ordersData]);
+  }, [searchQuery, filters.orderType, filters.customer, filters.division, filters.user, filters.dateStart, filters.dateEnd, ordersData]);
 
   // --- Data Processing ---
   const filteredOrders = useMemo(() => {
@@ -206,6 +212,7 @@ export default function OrdersPage() {
       const customerName = order.customer?.customerName || '';
       const orderNumber = order.orderNumber || '';
       const recipientName = order.shippingAddress?.recipientName || '';
+      const orderType = order.orderType || 'WEBORD';
       
       let orderDate = '';
       try {
@@ -217,9 +224,11 @@ export default function OrdersPage() {
 
       const matchSearch = customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          recipientName.toLowerCase().includes(searchQuery.toLowerCase());
+                          recipientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          orderType.toLowerCase().includes(searchQuery.toLowerCase());
                           
       const matchStatus = filters.status === 'All' || effectiveStatus === filters.status;
+      const matchOrderType = filters.orderType === 'All' || orderType === filters.orderType;
       const matchCustomer = filters.customer === 'All' || orderCustomerId === String(filters.customer);
       const matchDivision = filters.division === 'All' || orderDivisionId === String(filters.division);
       const matchUser = filters.user === 'All' || orderUserId === String(filters.user);
@@ -227,7 +236,7 @@ export default function OrdersPage() {
       const matchDateStart = !filters.dateStart || orderDate >= filters.dateStart;
       const matchDateEnd = !filters.dateEnd || orderDate <= filters.dateEnd;
       
-      return matchSearch && matchStatus && matchCustomer && matchDivision && matchUser && matchDateStart && matchDateEnd;
+      return matchSearch && matchStatus && matchOrderType && matchCustomer && matchDivision && matchUser && matchDateStart && matchDateEnd;
     });
   }, [searchQuery, filters, ordersData]);
 
@@ -255,7 +264,8 @@ export default function OrdersPage() {
       _id: order._id,
       orderNumber: order.orderNumber,
       status: effectiveStatus,
-      notes: order.notes || ''
+      notes: order.notes || '',
+      orderType: order.orderType || 'WEBORD' // Added Order Type initialization
     });
     setIsEditModalOpen(true);
   };
@@ -269,7 +279,11 @@ export default function OrdersPage() {
 
       const actionPromise = dispatch(updateOrder({ 
         id: editingOrder._id, 
-        updateData: { status: editingOrder.status, notes: editingOrder.notes } 
+        updateData: { 
+          status: editingOrder.status, 
+          notes: editingOrder.notes,
+          orderType: editingOrder.orderType // Syncing updated Order Type to the DB
+        } 
       })).unwrap();
       
       toast.promise(actionPromise, {
@@ -440,10 +454,11 @@ export default function OrdersPage() {
         doc.text(orderNo, rightColValX, rightY);
         rightY += 5;
 
+        // Dynamically displaying Order Type onto the PDF slip
         doc.setFont('helvetica', 'bold');
         doc.text(`Order Type:`, rightColKeyX, rightY, { align: 'right' });
         doc.setFont('helvetica', 'normal');
-        doc.text('WEBORD', rightColValX, rightY);
+        doc.text(order.orderType || 'WEBORD', rightColValX, rightY);
         rightY += 5;
 
         doc.setFont('helvetica', 'bold');
@@ -658,7 +673,7 @@ export default function OrdersPage() {
                 <Search className="absolute left-4 top-3 text-slate-400" size={16} />
                 <input 
                   className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white/70 text-sm font-bold outline-none focus:ring-2 focus:ring-brand-gold/50 transition-all shadow-sm"
-                  placeholder="Search by Brand Name, Shopper Name, or Order Number..."
+                  placeholder="Search by Brand, Shopper, Order #, or Type..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
@@ -675,7 +690,18 @@ export default function OrdersPage() {
             </div>
 
             {/* Note: Status is removed from this horizontal row as it's now in the sidebar */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 border-t border-slate-200/60 pt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 border-t border-slate-200/60 pt-4">
+              
+              <div className="relative">
+                <Package className="absolute left-3 top-2.5 text-brand-gold" size={14} />
+                <select className={selectClass} value={filters.orderType} onChange={(e) => setFilters({...filters, orderType: e.target.value})}>
+                  <option value="All">All Types</option>
+                  <option value="WEBORD">WEBORD</option>
+                  <option value="PRODUCTION">PRODUCTION</option>
+                  <option value="SCRAP">SCRAP</option>
+                </select>
+              </div>
+
               <div className="relative">
                 <Briefcase className="absolute left-3 top-2.5 text-brand-gold" size={14} />
                 <select className={selectClass} value={filters.customer} onChange={handleCustomerChange}>
@@ -789,7 +815,12 @@ export default function OrdersPage() {
                               />
                             </td>
                             <td className="p-5">
-                              <div className="font-black text-slate-800 text-sm group-hover:text-brand-gold transition-colors">{order.orderNumber}</div>
+                              <div className="font-black text-slate-800 text-sm group-hover:text-brand-gold transition-colors flex items-center gap-2">
+                                {order.orderNumber}
+                                <span className="text-[8px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase tracking-widest border border-slate-200">
+                                  {order.orderType || 'WEBORD'}
+                                </span>
+                              </div>
                               <div className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 w-max mt-1 tracking-widest">${grandTotal.toFixed(2)}</div>
                             </td>
                             <td className="p-5 text-slate-500 font-bold">{displayDate}</td>
@@ -967,23 +998,38 @@ export default function OrdersPage() {
               </div>
 
               <form onSubmit={submitQuickEdit} className="space-y-4">
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5 block">Pipeline Status</label>
-                  <select 
-                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/50 transition-all cursor-pointer"
-                    value={editingOrder.status}
-                    onChange={(e) => setEditingOrder({...editingOrder, status: e.target.value})}
-                    disabled={isSubmitting}
-                  >
-                    <option value="New">New</option>
-                    <option value="Pending">Pending</option>
-                    <option value="Picked">Picked</option>
-                    <option value="Shipped">Shipped</option>
-                    <option value="Hold">Hold</option>
-                    <option value="Cancelled">Cancelled</option>
-                    <option value="Delivered">Delivered</option>
-                    <option value="Billed">Billed</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5 block">Pipeline Status</label>
+                    <select 
+                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/50 transition-all cursor-pointer"
+                      value={editingOrder.status}
+                      onChange={(e) => setEditingOrder({...editingOrder, status: e.target.value})}
+                      disabled={isSubmitting}
+                    >
+                      <option value="New">New</option>
+                      <option value="Pending">Pending</option>
+                      <option value="Picked">Picked</option>
+                      <option value="Shipped">Shipped</option>
+                      <option value="Hold">Hold</option>
+                      <option value="Cancelled">Cancelled</option>
+                      <option value="Delivered">Delivered</option>
+                      <option value="Billed">Billed</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5 block">Order Type</label>
+                    <select 
+                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-brand-gold/50 transition-all cursor-pointer"
+                      value={editingOrder.orderType}
+                      onChange={(e) => setEditingOrder({...editingOrder, orderType: e.target.value})}
+                      disabled={isSubmitting}
+                    >
+                      <option value="WEBORD">WEBORD</option>
+                      <option value="PRODUCTION">PRODUCTION</option>
+                      <option value="SCRAP">SCRAP</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div>

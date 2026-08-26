@@ -8,6 +8,11 @@ export default function OrderInfoPanel({ currentOrder, isRushOrder, isInternatio
         <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Order Reference</span>
         <div className="flex items-center gap-3">
           <span className="text-xl font-black text-slate-900 tracking-tight">{currentOrder.orderNumber}</span>
+          
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 border border-slate-200 text-slate-600 rounded-lg text-[10px] font-black tracking-widest shadow-sm transition-all duration-300">
+            {currentOrder.orderType || 'WEBORD'}
+          </span>
+
           {currentOrder.chargeCode && (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-100 border border-amber-200 text-amber-800 rounded-lg text-[10px] font-black tracking-widest shadow-sm transition-all duration-300">
               <Briefcase size={12} /> {currentOrder.chargeCode}
