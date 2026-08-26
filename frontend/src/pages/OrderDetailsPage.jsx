@@ -21,7 +21,6 @@ import { fetchChargeTypes } from '../store/slices/chargeTypeSlice';
 import NotFoundPage from '../pages/NotFoundPage';
 import CreateShipmentModal from '../components/order-details/CreateShipmentModal';
 
-
 // Component Imports
 import OrderHeaderActions from '../components/order-details/OrderHeaderActions';
 import OrderInfoPanel from '../components/order-details/OrderInfoPanel';
