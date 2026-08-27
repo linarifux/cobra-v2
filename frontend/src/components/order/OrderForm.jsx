@@ -63,7 +63,7 @@ export default function OrderForm() {
 
   // --- Form State ---
   const [orderNumber, setOrderNumber] = useState('');
-  const [orderType, setOrderType] = useState('WEBORD'); // <-- ADDED: Default to WEBORD
+  const [orderType, setOrderType] = useState('WEBORD');
   const [customerId, setCustomerId] = useState('');
   const [divisionId, setDivisionId] = useState('');
   const [userId, setUserId] = useState('');
@@ -246,7 +246,7 @@ export default function OrderForm() {
   useEffect(() => {
     if (isEditMode && currentOrder) {
       setOrderNumber(currentOrder.orderNumber || '');
-      setOrderType(currentOrder.orderType || 'WEBORD'); // <-- Initialize Order Type
+      setOrderType(currentOrder.orderType || 'WEBORD'); 
       setCustomerId(currentOrder.customer?._id || currentOrder.customer || '');
       setDivisionId(currentOrder.division?._id || currentOrder.division || '');
       setUserId(currentOrder.user?._id || currentOrder.user || '');
@@ -310,14 +310,33 @@ export default function OrderForm() {
     setShipping({ ...shipping, carrierId: '', carrierType: '', serviceCode: '' });
   };
 
-  // Handled automatically filling the charge code based on the selected user
+  // --- Shopper Auto-Population logic ---
   const handleUserChange = (e) => {
     const selectedUserId = e.target.value;
     setUserId(selectedUserId);
     
     if (selectedUserId) {
       const selectedUser = contextualUsers.find(u => String(u._id) === String(selectedUserId));
+      
+      // Auto-populate charge code
       setChargeCode(selectedUser?.chargeCode || '');
+
+      // Auto-populate Shipping Address from user's primary profile address
+      if (selectedUser) {
+        setAddress(prev => ({
+          ...prev,
+          name: selectedUser.name || selectedUser.firstName || '',
+          email: selectedUser.email || '',
+          phone: selectedUser.phone || '',
+          street: selectedUser.userAddress?.street1 || '',
+          line2: selectedUser.userAddress?.street2 || '',
+          city: selectedUser.userAddress?.city || '',
+          state: selectedUser.userAddress?.state || '',
+          zip: selectedUser.userAddress?.zipCode || '',
+          country: selectedUser.userAddress?.country || 'US'
+        }));
+      }
+
     } else {
       setChargeCode('');
     }
@@ -351,10 +370,9 @@ export default function OrderForm() {
 
     setIsSaving(true);
 
-    
     const payload = {
       orderNumber: orderNumber.trim() || generateAutoOrderNumber(),
-      orderType: orderType, // <-- ADDED: Push Order Type to backend payload
+      orderType: orderType, 
       customer: customerId,
       division: divisionId,
       user: userId || null,
