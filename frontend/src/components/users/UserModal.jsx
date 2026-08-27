@@ -2,7 +2,8 @@ import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   UserPlus, ShieldCheck, Mail, Lock, Building2, 
-  BadgeCheck, X, Loader2, AlertCircle, MapPin, Check, User, Users, Briefcase, Edit2 
+  BadgeCheck, X, Loader2, AlertCircle, MapPin, Check, 
+  User, Users, Briefcase, Edit2, Phone, Home 
 } from 'lucide-react';
 
 export default function UserModal({
@@ -109,7 +110,7 @@ export default function UserModal({
                   </div>
                 </div>
                 
-                <div className="space-y-2 sm:col-span-2">
+                <div className="space-y-2">
                   <div className="flex justify-between items-center ml-1">
                     <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Secure Password</label>
                     {editingUserId && <span className="text-[9px] font-bold text-amber-600 uppercase tracking-widest bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">Optional</span>}
@@ -123,17 +124,110 @@ export default function UserModal({
                       value={formData.password || ''} 
                       onChange={(e) => setFormData({...formData, password: e.target.value})} 
                       className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all" 
-                      placeholder={editingUserId ? "Leave blank to keep current password" : "Minimum 8 characters"} 
+                      placeholder={editingUserId ? "Leave blank to keep current" : "Minimum 8 characters"} 
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center ml-1">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Phone Number</label>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">Optional</span>
+                  </div>
+                  <div className="relative">
+                    <Phone size={16} className="absolute left-4 top-3.5 text-slate-400" />
+                    <input 
+                      type="tel" 
+                      value={formData.phone || ''} 
+                      onChange={(e) => setFormData({...formData, phone: e.target.value})} 
+                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all" 
+                      placeholder="+1 (555) 000-0000" 
                     />
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* 2. Access Controls */}
+            {/* 2. Address Details */}
             <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-5">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                <ShieldCheck size={14}/> 2. Environment & Access
+                <Home size={14}/> 2. Primary Address
+              </h3>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <div className="space-y-2 sm:col-span-2">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 ml-1">Street Address 1</label>
+                  <input 
+                    type="text" 
+                    value={formData.address?.street1 || ''} 
+                    onChange={(e) => setFormData({...formData, address: {...(formData.address || {}), street1: e.target.value}})} 
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all" 
+                    placeholder="123 Main St" 
+                  />
+                </div>
+                
+                <div className="space-y-2 sm:col-span-2">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 ml-1">Street Address 2</label>
+                  <input 
+                    type="text" 
+                    value={formData.address?.street2 || ''} 
+                    onChange={(e) => setFormData({...formData, address: {...(formData.address || {}), street2: e.target.value}})} 
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all" 
+                    placeholder="Apt, Suite, Unit, etc. (Optional)" 
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 ml-1">City</label>
+                  <input 
+                    type="text" 
+                    value={formData.address?.city || ''} 
+                    onChange={(e) => setFormData({...formData, address: {...(formData.address || {}), city: e.target.value}})} 
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all" 
+                    placeholder="City" 
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 ml-1">State / Province</label>
+                  <input 
+                    type="text" 
+                    value={formData.address?.state || ''} 
+                    onChange={(e) => setFormData({...formData, address: {...(formData.address || {}), state: e.target.value}})} 
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all" 
+                    placeholder="State (e.g. NY)" 
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 ml-1">Zip / Postal Code</label>
+                  <input 
+                    type="text" 
+                    value={formData.address?.zipCode || ''} 
+                    onChange={(e) => setFormData({...formData, address: {...(formData.address || {}), zipCode: e.target.value}})} 
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all" 
+                    placeholder="Zip Code" 
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 ml-1">Country</label>
+                  <input 
+                    type="text" 
+                    value={formData.address?.country || 'US'} 
+                    onChange={(e) => setFormData({...formData, address: {...(formData.address || {}), country: e.target.value}})} 
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all" 
+                    placeholder="Country (e.g. US)" 
+                  />
+                </div>
+
+              </div>
+            </div>
+
+            {/* 3. Access Controls */}
+            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-5">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                <ShieldCheck size={14}/> 3. Environment & Access
               </h3>
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -173,12 +267,12 @@ export default function UserModal({
               </div>
             </div>
 
-            {/* 3. Client Assignments (Order Portal Only) */}
+            {/* 4. Client Assignments (Order Portal Only) */}
             {formData.portal === 'order' && (
               <div className="bg-white p-6 rounded-3xl border border-blue-100 shadow-sm space-y-5 relative overflow-hidden animate-in slide-in-from-bottom-4 duration-500">
                 <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
                 <h3 className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-2">
-                  <Building2 size={14}/> 3. Client Assignments
+                  <Building2 size={14}/> 4. Client Assignments
                 </h3>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -226,7 +320,6 @@ export default function UserModal({
                 {formData.customer && (
                   <div className="space-y-3 pt-2 animate-in fade-in duration-300">
                     <div className="flex justify-between items-center bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200">
-                      {/* FIX: Removed the red * asterisk since divisions are optional in the DB */}
                       <label className="text-[10px] font-black uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
                         <MapPin size={14} className="text-slate-400"/> Allowed Divisions
                       </label>
@@ -286,7 +379,7 @@ export default function UserModal({
             type="submit" 
             form="createUserForm" 
             disabled={createStatus === 'loading'} 
-            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-8 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-slate-900/20 disabled:opacity-70 active:scale-95"
+            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-brand-gold px-8 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-slate-900/20 disabled:opacity-70 active:scale-95"
           >
             {createStatus === 'loading' ? <Loader2 size={16} className="animate-spin" /> : <BadgeCheck size={16} />}
             {editingUserId ? 'Save Changes' : 'Provision Access'}

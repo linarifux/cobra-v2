@@ -5,7 +5,7 @@ import AppError from '../utils/AppError.js';
 // @desc    Create a new user (Order Portal users or Admin users)
 // @route   POST /api/v1/users
 export const createUser = catchAsync(async (req, res, next) => {
-  const { name, email, password, portal, role, customer, divisions, chargeCode } = req.body;
+  let { name, email, phone, addresses, userAddress, password, portal, role, customer, divisions, chargeCode } = req.body;
 
   // Security Check: Only super_admins can create other Admin portal users
   if (portal === 'admin' && req.user.role !== 'super_admin') {
@@ -17,9 +17,18 @@ export const createUser = catchAsync(async (req, res, next) => {
     return next(new AppError('Order portal users must be assigned to a Customer.', 400));
   }
 
+  // DATA MAPPING: Intercept the array format from the frontend and map it to the new `userAddress` field
+  if (addresses && addresses.length > 0 && typeof addresses[0] === 'object' && !addresses[0]._id) {
+    userAddress = addresses[0];
+    addresses = []; // Reset because the schema now expects ObjectIds for secondary addresses
+  }
+
   const newUser = await User.create({
     name,
     email,
+    phone, 
+    userAddress, // Stored directly on the user profile
+    addresses: addresses || [], 
     password,
     portal,
     role,
@@ -49,7 +58,8 @@ export const getAllUsers = catchAsync(async (req, res, next) => {
   
   const users = await User.find(filter)
     .populate('customer', 'customerName')
-    .populate('divisions', 'divisionName divisionCode status'); // <--- CRITICAL FOR FRONTEND
+    .populate('divisions', 'divisionName divisionCode status')
+    .populate('addresses'); // Populate any secondary addresses from the Address collection
 
   res.status(200).json({
     status: 'success',
@@ -58,15 +68,10 @@ export const getAllUsers = catchAsync(async (req, res, next) => {
   });
 });
 
-// @desc    Update a user (Role, Name, Active Status, Divisions)
+// @desc    Update a user (Role, Name, Active Status, Divisions, Addresses)
 // @route   PUT /api/v1/users/:id
 export const updateUser = catchAsync(async (req, res, next) => {
   
-  // Security Check: Prevent accidental password overwrites via standard PUT requests
-  // if (req.body.password) {
-  //   return next(new AppError('This route is not for password updates. Please use the secure password reset flow.', 400));
-  // }
-
   const userToUpdate = await User.findById(req.params.id);
   if (!userToUpdate) return next(new AppError('No user found', 404));
 
@@ -75,12 +80,19 @@ export const updateUser = catchAsync(async (req, res, next) => {
     return next(new AppError('Only Super Admins can modify Admin Portal users.', 403));
   }
 
+  // DATA MAPPING: Intercept array format from frontend and map to `userAddress`
+  if (req.body.addresses && req.body.addresses.length > 0 && typeof req.body.addresses[0] === 'object' && !req.body.addresses[0]._id) {
+    req.body.userAddress = req.body.addresses[0];
+    delete req.body.addresses; // Prevent casting errors on the ObjectIds array
+  }
+
   const updatedUser = await User.findByIdAndUpdate(req.params.id, req.body, {
     new: true,
     runValidators: true
   })
   .populate('customer', 'customerName')
-  .populate('divisions', 'divisionName divisionCode status'); // <--- CRITICAL FOR FRONTEND
+  .populate('divisions', 'divisionName divisionCode status')
+  .populate('addresses');
 
   res.status(200).json({
     status: 'success',
@@ -109,7 +121,8 @@ export const deleteUser = catchAsync(async (req, res, next) => {
 export const getUser = catchAsync(async (req, res, next) => {
   const user = await User.findById(req.params.id)
     .populate('customer', 'customerName')
-    .populate('divisions', 'divisionName divisionCode status'); 
+    .populate('divisions', 'divisionName divisionCode status')
+    .populate('addresses'); 
 
   if (!user) {
     return next(new AppError('No user found with that ID', 404));

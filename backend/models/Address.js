@@ -31,11 +31,11 @@ const addressSchema = new mongoose.Schema(
       required: [true, 'Last name is required for delivery/billing'],
       trim: true
     },
-    contactPhone: {
+    phone: {
       type: String,
       trim: true
     },
-    contactEmail: {
+    email: {
       type: String,
       trim: true,
       lowercase: true,
@@ -67,7 +67,7 @@ const addressSchema = new mongoose.Schema(
     },
     country: {
       type: String,
-      default: 'USA',
+      default: 'US',
       trim: true
     },
     addressType: {
@@ -88,9 +88,8 @@ const addressSchema = new mongoose.Schema(
 // Add an index to speed up querying a user's address book
 addressSchema.index({ user: 1 });
 
-// PRE-SAVE HOOK FIX: 
-// Removed 'next' parameter. When using an async function, Mongoose automatically 
-// waits for the Promise to resolve. Calling next() manually inside an async hook crashes it.
+// PRE-SAVE HOOK
+// If this address is set as default, remove the default flag from other addresses for this user
 addressSchema.pre('save', async function () {
   if (this.isModified('isDefault') && this.isDefault === true) {
     await this.constructor.updateMany(

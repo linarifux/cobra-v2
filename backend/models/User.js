@@ -19,8 +19,26 @@ const userSchema = new mongoose.Schema({
     type: String, 
     required: [true, 'Password is required'], 
     minlength: 8,
-    select: false // Never return password in standard queries
+    select: false
   },
+  phone: {
+    type: String,
+    trim: true
+  },
+  // NEW: Primary default address stored directly on the user profile
+  userAddress: {
+    street1: { type: String, trim: true },
+    street2: { type: String, trim: true },
+    city: { type: String, trim: true },
+    state: { type: String, trim: true },
+    zipCode: { type: String, trim: true },
+    country: { type: String, trim: true, default: 'US' }
+  },
+  // NEW: Array of ObjectIds referencing the separate Address model for additional addresses
+  addresses: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Address'
+  }],
   portal: {
     type: String,
     enum: ['admin', 'order'],
@@ -43,7 +61,6 @@ const userSchema = new mongoose.Schema({
     ref: 'Division',
     required: false
   }],
-  // NEW: Optional charge code for order portal users
   chargeCode: {
     type: String,
     trim: true
@@ -80,7 +97,7 @@ userSchema.pre('save', async function () {
   this.password = await bcrypt.hash(this.password, 12);
 });
 
-// 2. NEW: Hash password on updates (Triggered on findByIdAndUpdate)
+// 2. Hash password on updates (Triggered on findByIdAndUpdate)
 userSchema.pre('findOneAndUpdate', async function () {
   const update = this.getUpdate();
   

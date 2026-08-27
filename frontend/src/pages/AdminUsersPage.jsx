@@ -14,9 +14,19 @@ import UserControls from '../components/users/UserControls';
 import UserTable from '../components/users/UserTable';
 import UserModal from '../components/users/UserModal';
 
+// Update initial state to match the modal's expected structure
 const INITIAL_FORM_STATE = {
   name: '',
   email: '',
+  phone: '',
+  address: {
+    street1: '',
+    street2: '',
+    city: '',
+    state: '',
+    zipCode: '',
+    country: 'US'
+  },
   password: '',
   portal: 'admin',
   role: 'admin',
@@ -111,9 +121,24 @@ export default function AdminUsersPage() {
 
   const handleOpenEditModal = (user) => {
     setEditingUserId(user._id);
+    
+    // Extract the primary address directly from the new userAddress object
+    const primaryAddress = user.userAddress || {
+      street1: '', street2: '', city: '', state: '', zipCode: '', country: 'US'
+    };
+
     setFormData({
       name: user.name || '',
       email: user.email || '',
+      phone: user.phone || '',
+      address: {
+        street1: primaryAddress.street1 || '',
+        street2: primaryAddress.street2 || '',
+        city: primaryAddress.city || '',
+        state: primaryAddress.state || '',
+        zipCode: primaryAddress.zipCode || '',
+        country: primaryAddress.country || 'US'
+      },
       password: '', 
       portal: user.portal || 'admin',
       role: user.role || 'admin',
@@ -160,20 +185,26 @@ export default function AdminUsersPage() {
     }));
   };
 
-  
   const handleSubmitUser = async (e) => {
     e.preventDefault();
     
     if (formData.portal === 'order') {
       if (!formData.customer) return toast.error('Required Field', {description: 'Users on the Order Portal MUST be assigned to a Customer Account.'});
     }
+
+    // Pass the primary address specifically to userAddress
+    const payload = {
+      ...formData,
+      userAddress: formData.address
+    };
+    delete payload.address; // Remove the frontend-only 'address' wrapper
     
     try {
       if (editingUserId) {
-        await dispatch(updateUser({ id: editingUserId, ...formData })).unwrap();
+        await dispatch(updateUser({ id: editingUserId, ...payload })).unwrap();
         toast.success("User access updated successfully.");
       } else {
-        await dispatch(createUser(formData)).unwrap();
+        await dispatch(createUser(payload)).unwrap();
         toast.success("User provisioned successfully.");
       }
       handleCloseModal();
