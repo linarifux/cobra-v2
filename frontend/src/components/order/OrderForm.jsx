@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, MapPin, CreditCard,
   Trash2, Plus, MessageSquare,
-  PackageCheck, Save, Loader2, Box, Building2, User, Briefcase, Truck, ChevronDown, Search, AlertTriangle, Globe
+  PackageCheck, Save, Loader2, Box, Building2, User, Briefcase, Truck, ChevronDown, Search, AlertTriangle
 } from 'lucide-react';
 import { toast } from 'sonner';
 import NotFoundPage from '../../pages/NotFoundPage';
@@ -69,7 +69,6 @@ export default function OrderForm() {
   const [userId, setUserId] = useState('');
   const [chargeCode, setChargeCode] = useState(''); 
   const [isRushOrder, setIsRushOrder] = useState(false);
-  const [isInternational, setIsInternational] = useState(false);
 
   const [orderStatus, setOrderStatus] = useState('New');
   const [shipping, setShipping] = useState({ carrierId: '', carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0 });
@@ -252,7 +251,6 @@ export default function OrderForm() {
       setUserId(currentOrder.user?._id || currentOrder.user || '');
       setChargeCode(currentOrder.chargeCode || ''); 
       setIsRushOrder(currentOrder.isRushOrder || false);
-      setIsInternational(currentOrder.isInternational || false);
 
       // Calculate effective status to keep visually in sync with quantity constraints
       const effectiveStatus = currentOrder.qtyLimitExceeds && currentOrder.status === 'New' ? 'Pending' : (currentOrder.status || 'New');
@@ -359,8 +357,9 @@ export default function OrderForm() {
       return toast.warning("Please fill out all required shipping address fields.");
     }
 
-    // STRICT 2-CHARACTER STATE VALIDATION
-    if (address.state.trim().length !== 2 && !isInternational) {
+    // STRICT 2-CHARACTER STATE VALIDATION (Only enforced for US addresses)
+    const isDomestic = ['US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'].includes((address.country || '').toUpperCase().trim());
+    if (address.state.trim().length !== 2 && isDomestic) {
       return toast.error("State must be exactly a 2-character code (e.g., NY, CA). Please use the dropdown selector.");
     }
 
@@ -379,7 +378,6 @@ export default function OrderForm() {
       chargeCode: chargeCode.trim(), 
       status: orderStatus,
       isRushOrder: isRushOrder, 
-      isInternational: isInternational,
       qtyLimitExceeds: isCurrentQtyLimitExceeded,
       notes: notes,
       shippingAddress: {
@@ -593,7 +591,7 @@ export default function OrderForm() {
                   </select>
                 </div>
                 
-                <div className="col-span-1">
+                <div className="col-span-2">
                   <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 hover:bg-slate-100 transition-colors shadow-sm w-full">
                     <input 
                       type="checkbox" 
@@ -603,20 +601,6 @@ export default function OrderForm() {
                     /> 
                     <span className="text-red-600 flex items-center gap-1.5 uppercase tracking-widest text-[10px] font-black">
                       <AlertTriangle size={14}/> Rush Order
-                    </span>
-                  </label>
-                </div>
-
-                <div className="col-span-1">
-                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 hover:bg-slate-100 transition-colors shadow-sm w-full">
-                    <input 
-                      type="checkbox" 
-                      checked={isInternational}
-                      onChange={(e) => setIsInternational(e.target.checked)}
-                      className="accent-blue-600 w-4 h-4 rounded-sm cursor-pointer" 
-                    /> 
-                    <span className="text-blue-600 flex items-center gap-1.5 uppercase tracking-widest text-[10px] font-black">
-                      <Globe size={14}/> International
                     </span>
                   </label>
                 </div>

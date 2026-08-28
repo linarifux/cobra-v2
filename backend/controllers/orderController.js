@@ -14,6 +14,14 @@ const getAccessLevel = (user) => {
   return 'standard_user';
 };
 
+// Helper to reliably determine if an order is international based on the country string
+const checkIfInternational = (countryStr) => {
+  if (!countryStr) return false; // Default to domestic if missing
+  const normalizedCountry = countryStr.trim().toUpperCase();
+  const domesticVariants = ['US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'];
+  return !domesticVariants.includes(normalizedCountry);
+};
+
 // --- DYNAMIC FEE CALCULATION ENGINE ---
 const calculateProcessingFees = async (orderData) => {
   // Fetch active charge types from the DB
@@ -109,6 +117,10 @@ export const createOrder = catchAsync(async (req, res, next) => {
 
   const customer = await Customer.findById(req.body.customer);
   if (!customer) return next(new AppError('Customer not found.', 404));
+
+  // --- AUTOMATED INTERNATIONAL DETECTION ---
+  const orderCountry = req.body.shippingAddress?.country || 'US';
+  req.body.isInternational = checkIfInternational(orderCountry);
 
   // --- AWAIT THE DYNAMIC CALCULATION ---
   req.body.processingFees = await calculateProcessingFees(req.body);
@@ -252,7 +264,7 @@ export const updateOrder = catchAsync(async (req, res, next) => {
     }
   }
 
-  // --- AUTOMATED FEE RECALCULATION ON UPDATE ---
+  // --- AUTOMATED FEE RECALCULATION & INTERNATIONAL DETECTION ON UPDATE ---
   const mergedData = { 
     ...order.toObject(), 
     ...req.body,
@@ -260,9 +272,17 @@ export const updateOrder = catchAsync(async (req, res, next) => {
       ...(order.shippingDetails ? order.shippingDetails.toObject() : {}),
       ...(req.body.shippingDetails || {})
     },
+    shippingAddress: {
+      ...(order.shippingAddress ? order.shippingAddress.toObject() : {}),
+      ...(req.body.shippingAddress || {})
+    },
     items: req.body.items || order.items
   };
   
+  // Re-evaluate international status in case the address was updated
+  req.body.isInternational = checkIfInternational(mergedData.shippingAddress?.country);
+  mergedData.isInternational = req.body.isInternational; // Push to merged data so fee calculation sees it
+
   req.body.processingFees = await calculateProcessingFees(mergedData);
 
   if (req.body.status === 'Cancelled' && order.status !== 'Cancelled') {

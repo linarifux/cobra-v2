@@ -90,7 +90,7 @@ export default function OrderDetailsPage() {
   const [cartoonsCount, setCartoonsCount] = useState(0);
   const [palletsCount, setPalletsCount] = useState(0); 
   const [isRushOrder, setIsRushOrder] = useState(false);
-  const [isInternational, setIsInternational] = useState(false);
+  // REMOVED: isInternational state
 
   const [createShipmentModalOpen, setCreateShipmentModalOpen] = useState(false);
   const [isCreatingShipment, setIsCreatingShipment] = useState(false);
@@ -164,9 +164,11 @@ export default function OrderDetailsPage() {
     const cartonSurcharge = cartonCount * getFee('Carton Surcharge', 2.05);
     const palletFee = palletCount * getFee('Pallet Fee', 8.40);
 
-    // FIX: Set Rush Fee default to strictly $20 
     const rushFee = isRushOrder ? getFee('Rush Fee', 20) : 0;
-    const internationalFee = isInternational ? getFee('International Fee', 0) : 0;
+    
+    // Determine international locally for preview based on current address country
+    const isLocalIntl = address.country && !['US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'].includes(address.country.toUpperCase().trim());
+    const internationalFee = isLocalIntl ? getFee('International Fee', 0) : 0;
 
     const totalProcessingFee = baseFee + weightSurcharge + lineItemSurcharge + 
                                packageSurcharge + pieceSurcharge + cartonSurcharge + 
@@ -184,7 +186,7 @@ export default function OrderDetailsPage() {
       internationalFee,
       totalProcessingFee
     };
-  }, [totalPackageWeightOz, items, packages.length, cartoonsCount, palletsCount, isRushOrder, isInternational, chargeTypes]);
+  }, [totalPackageWeightOz, items, packages.length, cartoonsCount, palletsCount, isRushOrder, address.country, chargeTypes]);
 
   useEffect(() => {
     if (isValidMongoId) dispatch(fetchOrderById(id));
@@ -244,7 +246,6 @@ export default function OrderDetailsPage() {
       setCartoonsCount(currentOrder.shippingDetails?.cartoons || 0);
       setPalletsCount(currentOrder.shippingDetails?.pallets || 0); 
       setIsRushOrder(currentOrder.isRushOrder || false);
-      setIsInternational(currentOrder.isInternational || false);
 
       setShipping({ 
         carrierId: currentOrder.shippingDetails?.carrierId?._id || currentOrder.shippingDetails?.carrierId || '',
@@ -535,7 +536,8 @@ export default function OrderDetailsPage() {
     setIsSaving(true);
     const isChangingToCancelled = orderStatus === 'Cancelled' && currentOrder?.status !== 'Cancelled';
 
-    if (address.state.trim().length !== 2 && !isInternational) {
+    const isDomestic = ['US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'].includes((address.country || '').toUpperCase().trim());
+    if (address.state.trim().length !== 2 && isDomestic) {
       setIsSaving(false);
       return toast.error("State must be exactly a 2-character code (e.g., NY, CA). Please use the dropdown selector.");
     }
@@ -543,7 +545,6 @@ export default function OrderDetailsPage() {
     const payload = {
       status: orderStatus,
       isRushOrder: isRushOrder,
-      isInternational: isInternational,
       ...(selectedUserId ? { user: selectedUserId } : { user: null }),
       notes: notes,
       shippingAddress: {
@@ -598,7 +599,6 @@ export default function OrderDetailsPage() {
     const payload = {
       status: 'Cancelled',
       isRushOrder: isRushOrder,
-      isInternational: isInternational,
       ...(selectedUserId ? { user: selectedUserId } : { user: null }),
       notes: notes,
       shippingAddress: {
@@ -850,6 +850,9 @@ export default function OrderDetailsPage() {
     ? new Date(currentOrder.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     : 'Unknown Date';
 
+  // Explicitly check current order context to pass to the InfoPanel
+  const isCurrentlyInternational = currentOrder?.isInternational || false;
+
   return (
     <div className="h-full flex flex-col gap-5 animate-fade-in max-w-[1400px] mx-auto pb-10 px-4 box-border text-slate-900">
 
@@ -912,10 +915,11 @@ export default function OrderDetailsPage() {
           <OrderInfoPanel 
             currentOrder={currentOrder} 
             isRushOrder={isRushOrder} 
-            isInternational={isInternational} 
+            isInternational={isCurrentlyInternational} 
             orderCreatorName={orderCreatorName} 
             creationDate={creationDate} 
           />
+          
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <OrderStatusPanel 
@@ -923,8 +927,6 @@ export default function OrderDetailsPage() {
               setOrderStatus={setOrderStatus} 
               isRushOrder={isRushOrder} 
               setIsRushOrder={setIsRushOrder} 
-              isInternational={isInternational} 
-              setIsInternational={setIsInternational} 
             />
             <ShippingPanel 
               shipping={shipping} 
