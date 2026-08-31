@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, MapPin, CreditCard,
   Trash2, Plus, MessageSquare,
-  PackageCheck, Save, Loader2, Box, Building2, User, Briefcase, Truck, ChevronDown, Search, AlertTriangle
+  PackageCheck, Save, Loader2, Box, Building2, User, Briefcase, Truck, ChevronDown, Search, AlertTriangle, Globe
 } from 'lucide-react';
 import { toast } from 'sonner';
 import NotFoundPage from '../../pages/NotFoundPage';
@@ -61,6 +61,8 @@ export default function OrderForm() {
   const { items: divisionsData = [], status: divisionsStatus } = useSelector((state) => state.divisions || {});
   const { items: carriersData = [], status: carrierStatus } = useSelector((state) => state.carriers || {});
 
+  console.log(inventoryData)
+
   // --- Form State ---
   const [orderNumber, setOrderNumber] = useState('');
   const [orderType, setOrderType] = useState('WEBORD');
@@ -69,6 +71,7 @@ export default function OrderForm() {
   const [userId, setUserId] = useState('');
   const [chargeCode, setChargeCode] = useState(''); 
   const [isRushOrder, setIsRushOrder] = useState(false);
+  const [isInternational, setIsInternational] = useState(false);
 
   const [orderStatus, setOrderStatus] = useState('New');
   const [shipping, setShipping] = useState({ carrierId: '', carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0 });
@@ -164,7 +167,8 @@ export default function OrderForm() {
         sku: inv.sku || '',
         price: inv.unitCost || inv.price || 0,
         weight: inv.weight || 0,
-        max: inv.max || 0 // Included to evaluate quantity limit exceedances 
+        min: Number(inv.min) || 0, // Explicit cast to Number for accurate boolean logic later
+        max: Number(inv.max) || 0  // Explicit cast to Number 
       }))
       .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' })); 
   }, [inventoryData, customerId, divisionId]);
@@ -179,8 +183,19 @@ export default function OrderForm() {
   const isCurrentQtyLimitExceeded = useMemo(() => {
     return items.some(item => {
       const matchedStock = availableInventories.find(inv => inv.sku === item.sku);
-      const maxLimit = Number(matchedStock?.max) || 0;
-      return maxLimit > 0 && item.qty > maxLimit;
+      if (!matchedStock) return false;
+      
+      const currentQty = Number(item.qty) || 0;
+      const maxLimit = Number(matchedStock.max) || 0;
+      const minLimit = Number(matchedStock.min) || 0;
+      
+      // True if over the max limit (excluding 0)
+      const exceedsMax = maxLimit > 0 && currentQty > maxLimit;
+      
+      // True if below the min limit (excluding 0)
+      const belowMin = minLimit > 0 && currentQty < minLimit;
+      
+      return exceedsMax || belowMin;
     });
   }, [items, availableInventories]);
 
@@ -251,6 +266,7 @@ export default function OrderForm() {
       setUserId(currentOrder.user?._id || currentOrder.user || '');
       setChargeCode(currentOrder.chargeCode || ''); 
       setIsRushOrder(currentOrder.isRushOrder || false);
+      setIsInternational(currentOrder.isInternational || false);
 
       // Calculate effective status to keep visually in sync with quantity constraints
       const effectiveStatus = currentOrder.qtyLimitExceeds && currentOrder.status === 'New' ? 'Pending' : (currentOrder.status || 'New');
@@ -357,9 +373,8 @@ export default function OrderForm() {
       return toast.warning("Please fill out all required shipping address fields.");
     }
 
-    // STRICT 2-CHARACTER STATE VALIDATION (Only enforced for US addresses)
-    const isDomestic = ['US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'].includes((address.country || '').toUpperCase().trim());
-    if (address.state.trim().length !== 2 && isDomestic) {
+    // STRICT 2-CHARACTER STATE VALIDATION
+    if (address.state.trim().length !== 2 && !isInternational) {
       return toast.error("State must be exactly a 2-character code (e.g., NY, CA). Please use the dropdown selector.");
     }
 
@@ -378,6 +393,7 @@ export default function OrderForm() {
       chargeCode: chargeCode.trim(), 
       status: orderStatus,
       isRushOrder: isRushOrder, 
+      isInternational: isInternational,
       qtyLimitExceeds: isCurrentQtyLimitExceeded,
       notes: notes,
       shippingAddress: {
@@ -591,7 +607,7 @@ export default function OrderForm() {
                   </select>
                 </div>
                 
-                <div className="col-span-2">
+                <div className="col-span-1">
                   <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 hover:bg-slate-100 transition-colors shadow-sm w-full">
                     <input 
                       type="checkbox" 
@@ -601,6 +617,20 @@ export default function OrderForm() {
                     /> 
                     <span className="text-red-600 flex items-center gap-1.5 uppercase tracking-widest text-[10px] font-black">
                       <AlertTriangle size={14}/> Rush Order
+                    </span>
+                  </label>
+                </div>
+
+                <div className="col-span-1">
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 hover:bg-slate-100 transition-colors shadow-sm w-full">
+                    <input 
+                      type="checkbox" 
+                      checked={isInternational}
+                      onChange={(e) => setIsInternational(e.target.checked)}
+                      className="accent-blue-600 w-4 h-4 rounded-sm cursor-pointer" 
+                    /> 
+                    <span className="text-blue-600 flex items-center gap-1.5 uppercase tracking-widest text-[10px] font-black">
+                      <Globe size={14}/> International
                     </span>
                   </label>
                 </div>

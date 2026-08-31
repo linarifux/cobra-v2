@@ -23,6 +23,7 @@ import { fetchCustomers } from '../store/slices/customerSlice';
 import { fetchDivisions } from '../store/slices/divisionSlice';
 import { fetchInventory } from '../store/slices/inventorySlice';
 
+
 export default function OrdersPage() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
