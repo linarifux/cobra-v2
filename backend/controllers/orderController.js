@@ -394,3 +394,43 @@ export const deleteOrder = catchAsync(async (req, res, next) => {
   await Order.findByIdAndDelete(req.params.id);
   res.status(204).json({ status: 'success', data: null });
 });
+
+
+
+// @desc    Get all orders belonging to a specific user
+// @route   GET /api/v1/users/:userId/orders OR /api/v1/orders/user/:userId
+export const getOrdersByUserId = catchAsync(async (req, res, next) => {
+  const { userId } = req.params;
+
+  if (!userId) {
+    return next(new AppError('User ID is required to fetch orders.', 400));
+  }
+
+  const accessLevel = getAccessLevel(req.user);
+
+  // Security Check: Standard users can ONLY request their own orders
+  if (accessLevel === 'standard_user' && String(req.user._id) !== String(userId)) {
+    return next(new AppError('You do not have permission to view orders for this user.', 403));
+  }
+
+  const filter = { user: userId };
+
+  // Security Check: Division admins can only see this user's orders if they belong to their assigned divisions
+  if (accessLevel === 'division_admin') {
+    const userDivisions = req.user.divisions ? req.user.divisions.map(d => String(d._id || d)) : [];
+    filter.division = { $in: userDivisions };
+  }
+
+  const orders = await Order.find(filter)
+    .populate('customer', 'customerName contactEmail')
+    .populate('division', 'divisionName divisionCode')
+    .populate('user', 'name firstName lastName email')
+    .populate('shippingDetails.carrierId', 'carrierType accountName')
+    .sort('-createdAt'); // Sorts newest first
+
+  res.status(200).json({ 
+    status: 'success', 
+    results: orders.length, 
+    data: { orders } 
+  });
+});

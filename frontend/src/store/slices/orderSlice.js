@@ -43,6 +43,22 @@ export const fetchOrderById = createAsyncThunk(
   }
 );
 
+// NEW: Fetch Orders by User ID 
+export const fetchOrdersByUser = createAsyncThunk(
+  "orders/fetchOrdersByUser",
+  async (userId, { rejectWithValue }) => {
+    try {
+      // Assuming you mapped it to /orders/user/:userId in your backend routes
+      const response = await api.get(`/orders/user/${userId}`);
+      return response.data.data.orders || response.data.data || [];
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || error.message || "Failed to fetch user orders"
+      );
+    }
+  }
+);
+
 // 3. Create New Order
 export const createOrder = createAsyncThunk(
   "orders/createOrder",
@@ -185,6 +201,7 @@ const orderSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
+      // Fetch All Orders
       .addCase(fetchOrders.pending, (state) => {
         state.status = "loading";
         state.error = null;
@@ -198,6 +215,21 @@ const orderSlice = createSlice({
         state.error = action.payload;
       })
 
+      // Fetch Orders By User
+      .addCase(fetchOrdersByUser.pending, (state) => {
+        state.status = "loading";
+        state.error = null;
+      })
+      .addCase(fetchOrdersByUser.fulfilled, (state, action) => {
+        state.status = "succeeded";
+        state.items = action.payload;
+      })
+      .addCase(fetchOrdersByUser.rejected, (state, action) => {
+        state.status = "failed";
+        state.error = action.payload;
+      })
+
+      // Fetch Order by ID
       .addCase(fetchOrderById.pending, (state) => {
         state.status = "loading";
         state.error = null;
@@ -211,10 +243,12 @@ const orderSlice = createSlice({
         state.error = action.payload;
       })
 
+      // Create Order
       .addCase(createOrder.fulfilled, (state, action) => {
         state.items.unshift(action.payload);
       })
 
+      // Update Order
       .addCase(updateOrder.fulfilled, (state, action) => {
         const index = state.items.findIndex((o) => String(o._id) === String(action.payload._id));
         if (index !== -1) {
@@ -226,6 +260,7 @@ const orderSlice = createSlice({
         }
       })
 
+      // Delete Order
       .addCase(deleteOrder.fulfilled, (state, action) => {
         state.items = state.items.filter((o) => String(o._id) !== String(action.payload));
 
@@ -234,6 +269,7 @@ const orderSlice = createSlice({
         }
       })
 
+      // Generate Label
       .addCase(generateOrderLabel.fulfilled, (state, action) => {
         state.currentOrder = action.payload.order; 
         const index = state.items.findIndex((o) => String(o._id) === String(action.payload.order._id));
@@ -242,11 +278,12 @@ const orderSlice = createSlice({
         }
       })
       
+      // Download Label
       .addCase(downloadPurchasedLabel.rejected, (state, action) => {
         state.error = action.payload;
       })
 
-      // Update Redux state immediately when voided/cancelled via the new endpoints
+      // Void / Cancel Actions
       .addCase(voidOrderLabel.fulfilled, (state, action) => {
         state.currentOrder = action.payload; 
         const index = state.items.findIndex((o) => String(o._id) === String(action.payload._id));
@@ -262,7 +299,7 @@ const orderSlice = createSlice({
         }
       })
       
-      // Update state when shipment is created
+      // Create Shipment
       .addCase(createOrderShipment.fulfilled, (state, action) => {
         if (action.payload.order) {
           state.currentOrder = action.payload.order;

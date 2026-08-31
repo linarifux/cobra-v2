@@ -34,8 +34,11 @@ export const login = catchAsync(async (req, res, next) => {
 
   // 2. Check if user exists && password is correct (specifically for that portal)
   const user = await User.findOne({ email, portal }).select('+password');
+  console.log('User found:', user); // Debugging line
+  const isPasswordCorrect = user ? await user.matchPassword(password, user.password) : false;
+  console.log('Is password correct:', isPasswordCorrect); // Debugging line
 
-  if (!user || !(await user.matchPassword(password, user.password))) {
+  if (!user || !isPasswordCorrect) {
     return next(new AppError('Incorrect email or password for this portal', 401));
   }
 

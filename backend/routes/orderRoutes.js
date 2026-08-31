@@ -4,7 +4,8 @@ import {
   getAllOrders,
   getOrder,
   updateOrder,
-  deleteOrder
+  deleteOrder,
+  getOrdersByUserId
 } from '../controllers/orderController.js';
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
@@ -22,5 +23,7 @@ router.route('/:id')
   .get(getOrder)
   .put(updateOrder)
   .delete(restrictTo('admin', 'super_admin', 'staff'), deleteOrder); 
+
+router.get('/user/:userId', protect, getOrdersByUserId);
 
 export default router;

@@ -1,5 +1,60 @@
-import React from 'react';
-import { Users, Mail, Building2, Briefcase, Edit2, Trash2, Loader2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useDispatch } from 'react-redux';
+import { Users, Mail, Building2, Briefcase, Edit2, Trash2, Loader2, ShoppingCart } from 'lucide-react';
+import { fetchOrdersByUser } from '../../store/slices/orderSlice';
+
+// Isolated sub-component to fetch and calculate monthly orders per user safely
+const MonthlyOrderCount = ({ userId }) => {
+  const dispatch = useDispatch();
+  const [count, setCount] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    
+    const fetchOrders = async () => {
+      try {
+        const orders = await dispatch(fetchOrdersByUser(userId)).unwrap();
+        
+        // Calculate orders placed in the current month
+        const now = new Date();
+        const currentMonth = now.getMonth();
+        const currentYear = now.getFullYear();
+
+        const monthlyOrders = orders.filter(order => {
+          const orderDate = new Date(order.createdAt || order.date);
+          return orderDate.getMonth() === currentMonth && orderDate.getFullYear() === currentYear;
+        });
+
+        if (isMounted) {
+          setCount(monthlyOrders.length);
+        }
+      } catch (error) {
+        // Fallback for permission errors or network issues
+        if (isMounted) setCount('-');
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchOrders();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [dispatch, userId]);
+
+  if (loading) {
+    return <Loader2 size={14} className="animate-spin text-slate-300 mt-1" />;
+  }
+  
+  return (
+    <div className="flex items-center gap-1.5 font-bold text-slate-700 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg w-max shadow-sm">
+      <ShoppingCart size={12} className="text-brand-gold" />
+      {count}
+    </div>
+  );
+};
 
 export default function UserTable({
   status,
@@ -41,14 +96,16 @@ export default function UserTable({
               <th className="px-6 py-4">User Details</th>
               {activeTab === 'order' && <th className="px-6 py-4">Assigned Client / Divisions</th>}
               {activeTab === 'order' && <th className="px-6 py-4">Charge Code</th>}
+              <th className="px-6 py-4">Monthly Orders</th>
               <th className="px-6 py-4">Security Role</th>
               <th className="px-6 py-4 text-right">Actions</th>
+              
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100/60">
             {filteredUsers.length === 0 ? (
               <tr>
-                <td colSpan={5} className="py-16 text-center">
+                <td colSpan={6} className="py-16 text-center">
                    <div className="flex flex-col items-center gap-2 text-slate-400">
                       <Users size={32} className="opacity-50" />
                       <p className="font-bold text-sm">No users found matching your filters.</p>
@@ -119,11 +176,16 @@ export default function UserTable({
                   </td>
                 )}
 
-                <td className="px-6 py-4 align-top pt-5">
+                {/* NEW MONTHLY ORDERS COLUMN */}
+                <td className="px-6 py-4 align-top pt-4">
+                  <MonthlyOrderCount userId={user._id} />
+                </td>
+
+                <td className="px-6 py-4 align-top pt-4">
                   {renderRoleBadge(user.role)}
                 </td>
 
-                <td className="px-6 py-4 text-right align-top pt-5">
+                <td className="px-6 py-4 text-right align-top pt-4">
                   <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     {canManageUsers && (
                       <button 

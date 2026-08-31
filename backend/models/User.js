@@ -25,7 +25,6 @@ const userSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
-  // NEW: Primary default address stored directly on the user profile
   userAddress: {
     street1: { type: String, trim: true },
     street2: { type: String, trim: true },
@@ -34,7 +33,6 @@ const userSchema = new mongoose.Schema({
     zipCode: { type: String, trim: true },
     country: { type: String, trim: true, default: 'US' }
   },
-  // NEW: Array of ObjectIds referencing the separate Address model for additional addresses
   addresses: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Address'
@@ -48,7 +46,6 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: [true, 'User must have a role']
   },
-  // If the user is on the Order Portal, they MUST belong to a specific customer account
   customer: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Customer',
@@ -71,10 +68,9 @@ const userSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-// Add index for fast reverse-lookups when querying users by division
 userSchema.index({ divisions: 1 });
 
-// CUSTOM VALIDATOR: Ensure roles strictly match their allowed portals
+// CUSTOM VALIDATOR
 userSchema.pre('validate', function() {
   const adminRoles = ['super_admin', 'admin'];
   const orderRoles = ['super_user', 'manager', 'standard'];
@@ -88,32 +84,32 @@ userSchema.pre('validate', function() {
   }
 });
 
-// 1. Hash password before saving (Triggered on User.create or user.save())
+// 1. Hash password before saving 
 userSchema.pre('save', async function () {
-  // Only run this function if password was actually modified
   if (!this.isModified('password')) return;
   
-  // Hash the password with cost of 12
   this.password = await bcrypt.hash(this.password, 12);
 });
 
-// 2. Hash password on updates (Triggered on findByIdAndUpdate)
+// 2. Hash password on updates 
 userSchema.pre('findOneAndUpdate', async function () {
   const update = this.getUpdate();
   
-  // Check if the password is being updated directly
-  if (update.password) {
+  // Helper to check if string is ALREADY a bcrypt hash 
+  // (bcrypt hashes always start with $2 and are exactly 60 chars long)
+  const isAlreadyHashed = (str) => typeof str === 'string' && str.startsWith('$2') && str.length === 60;
+  
+  if (update.password && !isAlreadyHashed(update.password)) {
     update.password = await bcrypt.hash(update.password, 12);
   } 
-  // Check if the password is being updated inside a $set operator (Mongoose sometimes wraps it)
-  else if (update.$set && update.$set.password) {
+  else if (update.$set && update.$set.password && !isAlreadyHashed(update.$set.password)) {
     update.$set.password = await bcrypt.hash(update.$set.password, 12);
   }
 });
 
 // Instance method to verify password during login
-userSchema.methods.matchPassword = async function (enteredPassword, userPassword) {
-  return await bcrypt.compare(enteredPassword, userPassword);
+userSchema.methods.matchPassword = async function (enteredPassword) {
+  return await bcrypt.compare(enteredPassword, this.password);
 };
 
 export default mongoose.model('User', userSchema);
