@@ -2,6 +2,7 @@ import Order from '../models/Order.js';
 import Customer from '../models/Customer.js';
 import Inventory from '../models/Inventory.js';
 import ChargeType from '../models/ChargeType.js'; 
+import User from '../models/User.js'; // Imported User model to access orderLimit
 import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 import { cancelShipment, voidLabel } from '../services/shipStationService.js';
@@ -130,6 +131,26 @@ export const createOrder = catchAsync(async (req, res, next) => {
 
   if (req.body.qtyLimitExceeds === true) {
     order.status = 'Pending';
+  }
+
+  // --- MONTHLY ORDER LIMIT CHECK ---
+  const targetUserId = req.body.user || (req.user ? req.user._id : null);
+  if (targetUserId) {
+    const orderUser = await User.findById(targetUserId);
+    if (orderUser && typeof orderUser.orderLimit === 'number') {
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+      const monthlyOrderCount = await Order.countDocuments({
+        user: targetUserId,
+        createdAt: { $gte: startOfMonth, $lte: endOfMonth }
+      });
+
+      if (monthlyOrderCount >= orderUser.orderLimit) {
+        order.status = 'Pending';
+      }
+    }
   }
 
   await order.save();
