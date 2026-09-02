@@ -5,7 +5,7 @@ import AppError from '../utils/AppError.js';
 // @desc    Create a new user (Order Portal users or Admin users)
 // @route   POST /api/v1/users
 export const createUser = catchAsync(async (req, res, next) => {
-  let { name, email, phone, addresses, userAddress, password, portal, role, customer, divisions, chargeCode } = req.body;
+  let { name, email, phone, addresses, userAddress, password, portal, role, customer, divisions, chargeCode, orderLimit } = req.body;
 
   // Security Check: Only super_admins can create other Admin portal users
   if (portal === 'admin' && req.user.role !== 'super_admin') {
@@ -33,6 +33,7 @@ export const createUser = catchAsync(async (req, res, next) => {
     portal,
     role,
     chargeCode,
+    orderLimit: portal === 'order' ? req.body.orderLimit : undefined,
     customer: portal === 'order' ? customer : undefined,
     divisions: portal === 'order' ? (divisions || []) : []
   });

@@ -32,7 +32,8 @@ const INITIAL_FORM_STATE = {
   role: 'admin',
   customer: '',
   divisions: [],
-  chargeCode: ''
+  chargeCode: '',
+  orderLimit: '' // ADDED
 };
 
 export default function AdminUsersPage() {
@@ -144,7 +145,8 @@ export default function AdminUsersPage() {
       role: user.role || 'admin',
       customer: typeof user.customer === 'object' ? user.customer?._id : (user.customer || ''),
       divisions: user.divisions?.map(d => typeof d === 'object' ? d._id : d) || [],
-      chargeCode: user.chargeCode || ''
+      chargeCode: user.chargeCode || '',
+      orderLimit: user.orderLimit ?? '' // ADDED
     });
     setIsModalOpen(true);
   };
@@ -164,7 +166,8 @@ export default function AdminUsersPage() {
       role: newPortal === 'admin' ? 'admin' : 'standard',
       customer: newPortal === 'admin' ? '' : formData.customer,
       divisions: newPortal === 'admin' ? [] : formData.divisions,
-      chargeCode: newPortal === 'admin' ? '' : formData.chargeCode
+      chargeCode: newPortal === 'admin' ? '' : formData.chargeCode,
+      orderLimit: newPortal === 'admin' ? '' : formData.orderLimit // ADDED
     });
   };
 
@@ -199,6 +202,13 @@ export default function AdminUsersPage() {
     };
     delete payload.address; // Remove the frontend-only 'address' wrapper
     
+    // Safely parse orderLimit
+    if (payload.portal === 'admin' || payload.orderLimit === '') {
+      delete payload.orderLimit; // Let the backend handle missing values safely
+    } else {
+      payload.orderLimit = Number(payload.orderLimit);
+    }
+
     try {
       if (editingUserId) {
         await dispatch(updateUser({ id: editingUserId, ...payload })).unwrap();

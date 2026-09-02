@@ -97,6 +97,7 @@ export default function UserTable({
               {activeTab === 'order' && <th className="px-6 py-4">Assigned Client / Divisions</th>}
               {activeTab === 'order' && <th className="px-6 py-4">Charge Code</th>}
               <th className="px-6 py-4">Monthly Orders</th>
+              {activeTab === 'order' && <th className="px-6 py-4">Order Limit</th>}
               <th className="px-6 py-4">Security Role</th>
               <th className="px-6 py-4 text-right">Actions</th>
               
@@ -105,7 +106,7 @@ export default function UserTable({
           <tbody className="divide-y divide-slate-100/60">
             {filteredUsers.length === 0 ? (
               <tr>
-                <td colSpan={6} className="py-16 text-center">
+                <td colSpan={activeTab === 'order' ? 7 : 4} className="py-16 text-center">
                    <div className="flex flex-col items-center gap-2 text-slate-400">
                       <Users size={32} className="opacity-50" />
                       <p className="font-bold text-sm">No users found matching your filters.</p>
@@ -180,6 +181,19 @@ export default function UserTable({
                 <td className="px-6 py-4 align-top pt-4">
                   <MonthlyOrderCount userId={user._id} />
                 </td>
+
+                {/* NEW ORDER LIMIT COLUMN */}
+                {activeTab === 'order' && (
+                  <td className="px-6 py-4 align-top pt-4">
+                    {user.orderLimit ? (
+                       <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-700 shadow-sm">
+                          {user.orderLimit}
+                       </div>
+                    ) : (
+                       <span className="text-xs text-slate-400 font-medium italic">No Limit</span>
+                    )}
+                  </td>
+                )}
 
                 <td className="px-6 py-4 align-top pt-4">
                   {renderRoleBadge(user.role)}

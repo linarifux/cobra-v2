@@ -62,6 +62,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  orderLimit: {
+    type: Number,
+    min: [0, 'Order limit cannot be negative']
+  },
   isActive: {
     type: Boolean,
     default: true
@@ -75,8 +79,14 @@ userSchema.pre('validate', function() {
   const adminRoles = ['super_admin', 'admin'];
   const orderRoles = ['super_user', 'manager', 'standard'];
 
-  if (this.portal === 'admin' && !adminRoles.includes(this.role)) {
-    this.invalidate('role', `Invalid role for Admin Portal. Allowed: ${adminRoles.join(', ')}`);
+  if (this.portal === 'admin') {
+    if (!adminRoles.includes(this.role)) {
+      this.invalidate('role', `Invalid role for Admin Portal. Allowed: ${adminRoles.join(', ')}`);
+    }
+    // Admin portal users will not have this field, automatically clear it if provided
+    if (this.orderLimit !== undefined) {
+      this.orderLimit = undefined;
+    }
   }
   
   if (this.portal === 'order' && !orderRoles.includes(this.role)) {

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { 
   UserPlus, ShieldCheck, Mail, Lock, Building2, 
   BadgeCheck, X, Loader2, AlertCircle, MapPin, Check, 
-  User, Users, Briefcase, Edit2, Phone, Home 
+  User, Users, Briefcase, Edit2, Phone, Home, ShoppingCart 
 } from 'lucide-react';
 
 export default function UserModal({
@@ -311,6 +311,25 @@ export default function UserModal({
                         onChange={(e) => setFormData({...formData, chargeCode: e.target.value})} 
                         className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-mono" 
                         placeholder="e.g. CHG-90210" 
+                      />
+                    </div>
+                  </div>
+
+                  {/* Order Limit (Optional) */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center ml-1">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Monthly Order Limit</label>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">Optional</span>
+                    </div>
+                    <div className="relative">
+                      <ShoppingCart size={16} className="absolute left-4 top-3.5 text-slate-400" />
+                      <input 
+                        type="number" 
+                        min="0"
+                        value={formData.orderLimit || ''} 
+                        onChange={(e) => setFormData({...formData, orderLimit: e.target.value})} 
+                        className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-mono" 
+                        placeholder="e.g. 100" 
                       />
                     </div>
                   </div>
