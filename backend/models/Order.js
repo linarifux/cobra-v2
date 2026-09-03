@@ -41,7 +41,7 @@ const orderSchema = new mongoose.Schema(
     },
     orderType: {
       type: String,
-      enum: ['WEBORD', 'PRODUCTION', 'SCRAP'],
+      enum: ['WEBORD', 'PRODUCTION', 'SCRAP', 'TRADESHOW'],
       default: 'WEBORD'
     },
     chargeCode: {

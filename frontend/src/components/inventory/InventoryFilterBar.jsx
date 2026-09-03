@@ -12,8 +12,15 @@ export default function InventoryFilterBar({
   apiCategories, 
   onClearFilters 
 }) {
-  // Added customerFilter to the clear logic check
   const hasActiveFilters = customerFilter !== 'All' || divisionFilter !== 'All' || categoryFilter !== 'All' || onlyAvailable || search !== '';
+
+  // Contextually filter divisions based on the selected customer
+  const contextualDivisions = customerFilter === 'All' 
+    ? apiDivisions 
+    : apiDivisions.filter(d => {
+        const custId = typeof d.customer === 'object' ? d.customer?._id : d.customer;
+        return String(custId) === String(customerFilter);
+      });
 
   return (
     <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-4 rounded-3xl flex flex-wrap gap-4 items-center text-xs font-bold text-slate-600 shadow-sm">
@@ -31,10 +38,16 @@ export default function InventoryFilterBar({
         />
       </div>
 
-      {/* NEW: Customer Dropdown */}
       <div className="flex items-center gap-1.5">
         <span className="text-slate-400 font-medium">Customer:</span>
-        <select value={customerFilter} onChange={(e) => setCustomerFilter(e.target.value)} className="bg-white/60 border border-slate-200 rounded-xl px-2 py-1.5 text-slate-800 outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 font-semibold">
+        <select 
+          value={customerFilter} 
+          onChange={(e) => {
+            setCustomerFilter(e.target.value);
+            setDivisionFilter('All'); // Reset division when customer changes to avoid orphaned filters
+          }} 
+          className="bg-white/60 border border-slate-200 rounded-xl px-2 py-1.5 text-slate-800 outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 font-semibold cursor-pointer"
+        >
           <option value="All">All Customers</option>
           {apiCustomers.map(c => <option key={c._id} value={c._id}>{c.customerName}</option>)}
         </select>
@@ -42,15 +55,23 @@ export default function InventoryFilterBar({
 
       <div className="flex items-center gap-1.5">
         <span className="text-slate-400 font-medium">Division:</span>
-        <select value={divisionFilter} onChange={(e) => setDivisionFilter(e.target.value)} className="bg-white/60 border border-slate-200 rounded-xl px-2 py-1.5 text-slate-800 outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 font-semibold">
+        <select 
+          value={divisionFilter} 
+          onChange={(e) => setDivisionFilter(e.target.value)} 
+          className={`bg-white/60 border border-slate-200 rounded-xl px-2 py-1.5 text-slate-800 outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 font-semibold cursor-pointer ${customerFilter === 'All' ? 'opacity-70' : ''}`}
+        >
           <option value="All">All Divisions</option>
-          {apiDivisions.map(d => <option key={d._id} value={d._id}>{d.divisionName}</option>)}
+          {contextualDivisions.map(d => <option key={d._id} value={d._id}>{d.divisionName}</option>)}
         </select>
       </div>
 
       <div className="flex items-center gap-1.5">
         <span className="text-slate-400 font-medium">Category:</span>
-        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="bg-white/60 border border-slate-200 rounded-xl px-2 py-1.5 text-slate-800 outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 font-semibold">
+        <select 
+          value={categoryFilter} 
+          onChange={(e) => setCategoryFilter(e.target.value)} 
+          className="bg-white/60 border border-slate-200 rounded-xl px-2 py-1.5 text-slate-800 outline-none focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 font-semibold cursor-pointer"
+        >
           <option value="All">All Categories</option>
           {apiCategories.map(c => <option key={c._id} value={c._id}>{c.categoryName}</option>)}
         </select>
