@@ -700,6 +700,7 @@ export default function OrdersPage() {
                   <option value="WEBORD">WEBORD</option>
                   <option value="PRODUCTION">PRODUCTION</option>
                   <option value="SCRAP">SCRAP</option>
+                  <option value="TRADESHOW">TRADESHOW</option>
                 </select>
               </div>
 
@@ -1029,6 +1030,7 @@ export default function OrdersPage() {
                       <option value="WEBORD">WEBORD</option>
                       <option value="PRODUCTION">PRODUCTION</option>
                       <option value="SCRAP">SCRAP</option>
+                      <option value="TRADESHOW">TRADESHOW</option>
                     </select>
                   </div>
                 </div>
