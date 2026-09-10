@@ -73,6 +73,23 @@ export const getRates = async (ratePayload) => {
   }
 };
 
+// --- NEW: Fetch Rates strictly by Shipment ID ---
+export const getRatesByShipmentId = async (shipmentId) => {
+  try {
+    console.log(`Fetching rates for shipment ID: ${shipmentId}`);
+    
+    // Pass strictly shipment_id as required by the API
+    const response = await shipStationAPI.post('/rates', { 
+      shipment_id: String(shipmentId) 
+    });
+    
+    console.log(response.data, "response.data in getRatesByShipmentId");
+    return response.data;
+  } catch (error) {
+    handleApiError(error, 'getRatesByShipmentId');
+  }
+};
+
 export const createLabel = async (labelPayload) => {
   try {
     const response = await shipStationAPI.post('/labels', labelPayload);

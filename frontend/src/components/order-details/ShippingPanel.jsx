@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Truck, Weight, AlertTriangle, Edit2, Check, ExternalLink, X } from 'lucide-react';
+import { useDispatch, useSelector } from 'react-redux';
+import { Truck, Weight, AlertTriangle, Edit2, Check, ExternalLink, X, Search, Loader2, Clock, DollarSign } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
+
+import { fetchRatesByShipmentId, clearShipmentRates } from '../../store/slices/rateSlice';
 
 const generateTrackingLink = (carrier, trackingNumber) => {
   if (!trackingNumber) return '#';
@@ -16,18 +20,23 @@ export default function ShippingPanel({
   shipping, setShipping, 
   cartoonsCount, setCartoonsCount, 
   palletsCount, setPalletsCount, 
-  packages, totalItemWeightOz, 
+  packages, totalItemWeightOz,
+  totalBoxesCount,
   isWeightMismatched, orderStatus,
-  // Extensible optional props if the parent wants to capture these edits directly
-  setManualBoxesCount, setManualTotalWeightOz 
+  carriersData = [],
+  setManualBoxesCount, setManualTotalWeightOz, shipmentId
 }) {
+  const dispatch = useDispatch();
+  const { shipmentRates = [], shipmentRatesStatus } = useSelector(state => state.rates || {});
+
   const [editingLogistics, setEditingLogistics] = useState(false);
   const [isMetricsModalOpen, setIsMetricsModalOpen] = useState(false);
+  const [isRatesModalOpen, setIsRatesModalOpen] = useState(false);
 
-  // Local state to make derived fields editable without breaking the parent arrays
+  // Local state initialized carefully to respect active prop overrides
   const [localLbs, setLocalLbs] = useState(Math.floor((totalItemWeightOz || 0) / 16));
   const [localOz, setLocalOz] = useState(+((totalItemWeightOz || 0) % 16).toFixed(1));
-  const [localBoxes, setLocalBoxes] = useState(packages?.length || 0);
+  const [localBoxes, setLocalBoxes] = useState(totalBoxesCount !== undefined ? totalBoxesCount : packages?.length || 0);
 
   // Modal temporary state
   const [modalLbs, setModalLbs] = useState(0);
@@ -36,9 +45,9 @@ export default function ShippingPanel({
   const [modalCartons, setModalCartons] = useState(0);
   const [modalPallets, setModalPallets] = useState(0);
 
-  // Lock body scroll when modal is open
+  // Lock body scroll when modals are open
   useEffect(() => {
-    if (isMetricsModalOpen) {
+    if (isMetricsModalOpen || isRatesModalOpen) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = 'unset';
@@ -46,14 +55,14 @@ export default function ShippingPanel({
     return () => {
       document.body.style.overflow = 'unset';
     };
-  }, [isMetricsModalOpen]);
+  }, [isMetricsModalOpen, isRatesModalOpen]);
 
-  // Sync initial values if parent props change (e.g. adding a new item updates weight)
+  // Sync values strictly to the actively utilized parent props to prevent reversion to default lengths
   useEffect(() => {
     setLocalLbs(Math.floor((totalItemWeightOz || 0) / 16));
     setLocalOz(+((totalItemWeightOz || 0) % 16).toFixed(1));
-    setLocalBoxes(packages?.length || 0);
-  }, [totalItemWeightOz, packages?.length]);
+    setLocalBoxes(totalBoxesCount !== undefined ? totalBoxesCount : packages?.length || 0);
+  }, [totalItemWeightOz, totalBoxesCount, packages?.length]);
 
   // Push updates to parent if the optional setter props are provided
   useEffect(() => {
@@ -76,7 +85,7 @@ export default function ShippingPanel({
     setModalPallets(palletsCount || 0);
     setIsMetricsModalOpen(true);
   };
-
+  
   const handleSaveMetrics = () => {
     setLocalLbs(modalLbs);
     setLocalOz(modalOz);
@@ -84,6 +93,40 @@ export default function ShippingPanel({
     setCartoonsCount(modalCartons);
     setPalletsCount(modalPallets);
     setIsMetricsModalOpen(false);
+  };
+
+  const handleBrowseRates = () => {
+    if (!shipmentId) {
+      toast.error('Shipment ID Missing', { description: 'Cannot fetch live rates until the order is pushed to ShipStation.' });
+      return;
+    }
+    setIsRatesModalOpen(true);
+    dispatch(fetchRatesByShipmentId(shipmentId));
+  };
+
+  const handleSelectRate = (rate) => {
+    let matchedCarrierId = shipping.carrierId;
+    let matchedCarrierType = shipping.carrierType;
+
+    const parentCarrier = carriersData.find(c => 
+      (c.enabledServices || []).some(s => s.serviceCode === rate.serviceCode)
+    );
+
+    if (parentCarrier) {
+      matchedCarrierId = parentCarrier._id;
+      matchedCarrierType = parentCarrier.carrierType;
+    }
+
+    setShipping({
+      ...shipping,
+      carrierId: matchedCarrierId,
+      carrierType: matchedCarrierType,
+      serviceCode: rate.serviceCode,
+      shippingCost: rate.shipmentCost || 0
+    });
+    
+    setIsRatesModalOpen(false);
+    dispatch(clearShipmentRates());
   };
 
   return (
@@ -98,16 +141,42 @@ export default function ShippingPanel({
          </div>
          
          {editingLogistics ? (
-             <div className="space-y-2 mt-auto">
-                 <input className="w-full bg-white p-2 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm" value={shipping.carrierType} onChange={(e) => setShipping({...shipping, carrierType: e.target.value})} placeholder="Carrier (e.g. UPS)" />
-                 <input className="w-full bg-white p-2 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm" value={shipping.serviceCode} onChange={(e) => setShipping({...shipping, serviceCode: e.target.value})} placeholder="Service Code" />
-                 <input className="w-full bg-white p-2 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm" value={shipping.trackingNumber} onChange={(e) => setShipping({...shipping, trackingNumber: e.target.value})} placeholder="Tracking Number" />
-                 <input type="number" className="w-full bg-white p-2 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm" value={shipping.shippingCost} onChange={(e) => setShipping({...shipping, shippingCost: e.target.value})} placeholder="Shipping Cost ($)" />
+             <div className="space-y-3 mt-auto">
+                 <select 
+                   className="w-full bg-white p-2.5 rounded-xl text-xs font-bold text-slate-800 border border-slate-200 focus:border-brand-gold outline-none shadow-sm cursor-pointer"
+                   value={`${shipping.carrierId || ''}|${shipping.carrierType || ''}|${shipping.serviceCode || ''}`}
+                   onChange={(e) => {
+                     const [carrierId, carrierType, serviceCode] = e.target.value.split('|');
+                     setShipping({ ...shipping, carrierId, carrierType, serviceCode });
+                   }}
+                 >
+                   <option value="||">Select Carrier Service...</option>
+                   {carriersData.map(carrier => {
+                     const cType = carrier.carrierType || '';
+                     const cId = carrier._id || '';
+                     
+                     const activeServices = (carrier.enabledServices || []).filter(s => s.isActive);
+                     if (activeServices.length === 0) return null;
+
+                     return activeServices.map(service => (
+                       <option key={`${cId}-${service.serviceCode}`} value={`${cId}|${cType}|${service.serviceCode}`}>
+                         {cType.toUpperCase()} - {service.serviceName || service.serviceCode}
+                       </option>
+                     ));
+                   })}
+                 </select>
+
+                 <button 
+                    onClick={handleBrowseRates}
+                    className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white p-2.5 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-slate-800 transition-colors shadow-md active:scale-95"
+                 >
+                   <Search size={14} /> Browse Live Rates
+                 </button>
              </div>
          ) : (
              <div className="text-sm font-bold text-slate-900 min-w-0 flex flex-col justify-between h-full mt-auto">
                  <div>
-                   <p className="truncate text-slate-800 tracking-tight">{shipping.carrierType || 'No Carrier'} {shipping.serviceCode && `- ${shipping.serviceCode}`}</p>
+                   <p className="truncate text-slate-800 tracking-tight">{shipping.carrierType ? shipping.carrierType.toUpperCase() : 'No Carrier'} {shipping.serviceCode && `- ${shipping.serviceCode}`}</p>
                    <p className="text-slate-400 font-medium text-xs mt-1 border-b border-slate-100 pb-2">Cost: ${Number(shipping.shippingCost).toFixed(2)}</p>
                  </div>
                  
@@ -173,7 +242,6 @@ export default function ShippingPanel({
       <AnimatePresence>
         {isMetricsModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            {/* Backdrop */}
             <motion.div 
               initial={{ opacity: 0 }} 
               animate={{ opacity: 1 }} 
@@ -182,7 +250,6 @@ export default function ShippingPanel({
               onClick={() => setIsMetricsModalOpen(false)} 
             />
             
-            {/* Modal Content */}
             <motion.div 
               initial={{ scale: 0.95, opacity: 0, y: 10 }} 
               animate={{ scale: 1, opacity: 1, y: 0 }} 
@@ -281,6 +348,99 @@ export default function ShippingPanel({
                 >
                   Save Metrics
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* LIVE RATES MODAL */}
+      <AnimatePresence>
+        {isRatesModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }} 
+              className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" 
+              onClick={() => {
+                setIsRatesModalOpen(false);
+                dispatch(clearShipmentRates());
+              }} 
+            />
+            
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0, y: 10 }} 
+              animate={{ scale: 1, opacity: 1, y: 0 }} 
+              exit={{ scale: 0.95, opacity: 0, y: 10 }} 
+              transition={{ type: "spring", duration: 0.4 }}
+              className="relative w-full max-w-lg bg-white/95 backdrop-blur-2xl border border-white/50 p-6 sm:p-8 rounded-[2rem] shadow-2xl flex flex-col max-h-[85vh]"
+            >
+              <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4 shrink-0">
+                <div>
+                  <h2 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                    <Truck size={20} className="text-brand-gold" /> Available Rates
+                  </h2>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">
+                    Select a service to update shipping method
+                  </p>
+                </div>
+                <button 
+                  onClick={() => {
+                    setIsRatesModalOpen(false);
+                    dispatch(clearShipmentRates());
+                  }} 
+                  className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="overflow-y-auto pr-2 custom-scrollbar flex-1 min-h-[200px]">
+                {shipmentRatesStatus === 'loading' ? (
+                  <div className="flex flex-col items-center justify-center h-full space-y-3 py-10">
+                    <Loader2 className="animate-spin text-brand-gold" size={32} />
+                    <p className="text-xs font-black tracking-widest uppercase text-slate-400">Fetching live rates...</p>
+                  </div>
+                ) : shipmentRates.length > 0 ? (
+                  <div className="space-y-3">
+                    {shipmentRates.map((rate, index) => (
+                      <div 
+                        key={index}
+                        onClick={() => handleSelectRate(rate)}
+                        className="group flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-slate-200 bg-white hover:border-brand-gold hover:shadow-md cursor-pointer transition-all active:scale-[0.98]"
+                      >
+                        <div className="mb-2 sm:mb-0">
+                          <p className="text-sm font-bold text-slate-900">{rate.serviceName}</p>
+                          <div className="flex items-center gap-3 mt-1 text-[11px] font-medium text-slate-500">
+                            <span className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-md">
+                              <Truck size={12} className="text-slate-400" />
+                              {rate.serviceCode}
+                            </span>
+                            {rate.transitDays && (
+                              <span className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-md">
+                                <Clock size={12} className="text-slate-400" />
+                                {rate.transitDays} Days
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 text-base font-black text-brand-gold bg-brand-gold/10 px-3 py-1.5 rounded-lg shrink-0">
+                          <DollarSign size={14} />
+                          {rate.shipmentCost.toFixed(2)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full space-y-3 py-10 text-center">
+                    <AlertTriangle size={32} className="text-slate-300" />
+                    <div>
+                      <p className="text-sm font-bold text-slate-700">No Rates Found</p>
+                      <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mt-1">Please ensure the shipping address is valid.</p>
+                    </div>
+                  </div>
+                )}
               </div>
             </motion.div>
           </div>

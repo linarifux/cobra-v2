@@ -9,7 +9,8 @@ import {
     downloadOrderLabel,
     voidOrderLabel,
     cancelOrderShipment,
-    fetchCarrierPackages
+    fetchCarrierPackages,
+    fetchRatesByShipmentId
 } from '../controllers/shipStationController.js';
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
@@ -28,6 +29,8 @@ router.route('/carriers/:carrierId/packages').get(fetchCarrierPackages);
 router.post('/rates/live', fetchLiveRates);
 router.post('/checkout/rates', getCheckoutRates);
 
+// NEW: GET rate strictly by shipmentId
+router.route('/shipments/:shipmentId/rates').get(fetchRatesByShipmentId);
 
 // --- Fulfillment & Logistics ---
 // Restrict to admins and staff members

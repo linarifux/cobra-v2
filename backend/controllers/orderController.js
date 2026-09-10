@@ -234,7 +234,7 @@ export const getAllOrders = catchAsync(async (req, res, next) => {
 // @desc    Get a single order by ID
 export const getOrder = catchAsync(async (req, res, next) => {
   const order = await Order.findById(req.params.id)
-    .populate('customer', 'customerName contactEmail contactNumber address')
+    .populate('customer', '_id carrierConfigurations customerName contactEmail contactNumber address')
     .populate('division', 'divisionName divisionCode address')
     .populate('user', 'name firstName lastName email phone')
     .populate('shippingDetails.carrierId', 'carrierType accountName');

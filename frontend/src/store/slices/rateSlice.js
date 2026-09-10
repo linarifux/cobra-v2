@@ -3,13 +3,12 @@ import api from '../../utils/api'; // Ensure this points to your authorized Axio
 
 // --- Thunks ---
 
-// 1. Fetch All Rates
+// 1. Fetch All Rates (Database Rates)
 export const fetchRates = createAsyncThunk(
   'rates/fetchAll',
   async (_, { rejectWithValue }) => {
     try {
       const response = await api.get('/rates');
-      // Adjust this path based on the exact shape of your Express response
       return response.data.data.rates || response.data.data; 
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch rates');
@@ -17,7 +16,7 @@ export const fetchRates = createAsyncThunk(
   }
 );
 
-// 2. Fetch Single Rate by ID
+// 2. Fetch Single Rate by ID (Database Rates)
 export const fetchRateById = createAsyncThunk(
   'rates/fetchById',
   async (id, { rejectWithValue }) => {
@@ -30,7 +29,7 @@ export const fetchRateById = createAsyncThunk(
   }
 );
 
-// 3. Create a Rate
+// 3. Create a Rate (Database Rates)
 export const createRate = createAsyncThunk(
   'rates/create',
   async (rateData, { rejectWithValue }) => {
@@ -43,7 +42,7 @@ export const createRate = createAsyncThunk(
   }
 );
 
-// 4. Update a Rate
+// 4. Update a Rate (Database Rates)
 export const updateRate = createAsyncThunk(
   'rates/update',
   async ({ id, updateData }, { rejectWithValue }) => {
@@ -56,7 +55,7 @@ export const updateRate = createAsyncThunk(
   }
 );
 
-// 5. Delete a Rate
+// 5. Delete a Rate (Database Rates)
 export const deleteRate = createAsyncThunk(
   'rates/delete',
   async (id, { rejectWithValue }) => {
@@ -69,24 +68,45 @@ export const deleteRate = createAsyncThunk(
   }
 );
 
+// 6. NEW: Fetch Live ShipStation Rates by Shipment ID
+export const fetchRatesByShipmentId = createAsyncThunk(
+  'rates/fetchByShipmentId',
+  async (shipmentId, { rejectWithValue }) => {
+    try {
+      // Assuming ShipStation routes are mounted at /shipstation on your backend
+      const response = await api.get(`/shipstation/shipments/${shipmentId}/rates`);
+      return response.data.data.rates || response.data.data || [];
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch shipment rates');
+    }
+  }
+);
+
+
 
 // --- Slice Definition ---
 const rateSlice = createSlice({
   name: 'rates',
   initialState: {
-    items: [],           // Array of all rates
-    currentRate: null,   // Single selected rate
-    status: 'idle',      // 'idle' | 'loading' | 'succeeded' | 'failed'
+    items: [],                // Array of all database rates
+    shipmentRates: [],        // Array of live ShipStation rates for a specific shipment
+    currentRate: null,        // Single selected database rate
+    status: 'idle',           // 'idle' | 'loading' | 'succeeded' | 'failed' (For Database Rates)
+    shipmentRatesStatus: 'idle', // 'idle' | 'loading' | 'succeeded' | 'failed' (For ShipStation Rates)
     error: null
   },
   reducers: {
     clearCurrentRate: (state) => {
       state.currentRate = null;
+    },
+    clearShipmentRates: (state) => {
+      state.shipmentRates = [];
+      state.shipmentRatesStatus = 'idle';
     }
   },
   extraReducers: (builder) => {
     builder
-      // Fetch All
+      // Fetch All (Database)
       .addCase(fetchRates.pending, (state) => {
         state.status = 'loading';
       })
@@ -100,7 +120,7 @@ const rateSlice = createSlice({
         state.error = action.payload;
       })
 
-      // Fetch Single
+      // Fetch Single (Database)
       .addCase(fetchRateById.pending, (state) => {
         state.status = 'loading';
       })
@@ -113,25 +133,37 @@ const rateSlice = createSlice({
         state.error = action.payload;
       })
 
-      // Create
+      // Fetch Live Rates by Shipment ID (ShipStation)
+      .addCase(fetchRatesByShipmentId.pending, (state) => {
+        state.shipmentRatesStatus = 'loading';
+      })
+      .addCase(fetchRatesByShipmentId.fulfilled, (state, action) => {
+        state.shipmentRatesStatus = 'succeeded';
+        state.shipmentRates = action.payload;
+        state.error = null;
+      })
+      .addCase(fetchRatesByShipmentId.rejected, (state, action) => {
+        state.shipmentRatesStatus = 'failed';
+        state.error = action.payload;
+      })
+
+      // Create (Database)
       .addCase(createRate.fulfilled, (state, action) => {
-        // Add the new rate to the top of the list
         state.items.unshift(action.payload); 
       })
 
-      // Update
+      // Update (Database)
       .addCase(updateRate.fulfilled, (state, action) => {
         const index = state.items.findIndex(item => item._id === action.payload._id);
         if (index !== -1) {
           state.items[index] = action.payload;
         }
-        // If the updated rate is currently being viewed, update that too
         if (state.currentRate && state.currentRate._id === action.payload._id) {
           state.currentRate = action.payload;
         }
       })
 
-      // Delete
+      // Delete (Database)
       .addCase(deleteRate.fulfilled, (state, action) => {
         state.items = state.items.filter(item => item._id !== action.payload);
         if (state.currentRate && state.currentRate._id === action.payload) {
@@ -141,5 +173,5 @@ const rateSlice = createSlice({
   }
 });
 
-export const { clearCurrentRate } = rateSlice.actions;
+export const { clearCurrentRate, clearShipmentRates } = rateSlice.actions;
 export default rateSlice.reducer;

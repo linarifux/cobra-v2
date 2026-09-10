@@ -3,6 +3,7 @@ import api from '../../utils/api'; // Adjust the import path if necessary based 
 
 // --- Thunks ---
 
+
 // 1. Fetch Divisions (Supports fetching globally OR scoped to a specific customer)
 export const fetchDivisions = createAsyncThunk(
   'divisions/fetchDivisions',

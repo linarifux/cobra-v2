@@ -9,7 +9,8 @@ import {
   createLabel, createShipment, getLabelByExternalId,
   cancelShipment, voidLabel,
   createLabelForShipment, fetchLabelBufferAsBase64,
-  addTagToShipment
+  addTagToShipment,
+  getRatesByShipmentId
 } from '../services/shipStationService.js';
 
 // Fallback to 08036 if not set in .env
@@ -258,7 +259,6 @@ export const fetchCarriers = catchAsync(async (req, res, next) => {
   } catch (error) { return next(new AppError(`ShipStation Error: ${error.message}`, 502)); }
 });
 
-// --- NEW: Fetch Carrier Packages ---
 export const fetchCarrierPackages = catchAsync(async (req, res, next) => {
   const { carrierId } = req.params;
   if (!carrierId) return next(new AppError('Carrier ID is required.', 400));
@@ -268,6 +268,30 @@ export const fetchCarrierPackages = catchAsync(async (req, res, next) => {
     res.status(200).json({ status: 'success', data: packages });
   } catch (error) {
     return next(new AppError(`ShipStation Error: ${error.message}`, 502));
+  }
+});
+
+// --- NEW: Fetch Rates by Shipment ID ---
+export const fetchRatesByShipmentId = catchAsync(async (req, res, next) => {
+  const { shipmentId } = req.params;
+  if (!shipmentId) return next(new AppError('Shipment ID is required.', 400));
+
+  try {
+    const response = await getRatesByShipmentId(shipmentId);
+    
+    // Safely extract the rate array whether ShipStation returns it directly or wraps it inside rate_response
+    const rates = Array.isArray(response) ? response : response?.rate_response?.rates || response?.rates || []; 
+    
+    const normalizedRates = rates.map(r => ({
+      serviceCode: r.serviceCode || r.service_code,
+      serviceName: r.serviceName || r.service_type || r.serviceCode || r.service_code,
+      shipmentCost: r.shipmentCost || r.shipping_amount?.amount || 0,
+      transitDays: r.transitDays || r.delivery_days || null
+    }));
+    
+    res.status(200).json({ status: 'success', results: normalizedRates?.length || 0, data: { rates: normalizedRates } });
+  } catch (error) { 
+    return next(new AppError(`ShipStation Error: ${error.message}`, 502)); 
   }
 });
 
@@ -300,7 +324,7 @@ export const fetchLiveRates = catchAsync(async (req, res, next) => {
       ship_from: getMIKROShipFrom(),
       packages: mapPackages([], totalWeightInOunces)
     },
-    rate_options: { carrier_ids: [carrier.shipStationId] }
+    rate_options: { carrier_ids: process.env.SHIPSTATION_CARRIERS ? JSON.parse(process.env.SHIPSTATION_CARRIERS) : [] }
   };
 
   try {
@@ -386,10 +410,8 @@ export const getCheckoutRates = catchAsync(async (req, res, next) => {
   }
 });
 
-
 export const createOrderShipment = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
-  // FIX: Destructure processingFees and pallets from frontend payload
   const { packages, isResidential, carrierCode, serviceCode, cartoons, pallets, totalBoxes, totalWeightOunces, processingFees } = req.body;
 
   const order = await Order.findById(orderId).populate('division customer');
@@ -417,7 +439,6 @@ export const createOrderShipment = catchAsync(async (req, res, next) => {
 
 export const generateOrderLabel = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
-  // FIX: Destructure processingFees and pallets from frontend payload
   const { packages, weightInOunces, carrierCode, serviceCode, cartoons, pallets, totalBoxes, totalWeightOunces, processingFees } = req.body; 
 
   const order = await Order.findById(orderId).populate('division customer');

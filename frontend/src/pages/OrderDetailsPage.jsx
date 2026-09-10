@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { toast } from 'sonner'; 
@@ -75,8 +75,6 @@ export default function OrderDetailsPage() {
   const { items: inventoryData = [], status: inventoryStatus } = useSelector((state) => state.inventory || {});
   const { items: usersData = [], status: usersStatus } = useSelector((state) => state.users || {}); 
   const { items: carriersData = [], packageTypes = [] } = useSelector((state) => state.carriers || {});
-
-  // Access dynamic charge types from DB
   const { items: chargeTypes = [], status: chargeTypeStatus } = useSelector((state) => state.chargeTypes || {});
 
   const [orderStatus, setOrderStatus] = useState('New');
@@ -90,7 +88,10 @@ export default function OrderDetailsPage() {
   const [cartoonsCount, setCartoonsCount] = useState(0);
   const [palletsCount, setPalletsCount] = useState(0); 
   const [isRushOrder, setIsRushOrder] = useState(false);
-  // REMOVED: isInternational state
+
+  // Dedicated States to track manually edited metrics
+  const [manualBoxesCount, setManualBoxesCount] = useState(null);
+  const [manualTotalWeightOz, setManualTotalWeightOz] = useState(null);
 
   const [createShipmentModalOpen, setCreateShipmentModalOpen] = useState(false);
   const [isCreatingShipment, setIsCreatingShipment] = useState(false);
@@ -125,9 +126,14 @@ export default function OrderDetailsPage() {
   const tax = subtotal * 0.08; 
   const grandTotal = subtotal + shippingCost + tax;
 
-  const totalItemWeightOz = currentOrder?.shippingDetails?.totalWeightOunces || items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
-  const totalPackageWeightOz = packages.reduce((acc, pkg) => acc + Number(pkg.weightInOunces || 0), 0);
-  const isWeightMismatched = Math.abs(totalItemWeightOz - totalPackageWeightOz) > 1;
+  // Derive weights safely using the manually overridden metrics if they exist
+  const derivedItemWeightOz = items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
+  const derivedPackageWeightOz = packages.reduce((acc, pkg) => acc + Number(pkg.weightInOunces || 0), 0);
+  
+  const totalWeightToUse = manualTotalWeightOz !== null ? manualTotalWeightOz : (currentOrder?.shippingDetails?.totalWeightOunces || derivedPackageWeightOz || derivedItemWeightOz);
+  const totalBoxesToUse = manualBoxesCount !== null ? manualBoxesCount : (currentOrder?.shippingDetails?.totalBoxes || packages.length);
+  
+  const isWeightMismatched = Math.abs(derivedItemWeightOz - totalWeightToUse) > 1;
 
   const orderUserId = currentOrder?.user?._id || currentOrder?.user;
   const orderCreator = useMemo(() => {
@@ -137,22 +143,20 @@ export default function OrderDetailsPage() {
 
   const orderCreatorName = orderCreator ? (orderCreator.name || orderCreator.firstName || orderCreator.email) : null;
 
-  // --- Ensure Dynamic Charge Types are Loaded ---
   useEffect(() => {
     if (chargeTypeStatus === 'idle') dispatch(fetchChargeTypes());
   }, [chargeTypeStatus, dispatch]);
 
-  // --- LIVE PROCESSING FEES CALCULATION PREVIEW ---
   const processingFeesPreview = useMemo(() => {
     const getFee = (name, fallback = 0) => {
       const ct = chargeTypes.find(c => c.name === name && c.isActive !== false);
       return ct && ct.defaultCharge !== undefined ? Number(ct.defaultCharge) : fallback;
     };
 
-    const weightLbs = totalPackageWeightOz / 16;
+    const weightLbs = totalWeightToUse / 16;
     const lineItemsCount = items.length;
     const piecesCount = items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
-    const packageCount = packages.length;
+    const packageCount = totalBoxesToUse;
     const cartonCount = Number(cartoonsCount) || 0;
     const palletCount = Number(palletsCount) || 0;
 
@@ -166,7 +170,6 @@ export default function OrderDetailsPage() {
 
     const rushFee = isRushOrder ? getFee('Rush Fee', 20) : 0;
     
-    // Determine international locally for preview based on current address country
     const isLocalIntl = address.country && !['US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'].includes(address.country.toUpperCase().trim());
     const internationalFee = isLocalIntl ? getFee('International Fee', 0) : 0;
 
@@ -175,22 +178,15 @@ export default function OrderDetailsPage() {
                                palletFee + rushFee + internationalFee;
 
     return {
-      baseFee,
-      weightSurcharge,
-      lineItemSurcharge,
-      packageSurcharge,
-      pieceSurcharge,
-      cartonSurcharge,
-      palletFee,
-      rushFee,
-      internationalFee,
-      totalProcessingFee
+      baseFee, weightSurcharge, lineItemSurcharge, packageSurcharge,
+      pieceSurcharge, cartonSurcharge, palletFee, rushFee,
+      internationalFee, totalProcessingFee
     };
-  }, [totalPackageWeightOz, items, packages.length, cartoonsCount, palletsCount, isRushOrder, address.country, chargeTypes]);
+  }, [totalWeightToUse, items, totalBoxesToUse, cartoonsCount, palletsCount, isRushOrder, address.country, chargeTypes]);
 
   useEffect(() => {
     if (isValidMongoId) dispatch(fetchOrderById(id));
-    return () => dispatch(clearCurrentOrder());
+    return () => { dispatch(clearCurrentOrder()); };
   }, [id, isValidMongoId, dispatch]);
 
   useEffect(() => {
@@ -359,6 +355,7 @@ export default function OrderDetailsPage() {
 
       const customerName = currentOrder.customer?.customerName || 'Customer Order';
       const divisionName = currentOrder.division?.divisionName || 'Custom Division'
+      const isCorporate = currentOrder.division?.divisionName?.toLowerCase().includes('corporate')
       const orderNo = currentOrder.orderNumber || 'N/A';
       const orderDate = currentOrder.createdAt ? new Date(currentOrder.createdAt).toLocaleDateString('en-GB', {day: '2-digit', month: 'short', year: 'numeric'}) : 'N/A';
       const shipVia = `${shipping.carrierType || ''} ${shipping.serviceCode || ''}`.trim() || 'UPS - Ground';
@@ -367,7 +364,7 @@ export default function OrderDetailsPage() {
       doc.setFontSize(14);
       doc.setTextColor(0, 0, 0);
       doc.setFont('helvetica', 'bold');
-      doc.text(`${customerName.toUpperCase()} - ${divisionName}`, 14, 20);
+      doc.text(!isCorporate ? `${customerName.toUpperCase()} - ${divisionName}` : `${customerName.toUpperCase()}`, 14, 20);
 
       const rightColKeyX = 160;
       const rightColValX = 162;
@@ -559,8 +556,8 @@ export default function OrderDetailsPage() {
         trackingNumber: shipping.trackingNumber, shippingCost: Number(shipping.shippingCost),
         cartoons: Number(cartoonsCount) || 0,
         pallets: Number(palletsCount) || 0, 
-        totalBoxes: packages.length,
-        totalWeightOunces: totalPackageWeightOz,
+        totalBoxes: totalBoxesToUse,
+        totalWeightOunces: totalWeightToUse,
         packages: packages.map(p => ({
           packageCode: p.packageCode || 'package',
           weightInOunces: Number(p.weightInOunces) || 16,
@@ -613,8 +610,8 @@ export default function OrderDetailsPage() {
         trackingNumber: shipping.trackingNumber, shippingCost: Number(shipping.shippingCost),
         cartoons: Number(cartoonsCount) || 0,
         pallets: Number(palletsCount) || 0,
-        totalBoxes: packages.length,
-        totalWeightOunces: totalPackageWeightOz,
+        totalBoxes: totalBoxesToUse,
+        totalWeightOunces: totalWeightToUse,
         packages: packages.map(p => ({
           packageCode: p.packageCode || 'package',
           weightInOunces: Number(p.weightInOunces) || 16,
@@ -683,12 +680,10 @@ export default function OrderDetailsPage() {
       serviceCode: shipping.serviceCode,
       cartoons: Number(modalCartoonsCount) || Number(cartoonsCount) || 0,
       pallets: Number(palletsCount) || 0,
-      totalBoxes: packages.length,
-      totalWeightOunces: totalPackageWeightOz,
+      totalBoxes: totalBoxesToUse,
+      totalWeightOunces: totalWeightToUse,
       processingFees: processingFeesPreview // Attach computed fees directly to shipment API call
     };
-
-
 
     try {
       await dispatch(createOrderShipment({ orderId: currentOrder._id, fulfillmentData: payload })).unwrap();
@@ -720,8 +715,8 @@ export default function OrderDetailsPage() {
       serviceCode: shipping.serviceCode,
       cartoons: Number(cartoonsCount) || 0,
       pallets: Number(palletsCount) || 0,
-      totalBoxes: packages.length,
-      weightInOunces: totalPackageWeightOz,
+      totalBoxes: totalBoxesToUse,
+      weightInOunces: totalWeightToUse,
       processingFees: processingFeesPreview // Attach computed fees directly to label generation API call
     };
 
@@ -850,7 +845,6 @@ export default function OrderDetailsPage() {
     ? new Date(currentOrder.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     : 'Unknown Date';
 
-  // Explicitly check current order context to pass to the InfoPanel
   const isCurrentlyInternational = currentOrder?.isInternational || false;
 
   return (
@@ -871,7 +865,6 @@ export default function OrderDetailsPage() {
         setCreateShipmentModalOpen={setCreateShipmentModalOpen} 
         setFulfillOpen={setFulfillOpen} 
       />
-
 
       <CreateShipmentModal 
         isOpen={createShipmentModalOpen} 
@@ -920,7 +913,6 @@ export default function OrderDetailsPage() {
             creationDate={creationDate} 
           />
           
-
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <OrderStatusPanel 
               orderStatus={orderStatus} 
@@ -936,9 +928,14 @@ export default function OrderDetailsPage() {
               palletsCount={palletsCount} 
               setPalletsCount={setPalletsCount} 
               packages={packages} 
-              totalItemWeightOz={totalItemWeightOz} 
+              totalItemWeightOz={totalWeightToUse} 
+              totalBoxesCount={totalBoxesToUse}
               isWeightMismatched={isWeightMismatched} 
               orderStatus={orderStatus} 
+              carriersData={carriersData}
+              shipmentId={currentOrder?.shipstationDetails?.orderId || ''}
+              setManualBoxesCount={setManualBoxesCount}
+              setManualTotalWeightOz={setManualTotalWeightOz}
             />
           </div>
 
