@@ -16,6 +16,7 @@ export const createAddress = catchAsync(async (req, res, next) => {
   // Safe object-based syntax to populate relationships upon creation
   await address.populate({ path: 'user', select: 'firstName lastName email portal' });
 
+  
   res.status(201).json({
     status: 'success',
     data: { address }

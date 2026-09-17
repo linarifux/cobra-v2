@@ -21,6 +21,11 @@ const addressSchema = new mongoose.Schema(
         message: 'Invalid assignment: The associated user must belong to the "order" portal'
       }
     },
+    // add companyName field to the address schema
+    companyName: {
+      type: String,
+      trim: true
+    },
     firstName: {
       type: String,
       required: [true, 'First name is required for delivery/billing'],
