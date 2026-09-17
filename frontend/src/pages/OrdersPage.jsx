@@ -167,6 +167,7 @@ export default function OrdersPage() {
       const customerName = order.customer?.customerName || '';
       const orderNumber = order.orderNumber || '';
       const recipientName = order.shippingAddress?.recipientName || '';
+      const companyName = order.shippingAddress?.companyName || '';
       const orderType = order.orderType || 'WEBORD';
       
       let orderDate = '';
@@ -177,6 +178,7 @@ export default function OrdersPage() {
       const matchSearch = customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           recipientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          companyName.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           orderType.toLowerCase().includes(searchQuery.toLowerCase());
                           
       const matchOrderType = filters.orderType === 'All' || orderType === filters.orderType;
@@ -213,6 +215,7 @@ export default function OrdersPage() {
       const customerName = order.customer?.customerName || '';
       const orderNumber = order.orderNumber || '';
       const recipientName = order.shippingAddress?.recipientName || '';
+      const companyName = order.shippingAddress?.companyName || '';
       const orderType = order.orderType || 'WEBORD';
       
       let orderDate = '';
@@ -226,6 +229,7 @@ export default function OrdersPage() {
       const matchSearch = customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           recipientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          companyName.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           orderType.toLowerCase().includes(searchQuery.toLowerCase());
                           
       const matchStatus = filters.status === 'All' || effectiveStatus === filters.status;
@@ -491,16 +495,32 @@ export default function OrdersPage() {
         doc.setFont('helvetica', 'bold');
         doc.text("SHIP TO:", 110, addressBlockY);
         doc.setFont('helvetica', 'normal');
-        doc.text(address.recipientName || 'N/A', 130, addressBlockY);
-        doc.text(`${address.line1 || ''} ${address.line2 || ''}`.trim(), 130, addressBlockY + 5);
-        doc.text(`${address.city || ''}, ${address.state || ''} ${address.zip || ''}`.trim(), 130, addressBlockY + 10);
-        doc.text(address.country || 'US', 130, addressBlockY + 15);
+        
+        // Check for company name and include if present
+        let currentYOffset = addressBlockY;
+        if (address.companyName) {
+           doc.text(address.companyName, 130, currentYOffset);
+           currentYOffset += 5;
+           doc.text(`c/o ${address.recipientName || 'N/A'}`, 130, currentYOffset);
+        } else {
+           doc.text(address.recipientName || 'N/A', 130, currentYOffset);
+        }
+        
+        currentYOffset += 5;
+        doc.text(`${address.line1 || ''} ${address.line2 || ''}`.trim(), 130, currentYOffset);
+        
+        currentYOffset += 5;
+        doc.text(`${address.city || ''}, ${address.state || ''} ${address.zip || ''}`.trim(), 130, currentYOffset);
+        
+        currentYOffset += 5;
+        doc.text(address.country || 'US', 130, currentYOffset);
 
         if (phone) {
+           currentYOffset += 5;
            doc.setFont('helvetica', 'bold');
-           doc.text("Phone:", 110, addressBlockY + 20);
+           doc.text("Phone:", 110, currentYOffset);
            doc.setFont('helvetica', 'normal');
-           doc.text(phone, 130, addressBlockY + 20);
+           doc.text(phone, 130, currentYOffset);
         }
 
         // --- COMMENTS BLOCK ---

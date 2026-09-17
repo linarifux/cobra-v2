@@ -61,8 +61,6 @@ export default function OrderForm() {
   const { items: divisionsData = [], status: divisionsStatus } = useSelector((state) => state.divisions || {});
   const { items: carriersData = [], status: carrierStatus } = useSelector((state) => state.carriers || {});
 
-  console.log(inventoryData)
-
   // --- Form State ---
   const [orderNumber, setOrderNumber] = useState('');
   const [orderType, setOrderType] = useState('WEBORD');
@@ -75,7 +73,7 @@ export default function OrderForm() {
 
   const [orderStatus, setOrderStatus] = useState('New');
   const [shipping, setShipping] = useState({ carrierId: '', carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0 });
-  const [address, setAddress] = useState({ name: '', email: '', phone: '', street: '', line2: '', city: '', state: '', zip: '', country: 'US' });
+  const [address, setAddress] = useState({ name: '', companyName: '', email: '', phone: '', street: '', line2: '', city: '', state: '', zip: '', country: 'US' });
   const [items, setItems] = useState([]);
   const [notes, setNotes] = useState('');
 
@@ -281,6 +279,7 @@ export default function OrderForm() {
       });
       setAddress({
         name: currentOrder.shippingAddress?.recipientName || '',
+        companyName: currentOrder.shippingAddress?.companyName || '', // ADDED COMPANY NAME
         email: currentOrder.shippingAddress?.email || '',
         phone: currentOrder.shippingAddress?.phone || '',
         street: currentOrder.shippingAddress?.line1 || '',
@@ -340,6 +339,7 @@ export default function OrderForm() {
         setAddress(prev => ({
           ...prev,
           name: selectedUser.name || selectedUser.firstName || '',
+          companyName: selectedUser.companyName || '', // ADDED COMPANY NAME MAPPING IF IT EXISTS IN USER MODEL
           email: selectedUser.email || '',
           phone: selectedUser.phone || '',
           street: selectedUser.userAddress?.street1 || '',
@@ -397,10 +397,16 @@ export default function OrderForm() {
       qtyLimitExceeds: isCurrentQtyLimitExceeded,
       notes: notes,
       shippingAddress: {
-        recipientName: address.name, email: address.email, phone: address.phone,
-        line1: address.street, line2: address.line2, city: address.city,
+        recipientName: address.name, 
+        companyName: address.companyName, // INCLUDED COMPANY NAME IN DB PAYLOAD
+        email: address.email, 
+        phone: address.phone,
+        line1: address.street, 
+        line2: address.line2, 
+        city: address.city,
         state: address.state.toUpperCase().trim(), // Force uppercase for DB
-        zip: address.zip, country: address.country
+        zip: address.zip, 
+        country: address.country
       },
       shippingDetails: {
         ...(isEditMode ? currentOrder.shippingDetails : {}),
@@ -695,6 +701,11 @@ export default function OrderForm() {
               <div className="col-span-2">
                 <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Recipient Name *</label>
                 <input className="w-full bg-white p-3 rounded-xl text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all" value={address.name} onChange={(e) => setAddress({ ...address, name: e.target.value })} placeholder="Full Name" />
+              </div>
+              
+              <div className="col-span-2">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Company Name</label>
+                <input className="w-full bg-white p-3 rounded-xl text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all" value={address.companyName} onChange={(e) => setAddress({ ...address, companyName: e.target.value })} placeholder="Company Name" />
               </div>
 
               <div className="col-span-1">

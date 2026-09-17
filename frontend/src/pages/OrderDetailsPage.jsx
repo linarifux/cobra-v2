@@ -80,7 +80,9 @@ export default function OrderDetailsPage() {
   const [orderStatus, setOrderStatus] = useState('New');
   const [selectedUserId, setSelectedUserId] = useState(''); 
   const [shipping, setShipping] = useState({ carrierId: '', carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0, shipStationId: '' });
-  const [address, setAddress] = useState({ name: '', email: '', phone: '', street: '', line2: '', city: '', state: '', zip: '', country: '' });
+  
+  // State Initialization: Added companyName
+  const [address, setAddress] = useState({ name: '', companyName: '', email: '', phone: '', street: '', line2: '', city: '', state: '', zip: '', country: '' });
   const [items, setItems] = useState([]);
   const [notes, setNotes] = useState('');
 
@@ -244,8 +246,10 @@ export default function OrderDetailsPage() {
         shipStationId: currentOrder.shippingDetails?.shipStationId || ''
       });
 
+      // Included companyName Population
       setAddress({ 
         name: currentOrder.shippingAddress?.recipientName || '', 
+        companyName: currentOrder.shippingAddress?.companyName || '',
         email: currentOrder.shippingAddress?.email || '',
         phone: currentOrder.shippingAddress?.phone || '',
         street: currentOrder.shippingAddress?.line1 || '', 
@@ -290,11 +294,9 @@ export default function OrderDetailsPage() {
     }
   }, [currentOrder, inventoryData]); 
 
-  // --- NEW: Resizes the packages array dynamically when edited in the modal ---
   const handleMetricsOverride = (newTotalWeightOz, newTotalBoxes) => {
     let currentPkgs = [...packages];
     
-    // Resize array to match manual box count
     if (newTotalBoxes !== currentPkgs.length) {
       if (newTotalBoxes > currentPkgs.length) {
         const diff = newTotalBoxes - currentPkgs.length;
@@ -306,7 +308,6 @@ export default function OrderDetailsPage() {
       }
     }
     
-    // Distribute total weight evenly
     const weightPerBox = newTotalBoxes > 0 ? (newTotalWeightOz / newTotalBoxes) : newTotalWeightOz;
     
     currentPkgs = currentPkgs.map(p => ({
@@ -428,19 +429,34 @@ export default function OrderDetailsPage() {
       doc.setFont('helvetica', 'bold');
       doc.text("SHIP TO:", 110, addressBlockY);
       doc.setFont('helvetica', 'normal');
-      doc.text(address.name || 'N/A', 130, addressBlockY);
-      doc.text(`${address.street || ''} ${address.line2 || ''}`.trim(), 130, addressBlockY + 5);
-      doc.text(`${address.city || ''}, ${address.state || ''} ${address.zip || ''}`.trim(), 130, addressBlockY + 10);
-      doc.text(address.country || 'US', 130, addressBlockY + 15);
+      
+      let currentYOffset = addressBlockY;
+      if (address.companyName) {
+         doc.text(address.companyName, 130, currentYOffset);
+         currentYOffset += 5;
+         doc.text(`c/o ${address.name || 'N/A'}`, 130, currentYOffset);
+      } else {
+         doc.text(address.name || 'N/A', 130, currentYOffset);
+      }
+      
+      currentYOffset += 5;
+      doc.text(`${address.street || ''} ${address.line2 || ''}`.trim(), 130, currentYOffset);
+      
+      currentYOffset += 5;
+      doc.text(`${address.city || ''}, ${address.state || ''} ${address.zip || ''}`.trim(), 130, currentYOffset);
+      
+      currentYOffset += 5;
+      doc.text(address.country || 'US', 130, currentYOffset);
 
       if (phone) {
+         currentYOffset += 5;
          doc.setFont('helvetica', 'bold');
-         doc.text("Phone:", 110, addressBlockY + 20);
+         doc.text("Phone:", 110, currentYOffset);
          doc.setFont('helvetica', 'normal');
-         doc.text(phone, 130, addressBlockY + 20);
+         doc.text(phone, 130, currentYOffset);
       }
 
-      let commentsY = 90;
+      let commentsY = 95;
       doc.setFontSize(9);
       doc.setFont('helvetica', 'bold');
       doc.text("Comments:", 14, commentsY);
@@ -558,16 +574,23 @@ export default function OrderDetailsPage() {
       return toast.error("State must be exactly a 2-character code (e.g., NY, CA). Please use the dropdown selector.");
     }
 
+    // Include companyName in payload
     const payload = {
       status: orderStatus,
       isRushOrder: isRushOrder,
       ...(selectedUserId ? { user: selectedUserId } : { user: null }),
       notes: notes,
       shippingAddress: {
-        recipientName: address.name, email: address.email, phone: address.phone,
-        line1: address.street, line2: address.line2, city: address.city,
+        recipientName: address.name, 
+        companyName: address.companyName,
+        email: address.email, 
+        phone: address.phone,
+        line1: address.street, 
+        line2: address.line2, 
+        city: address.city,
         state: address.state.toUpperCase().trim(),
-        zip: address.zip, country: address.country
+        zip: address.zip, 
+        country: address.country
       },
       shippingDetails: {
         ...currentOrder.shippingDetails,
@@ -575,8 +598,8 @@ export default function OrderDetailsPage() {
         trackingNumber: shipping.trackingNumber, shippingCost: Number(shipping.shippingCost),
         cartoons: Number(cartoonsCount) || 0,
         pallets: Number(palletsCount) || 0, 
-        totalBoxes: packages.length, // Sourced from array length
-        totalWeightOunces: totalPackageWeightOz, // Sourced from array values
+        totalBoxes: packages.length,
+        totalWeightOunces: totalPackageWeightOz,
         packages: packages.map(p => ({
           packageCode: p.packageCode || 'package',
           weightInOunces: Number(p.weightInOunces) || 16,
@@ -585,7 +608,7 @@ export default function OrderDetailsPage() {
           height: Number(p.height) || 10
         }))
       },
-      processingFees: processingFeesPreview, // Sync correct UI fees back to the database
+      processingFees: processingFeesPreview, 
       items: items.map(item => ({
         sku: item.sku, name: item.name, quantity: Number(item.qty),
         unitPrice: Number(item.price), totalPrice: Number(item.qty) * Number(item.price)
@@ -618,10 +641,16 @@ export default function OrderDetailsPage() {
       ...(selectedUserId ? { user: selectedUserId } : { user: null }),
       notes: notes,
       shippingAddress: {
-        recipientName: address.name, email: address.email, phone: address.phone,
-        line1: address.street, line2: address.line2, city: address.city,
+        recipientName: address.name, 
+        companyName: address.companyName,
+        email: address.email, 
+        phone: address.phone,
+        line1: address.street, 
+        line2: address.line2, 
+        city: address.city,
         state: address.state.toUpperCase().trim(),
-        zip: address.zip, country: address.country
+        zip: address.zip, 
+        country: address.country
       },
       shippingDetails: {
         ...currentOrder.shippingDetails,
@@ -639,7 +668,7 @@ export default function OrderDetailsPage() {
           height: Number(p.height) || 10
         }))
       },
-      processingFees: processingFeesPreview, // Sync correct UI fees back to the database
+      processingFees: processingFeesPreview,
       items: items.map(item => ({
         sku: item.sku, name: item.name, quantity: Number(item.qty),
         unitPrice: Number(item.price), totalPrice: Number(item.qty) * Number(item.price)
@@ -701,7 +730,7 @@ export default function OrderDetailsPage() {
       pallets: Number(palletsCount) || 0,
       totalBoxes: packages.length,
       totalWeightOunces: totalPackageWeightOz,
-      processingFees: processingFeesPreview // Attach computed fees directly to shipment API call
+      processingFees: processingFeesPreview 
     };
 
     try {
@@ -736,7 +765,7 @@ export default function OrderDetailsPage() {
       pallets: Number(palletsCount) || 0,
       totalBoxes: packages.length,
       weightInOunces: totalPackageWeightOz,
-      processingFees: processingFeesPreview // Attach computed fees directly to label generation API call
+      processingFees: processingFeesPreview 
     };
 
     try {
@@ -847,7 +876,6 @@ export default function OrderDetailsPage() {
     }
   };
 
-  
   if (!isValidMongoId) return <NotFoundPage />;
   if (orderLoadStatus === 'failed' || orderError) return <NotFoundPage />;
   if (orderLoadStatus === 'loading' || !currentOrder) {

@@ -144,7 +144,7 @@ export const createOrder = catchAsync(async (req, res, next) => {
 
       const monthlyOrderCount = await Order.countDocuments({
         user: targetUserId,
-        createdAt: { $gte: startOfMonth, $lte: endOfMonth }
+        createdAt: { $gte: startOfMonth,$lte: endOfMonth }
       });
 
       if (monthlyOrderCount >= orderUser.orderLimit) {
@@ -198,14 +198,15 @@ export const getAllOrders = catchAsync(async (req, res, next) => {
   if (req.query.user && req.query.user !== 'All') filter.user = req.query.user;
   if (req.query.status && req.query.status !== 'All') filter.status = req.query.status;
 
+  // --- UPDATED: Added companyName to global text search ---
   if (req.query.search) {
     filter.$or = [
       { orderNumber: { $regex: req.query.search, $options: 'i' } },
-      { 'shippingAddress.recipientName': { $regex: req.query.search, $options: 'i' } }
+      { 'shippingAddress.recipientName': { $regex: req.query.search, $options: 'i' } },
+      { 'shippingAddress.companyName': { $regex: req.query.search, $options: 'i' } } 
     ];
   }
   
-
   const accessLevel = getAccessLevel(req.user);
 
   if (accessLevel === 'standard_user') {
@@ -324,8 +325,7 @@ export const updateOrder = catchAsync(async (req, res, next) => {
           await Inventory.findOneAndUpdate(
             { sku: item.sku, customer: order.customer },
             {
-              $inc: { available: restockQty, unitsOnHand: restockQty },
-              $push: {
+              $inc: { available: restockQty, unitsOnHand: restockQty },$push: {
                 auditLedger: {
                   event: 'Order Cancellation Restock',
                   referenceId: order.orderNumber || order._id.toString(),
@@ -395,8 +395,7 @@ export const deleteOrder = catchAsync(async (req, res, next) => {
         await Inventory.findOneAndUpdate(
           { sku: item.sku, customer: order.customer },
           {
-            $inc: { available: restockQty, unitsOnHand: restockQty },
-            $push: {
+            $inc: { available: restockQty, unitsOnHand: restockQty },$push: {
               auditLedger: {
                 event: 'Order Deletion Restock',
                 referenceId: order.orderNumber || order._id.toString(),
@@ -415,8 +414,6 @@ export const deleteOrder = catchAsync(async (req, res, next) => {
   await Order.findByIdAndDelete(req.params.id);
   res.status(204).json({ status: 'success', data: null });
 });
-
-
 
 // @desc    Get all orders belonging to a specific user
 // @route   GET /api/v1/users/:userId/orders OR /api/v1/orders/user/:userId

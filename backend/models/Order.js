@@ -66,7 +66,10 @@ const orderSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
+
+// add a field for "company name" to the order schema in the shipping address section
     shippingAddress: {
+      companyName: { type: String, default: '' },
       recipientName: { type: String, required: true },
       email: { type: String, required: true },
       phone: { type: String, required: true },
@@ -77,6 +80,8 @@ const orderSchema = new mongoose.Schema(
       zip: { type: String, required: true },
       country: { type: String, default: 'US' }
     },
+
+
     
     // NEW: Comprehensive Order Processing Fees Breakdown
     processingFees: {

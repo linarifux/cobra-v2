@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MapPin, Edit2, Check, Mail, Phone, ChevronDown, Search } from 'lucide-react';
+import { MapPin, Edit2, Check, Mail, Phone, ChevronDown, Search, User, Building2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const US_STATES = [
@@ -51,78 +51,125 @@ export default function AddressPanel({ address, setAddress }) {
               {editing ? <Check size={12} className="text-emerald-600"/> : <Edit2 size={12}/>}
           </button>
       </div>
+      
       {editing ? (
-          <div className="grid grid-cols-2 gap-3 transition-all duration-300">
-              <input className="col-span-2 bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm" value={address.name} onChange={(e) => setAddress({...address, name: e.target.value})} placeholder="Recipient Name" />
-              <input className="col-span-1 bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm" value={address.email} onChange={(e) => setAddress({...address, email: e.target.value})} placeholder="Email Address" type="email" />
-              <input className="col-span-1 bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm" value={address.phone} onChange={(e) => setAddress({...address, phone: e.target.value})} placeholder="Phone Number" />
-              <input className="col-span-2 bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm" value={address.street} onChange={(e) => setAddress({...address, street: e.target.value})} placeholder="Address Line 1" />
-              <input className="col-span-2 bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm" value={address.line2} onChange={(e) => setAddress({...address, line2: e.target.value})} placeholder="Address Line 2 (Optional)" />
-              <input className="bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm" value={address.city} onChange={(e) => setAddress({...address, city: e.target.value})} placeholder="City" />
+          <div className="space-y-5 transition-all duration-300">
               
-              <div className="col-span-1 flex gap-3 relative z-50">
-                  <div className="w-1/2 relative" ref={stateDropdownRef}>
-                    <div 
-                      className="w-full bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus-within:border-brand-gold shadow-sm flex items-center justify-between cursor-pointer"
-                      onClick={() => setIsStateDropdownOpen(!isStateDropdownOpen)}
-                    >
-                      <span className={address.state ? "text-slate-900 font-bold" : "text-slate-400"}>
-                        {address.state || "Select..."}
-                      </span>
-                      <ChevronDown size={14} className="text-slate-400" />
-                    </div>
-
-                    <AnimatePresence>
-                      {isStateDropdownOpen && (
-                        <motion.div 
-                          initial={{ opacity: 0, y: -5 }} 
-                          animate={{ opacity: 1, y: 0 }} 
-                          exit={{ opacity: 0, y: -5 }}
-                          className="absolute z-[100] w-full md:w-48 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
-                        >
-                          <div className="p-2 border-b border-slate-100 flex items-center gap-2">
-                            <Search size={14} className="text-slate-400 shrink-0" />
-                            <input 
-                              autoFocus
-                              className="w-full text-xs outline-none font-medium text-slate-700" 
-                              placeholder="Search state..." 
-                              value={stateSearch} 
-                              onChange={(e) => setStateSearch(e.target.value)} 
-                            />
-                          </div>
-                          <div className="max-h-48 overflow-y-auto custom-scrollbar">
-                            {filteredStates.length > 0 ? (
-                              filteredStates.map(s => (
-                                <div 
-                                  key={s.code} 
-                                  className="px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer flex justify-between items-center transition-colors"
-                                  onClick={() => {
-                                    setAddress({ ...address, state: s.code });
-                                    setIsStateDropdownOpen(false);
-                                    setStateSearch('');
-                                  }}
-                                >
-                                  <span>{s.name}</span>
-                                  <span className="text-slate-400 font-bold text-[10px] bg-slate-100 px-1.5 py-0.5 rounded">{s.code}</span>
-                                </div>
-                              ))
-                            ) : (
-                              <div className="p-3 text-xs text-slate-400 text-center">No state found</div>
-                            )}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+              {/* CONTACT DETAILS SECTION */}
+              <div>
+                <h4 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                  <User size={12} /> Contact Details
+                </h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2 md:col-span-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Recipient Name *</label>
+                    <input className="w-full bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all" value={address.name || ''} onChange={(e) => setAddress({...address, name: e.target.value})} placeholder="Jane Doe" />
                   </div>
-
-                  <div className="w-1/2">
-                      <input className="w-full bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all" value={address.zip} onChange={(e) => setAddress({...address, zip: e.target.value})} placeholder="Zip Code" />
+                  <div className="col-span-2 md:col-span-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Company Name</label>
+                    <input className="w-full bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all" value={address.companyName || ''} onChange={(e) => setAddress({...address, companyName: e.target.value})} placeholder="Optional" />
                   </div>
+                  <div className="col-span-2 md:col-span-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Email Address</label>
+                    <input className="w-full bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all" value={address.email || ''} onChange={(e) => setAddress({...address, email: e.target.value})} placeholder="jane@example.com" type="email" />
+                  </div>
+                  <div className="col-span-2 md:col-span-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Phone Number</label>
+                    <input className="w-full bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all" value={address.phone || ''} onChange={(e) => setAddress({...address, phone: e.target.value})} placeholder="(555) 123-4567" />
+                  </div>
+                </div>
               </div>
+
+              <hr className="border-slate-100" />
+
+              {/* DELIVERY ADDRESS SECTION */}
+              <div>
+                <h4 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                  <Building2 size={12} /> Delivery Location
+                </h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Address Line 1 *</label>
+                    <input className="w-full bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all" value={address.street || ''} onChange={(e) => setAddress({...address, street: e.target.value})} placeholder="123 Main Street" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Address Line 2</label>
+                    <input className="w-full bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all" value={address.line2 || ''} onChange={(e) => setAddress({...address, line2: e.target.value})} placeholder="Apt, Suite, Unit, etc." />
+                  </div>
+                  <div className="col-span-2 md:col-span-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">City *</label>
+                    <input className="w-full bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all" value={address.city || ''} onChange={(e) => setAddress({...address, city: e.target.value})} placeholder="City" />
+                  </div>
+                  
+                  <div className="col-span-2 md:col-span-1 flex gap-3 relative z-50">
+                      <div className="w-1/2 relative" ref={stateDropdownRef}>
+                        <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">State *</label>
+                        <div 
+                          className="w-full bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus-within:border-brand-gold shadow-sm flex items-center justify-between cursor-pointer transition-all"
+                          onClick={() => setIsStateDropdownOpen(!isStateDropdownOpen)}
+                        >
+                          <span className={address.state ? "text-slate-900 font-bold" : "text-slate-400"}>
+                            {address.state || "Select..."}
+                          </span>
+                          <ChevronDown size={14} className="text-slate-400" />
+                        </div>
+
+                        <AnimatePresence>
+                          {isStateDropdownOpen && (
+                            <motion.div 
+                              initial={{ opacity: 0, y: -5 }} 
+                              animate={{ opacity: 1, y: 0 }} 
+                              exit={{ opacity: 0, y: -5 }}
+                              className="absolute z-[100] w-full md:w-48 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
+                            >
+                              <div className="p-2 border-b border-slate-100 flex items-center gap-2">
+                                <Search size={14} className="text-slate-400 shrink-0" />
+                                <input 
+                                  autoFocus
+                                  className="w-full text-xs outline-none font-medium text-slate-700" 
+                                  placeholder="Search state..." 
+                                  value={stateSearch} 
+                                  onChange={(e) => setStateSearch(e.target.value)} 
+                                />
+                              </div>
+                              <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                                {filteredStates.length > 0 ? (
+                                  filteredStates.map(s => (
+                                    <div 
+                                      key={s.code} 
+                                      className="px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer flex justify-between items-center transition-colors"
+                                      onClick={() => {
+                                        setAddress({ ...address, state: s.code });
+                                        setIsStateDropdownOpen(false);
+                                        setStateSearch('');
+                                      }}
+                                    >
+                                      <span>{s.name}</span>
+                                      <span className="text-slate-400 font-bold text-[10px] bg-slate-100 px-1.5 py-0.5 rounded">{s.code}</span>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <div className="p-3 text-xs text-slate-400 text-center">No state found</div>
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+
+                      <div className="w-1/2">
+                          <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Zip Code *</label>
+                          <input className="w-full bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all" value={address.zip || ''} onChange={(e) => setAddress({...address, zip: e.target.value})} placeholder="Zip Code" />
+                      </div>
+                  </div>
+                </div>
+              </div>
+
           </div>
       ) : (
           <div className="text-sm font-bold text-slate-900 space-y-1 break-words leading-relaxed">
               <p className="text-base tracking-tight">{address.name || 'No recipient set'}</p>
+              {address.companyName && <p className="text-sm tracking-tight text-slate-600">{address.companyName}</p>}
               
               {(address.email || address.phone) && (
                 <div className="py-2 flex gap-4 flex-wrap">

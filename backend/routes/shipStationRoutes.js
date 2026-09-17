@@ -18,7 +18,7 @@ import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 const router = express.Router();
 
 // All ShipStation routes require authentication
-// router.use(protect);
+router.use(protect);
 
 // Get all warehouses, carriers & rate shoppers
 router.route('/warehouses').get(fetchWarehouses);
