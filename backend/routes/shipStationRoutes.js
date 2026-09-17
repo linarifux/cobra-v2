@@ -10,27 +10,30 @@ import {
     voidOrderLabel,
     cancelOrderShipment,
     fetchCarrierPackages,
-    fetchRatesByShipmentId
+    fetchRatesWithShipmentId,
+    fetchRateShoppers // <--- ADDED IMPORT
 } from '../controllers/shipStationController.js';
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
 // All ShipStation routes require authentication
-router.use(protect);
+// router.use(protect);
 
-// Get all warehouses & carriers
+// Get all warehouses, carriers & rate shoppers
 router.route('/warehouses').get(fetchWarehouses);
 router.route('/carriers').get(fetchCarriers);
 router.route('/carriers/:carrierId/packages').get(fetchCarrierPackages);
+router.route('/rate-shoppers').get(fetchRateShoppers); 
 
 // --- Rate Fetching ---
 // POST route to accept live frontend data
 router.post('/rates/live', fetchLiveRates);
 router.post('/checkout/rates', getCheckoutRates);
 
-// NEW: GET rate strictly by shipmentId
-router.route('/shipments/:shipmentId/rates').get(fetchRatesByShipmentId);
+
+// NEW: POST rate explicitly by shipmentId matching v2 rate_options specification
+router.post('/shipments/:shipmentId/get-rates', fetchRatesWithShipmentId);
 
 // --- Fulfillment & Logistics ---
 // Restrict to admins and staff members

@@ -4,7 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ArrowLeft, Edit, Building2, User as UserIcon, Mail, Phone, MapPin, 
-  Package, Users, DollarSign, Loader2, AlertTriangle, RefreshCw, CheckCircle2
+  Package, Users, DollarSign, Loader2, AlertTriangle, RefreshCw 
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -22,7 +22,7 @@ import AddDivisionForm from '../components/division/AddDivisionForm';
 
 // Tab Components imports
 import OverviewTab from '../components/vendors/tabs/OverviewTab';
-import InventoriesOfDivision from '../components/division/InventoriesOfDivision'; // <--- UPDATED IMPORT
+import InventoriesOfDivision from '../components/division/InventoriesOfDivision'; 
 import ProcessingTab from '../components/vendors/tabs/ProcessingTab';
 import RatesTab from '../components/vendors/tabs/RatesTab';
 import CarrierTab from '../components/vendors/tabs/CarrierTab'; 
@@ -53,7 +53,7 @@ export default function DivisionDetail() {
   const { items: users = [], status: userStatus } = useSelector(state => state.users || {});
   const { items: inventory = [], status: invStatus } = useSelector(state => state.inventory || {});
   const { items: customers = [], status: custStatus } = useSelector(state => state.customers || {});
-  const { currentCustomer: customer, status, error } = useSelector((state) => state.customers || {});
+  const { currentCustomer: customer } = useSelector((state) => state.customers || {});
   
   // Extract the arrays for the child tabs
   const { items: allTypePieces = [], status: tpStatus, error: tpError } = useSelector(state => state.typePieces || {});
@@ -68,7 +68,8 @@ export default function DivisionDetail() {
     if (custStatus === 'idle' || custStatus === 'failed') dispatch(fetchCustomers());
     if (tpStatus === 'idle' || tpStatus === 'failed') dispatch(fetchTypePieces());
     if (recStatus === 'idle' || recStatus === 'failed') dispatch(fetchReceivingLogs());
-    if (rateStatus === 'idle' || rateStatus === 'failed') dispatch(fetchRates());
+    // Updated to pass the context of the divisionId to the fetch action
+    if (rateStatus === 'idle' || rateStatus === 'failed') dispatch(fetchRates(divisionId));
   };
 
   useEffect(() => {
@@ -213,7 +214,9 @@ export default function DivisionDetail() {
       toast.promise(actionPromise, { loading: 'Saving updates...', success: 'Profile updated successfully.', error: 'Failed to update.' });
       await actionPromise;
       setIsModalOpen(false);
-    } catch (err) {} 
+    } catch (err) {
+      console.error("Form Submit Error:", err);
+    } 
     finally { setIsSubmitting(false); }
   };
 

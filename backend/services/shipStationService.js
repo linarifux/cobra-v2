@@ -45,7 +45,6 @@ export const getCarriers = async () => {
   }
 };
 
-// --- NEW: Fetch Carrier Packages ---
 export const getCarrierPackages = async (carrierId) => {
   try {
     const response = await shipStationAPI.get(`/carriers/${carrierId}/packages`);
@@ -73,20 +72,59 @@ export const getRates = async (ratePayload) => {
   }
 };
 
-// --- NEW: Fetch Rates strictly by Shipment ID ---
-export const getRatesByShipmentId = async (shipmentId) => {
+
+
+
+// export const getRatesByShipmentId = async (shipmentId, carrierIds = []) => {
+//   try {
+//     const payload = {
+//       shipment_id: String(shipmentId),
+//       rate_options: {
+//         carrier_ids: carrierIds
+//       }
+//     };
+    
+//     const response = await shipStationAPI.post('/rates', payload);
+//     return response.data;
+//   } catch (error) {
+//     handleApiError(error, 'getRatesByShipmentId');
+//   }
+// };
+
+
+
+
+// --- FIX: Strictly structured payload for querying rates on an existing Shipment ID (v2 endpoint) ---
+export const getRatesWithShipmentId = async (shipmentId, rateOptions = {}) => {
   try {
-    console.log(`Fetching rates for shipment ID: ${shipmentId}`);
+    const payload = {
+      shipment_id: String(shipmentId),
+      rate_options: rateOptions
+    };
     
-    // Pass strictly shipment_id as required by the API
-    const response = await shipStationAPI.post('/rates', { 
-      shipment_id: String(shipmentId) 
-    });
-    
-    console.log(response.data, "response.data in getRatesByShipmentId");
+    // Explicitly targeting the /v2/rates endpoint as specified by the ShipStation example
+    const response = await shipStationAPI.post('/rates', payload);
     return response.data;
   } catch (error) {
-    handleApiError(error, 'getRatesByShipmentId');
+    handleApiError(error, 'getRatesWithShipmentId');
+  }
+};
+
+// --- FIX: Fetch Rate Shoppers explicitly using v2 endpoint ---
+export const getRateShoppers = async (params = {}) => {
+  try {
+    const queryParams = {
+      sort_by: 'name',
+      sort_dir: 'asc',
+      ...params
+    };
+    
+    // Updated to use the /v2 endpoint based on your curl example
+    const response = await shipStationAPI.get('rate_shoppers', { params: queryParams });
+
+    return response.data;
+  } catch (error) {
+    handleApiError(error, 'getRateShoppers');
   }
 };
 
@@ -99,7 +137,6 @@ export const createLabel = async (labelPayload) => {
   }
 };
 
-// --- FIX: Isolated Label Generator (Prevents generating split orders) ---
 export const createLabelForShipment = async (shipmentId, labelPayload) => {
   try {
     const response = await shipStationAPI.post(`/labels/shipment/${shipmentId}`, labelPayload);
@@ -128,11 +165,10 @@ export const getLabelByExternalId = async (externalShipmentId) => {
   }
 };
 
-// --- FIX: Securely Proxy Authenticated ShipStation PDF Links ---
 export const fetchLabelBufferAsBase64 = async (url) => {
   try {
     const response = await axios.get(url, {
-      headers: { 'api-key': apiKey }, // Injects the custom API Key bypassing browser blocks
+      headers: { 'api-key': apiKey },
       responseType: 'arraybuffer'
     });
     return Buffer.from(response.data, 'binary').toString('base64');
@@ -160,7 +196,6 @@ export const voidLabel = async (labelId) => {
   }
 };
 
-// --- NEW: Create Carrier Connection ---
 export const connectUpsCarrier = async (payload) => {
   try {
     const response = await shipStationAPI.post('/connections/carriers/ups', payload);
@@ -170,7 +205,6 @@ export const connectUpsCarrier = async (payload) => {
   }
 };
 
-// --- NEW: Create Order Tag ---
 export const createTag = async (tagPayload) => {
   try {
     const response = await shipStationAPI.post('/tags', tagPayload);
@@ -180,7 +214,6 @@ export const createTag = async (tagPayload) => {
   }
 };
 
-// --- NEW: Assign Tag to Shipment ---
 export const addTagToShipment = async (shipmentId, tagName) => {
   try {
     const response = await shipStationAPI.post(`/shipments/${shipmentId}/tags/${encodeURIComponent(tagName)}`, {});

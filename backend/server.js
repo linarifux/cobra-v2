@@ -88,7 +88,9 @@ app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/receiving', receivingRoutes);
 app.use('/api/v1/upload', uploadRoutes)
 app.use('/api/v1/type-pieces', typePieceRouter);
+
 app.use('/api/v1/shipstation', shipStationRoutes);
+
 app.use('/api/v1/cart', cartRoutes);
 app.use('/api/v1/vendors', vendorRoutes);
 app.use('/api/v1/vendor-carriers', vendorCarrierRoutes);

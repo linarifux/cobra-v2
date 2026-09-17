@@ -24,8 +24,6 @@ if (accessKeyId && secretAccessKey) {
   });
 }
 
-console.log('S3 Client Initialized:', !!s3Client);
-
 // @desc    Create a new receiving record
 // @route   POST /api/v1/receiving
 export const createReceiving = catchAsync(async (req, res, next) => {
@@ -95,7 +93,6 @@ export const getAllReceiving = catchAsync(async (req, res, next) => {
     })
     .populate('locations', 'designation storageCategory');
 
-    console.log(receivingRecords)
   res.status(200).json({
     status: 'success',
     results: receivingRecords.length,
@@ -256,7 +253,6 @@ export const deleteReceiving = catchAsync(async (req, res, next) => {
 // @desc    Receive PDF from Frontend -> Save to S3 -> Email Customer
 // @route   POST /api/v1/receiving/:id/save-and-send
 export const saveAndSendPdf = catchAsync(async (req, res, next) => {
-  console.log(`Attempting to save and send PDF for receiving ID: ${req.params.id}`);
 
   // 1. Check if S3 is configured properly
   if (!s3Client) {
@@ -316,7 +312,6 @@ export const saveAndSendPdf = catchAsync(async (req, res, next) => {
       ContentType: 'application/pdf'
     };
 
-    console.log(`Sending object to S3 bucket [${bucketName}]...`);
     await s3Client.send(new PutObjectCommand(uploadParams));
 
     s3Url = `https://${bucketName}.s3.${region || 'us-east-1'}.amazonaws.com/${s3FileName}`;

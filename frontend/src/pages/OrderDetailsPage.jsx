@@ -89,10 +89,6 @@ export default function OrderDetailsPage() {
   const [palletsCount, setPalletsCount] = useState(0); 
   const [isRushOrder, setIsRushOrder] = useState(false);
 
-  // Dedicated States to track manually edited metrics
-  const [manualBoxesCount, setManualBoxesCount] = useState(null);
-  const [manualTotalWeightOz, setManualTotalWeightOz] = useState(null);
-
   const [createShipmentModalOpen, setCreateShipmentModalOpen] = useState(false);
   const [isCreatingShipment, setIsCreatingShipment] = useState(false);
 
@@ -126,14 +122,10 @@ export default function OrderDetailsPage() {
   const tax = subtotal * 0.08; 
   const grandTotal = subtotal + shippingCost + tax;
 
-  // Derive weights safely using the manually overridden metrics if they exist
+  // Single Source of Truth for Weights & Boxes
   const derivedItemWeightOz = items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
-  const derivedPackageWeightOz = packages.reduce((acc, pkg) => acc + Number(pkg.weightInOunces || 0), 0);
-  
-  const totalWeightToUse = manualTotalWeightOz !== null ? manualTotalWeightOz : (currentOrder?.shippingDetails?.totalWeightOunces || derivedPackageWeightOz || derivedItemWeightOz);
-  const totalBoxesToUse = manualBoxesCount !== null ? manualBoxesCount : (currentOrder?.shippingDetails?.totalBoxes || packages.length);
-  
-  const isWeightMismatched = Math.abs(derivedItemWeightOz - totalWeightToUse) > 1;
+  const totalPackageWeightOz = packages.reduce((acc, pkg) => acc + Number(pkg.weightInOunces || 0), 0);
+  const isWeightMismatched = Math.abs(derivedItemWeightOz - totalPackageWeightOz) > 1;
 
   const orderUserId = currentOrder?.user?._id || currentOrder?.user;
   const orderCreator = useMemo(() => {
@@ -153,10 +145,10 @@ export default function OrderDetailsPage() {
       return ct && ct.defaultCharge !== undefined ? Number(ct.defaultCharge) : fallback;
     };
 
-    const weightLbs = totalWeightToUse / 16;
+    const weightLbs = totalPackageWeightOz / 16;
     const lineItemsCount = items.length;
     const piecesCount = items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
-    const packageCount = totalBoxesToUse;
+    const packageCount = packages.length;
     const cartonCount = Number(cartoonsCount) || 0;
     const palletCount = Number(palletsCount) || 0;
 
@@ -182,7 +174,7 @@ export default function OrderDetailsPage() {
       pieceSurcharge, cartonSurcharge, palletFee, rushFee,
       internationalFee, totalProcessingFee
     };
-  }, [totalWeightToUse, items, totalBoxesToUse, cartoonsCount, palletsCount, isRushOrder, address.country, chargeTypes]);
+  }, [totalPackageWeightOz, items, packages.length, cartoonsCount, palletsCount, isRushOrder, address.country, chargeTypes]);
 
   useEffect(() => {
     if (isValidMongoId) dispatch(fetchOrderById(id));
@@ -297,6 +289,33 @@ export default function OrderDetailsPage() {
       }
     }
   }, [currentOrder, inventoryData]); 
+
+  // --- NEW: Resizes the packages array dynamically when edited in the modal ---
+  const handleMetricsOverride = (newTotalWeightOz, newTotalBoxes) => {
+    let currentPkgs = [...packages];
+    
+    // Resize array to match manual box count
+    if (newTotalBoxes !== currentPkgs.length) {
+      if (newTotalBoxes > currentPkgs.length) {
+        const diff = newTotalBoxes - currentPkgs.length;
+        for (let i = 0; i < diff; i++) {
+          currentPkgs.push({ id: generateLocalId(), packageCode: 'package', weightInOunces: 0, length: 10, width: 10, height: 10 });
+        }
+      } else if (newTotalBoxes > 0) {
+        currentPkgs = currentPkgs.slice(0, newTotalBoxes);
+      }
+    }
+    
+    // Distribute total weight evenly
+    const weightPerBox = newTotalBoxes > 0 ? (newTotalWeightOz / newTotalBoxes) : newTotalWeightOz;
+    
+    currentPkgs = currentPkgs.map(p => ({
+      ...p,
+      weightInOunces: Number(weightPerBox.toFixed(2))
+    }));
+    
+    setPackages(currentPkgs);
+  };
 
   const handlePrintDocsAndPick = async () => {
     setIsGeneratingDocs(true);
@@ -556,8 +575,8 @@ export default function OrderDetailsPage() {
         trackingNumber: shipping.trackingNumber, shippingCost: Number(shipping.shippingCost),
         cartoons: Number(cartoonsCount) || 0,
         pallets: Number(palletsCount) || 0, 
-        totalBoxes: totalBoxesToUse,
-        totalWeightOunces: totalWeightToUse,
+        totalBoxes: packages.length, // Sourced from array length
+        totalWeightOunces: totalPackageWeightOz, // Sourced from array values
         packages: packages.map(p => ({
           packageCode: p.packageCode || 'package',
           weightInOunces: Number(p.weightInOunces) || 16,
@@ -610,8 +629,8 @@ export default function OrderDetailsPage() {
         trackingNumber: shipping.trackingNumber, shippingCost: Number(shipping.shippingCost),
         cartoons: Number(cartoonsCount) || 0,
         pallets: Number(palletsCount) || 0,
-        totalBoxes: totalBoxesToUse,
-        totalWeightOunces: totalWeightToUse,
+        totalBoxes: packages.length,
+        totalWeightOunces: totalPackageWeightOz,
         packages: packages.map(p => ({
           packageCode: p.packageCode || 'package',
           weightInOunces: Number(p.weightInOunces) || 16,
@@ -680,8 +699,8 @@ export default function OrderDetailsPage() {
       serviceCode: shipping.serviceCode,
       cartoons: Number(modalCartoonsCount) || Number(cartoonsCount) || 0,
       pallets: Number(palletsCount) || 0,
-      totalBoxes: totalBoxesToUse,
-      totalWeightOunces: totalWeightToUse,
+      totalBoxes: packages.length,
+      totalWeightOunces: totalPackageWeightOz,
       processingFees: processingFeesPreview // Attach computed fees directly to shipment API call
     };
 
@@ -715,8 +734,8 @@ export default function OrderDetailsPage() {
       serviceCode: shipping.serviceCode,
       cartoons: Number(cartoonsCount) || 0,
       pallets: Number(palletsCount) || 0,
-      totalBoxes: totalBoxesToUse,
-      weightInOunces: totalWeightToUse,
+      totalBoxes: packages.length,
+      weightInOunces: totalPackageWeightOz,
       processingFees: processingFeesPreview // Attach computed fees directly to label generation API call
     };
 
@@ -828,6 +847,7 @@ export default function OrderDetailsPage() {
     }
   };
 
+  
   if (!isValidMongoId) return <NotFoundPage />;
   if (orderLoadStatus === 'failed' || orderError) return <NotFoundPage />;
   if (orderLoadStatus === 'loading' || !currentOrder) {
@@ -904,7 +924,6 @@ export default function OrderDetailsPage() {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start mt-2">
         <div className="xl:col-span-2 space-y-6 w-full min-w-0">
-
           <OrderInfoPanel 
             currentOrder={currentOrder} 
             isRushOrder={isRushOrder} 
@@ -920,6 +939,7 @@ export default function OrderDetailsPage() {
               isRushOrder={isRushOrder} 
               setIsRushOrder={setIsRushOrder} 
             />
+            
             <ShippingPanel 
               shipping={shipping} 
               setShipping={setShipping} 
@@ -928,14 +948,13 @@ export default function OrderDetailsPage() {
               palletsCount={palletsCount} 
               setPalletsCount={setPalletsCount} 
               packages={packages} 
-              totalItemWeightOz={totalWeightToUse} 
-              totalBoxesCount={totalBoxesToUse}
+              totalItemWeightOz={totalPackageWeightOz} 
+              totalBoxesCount={packages.length}
               isWeightMismatched={isWeightMismatched} 
               orderStatus={orderStatus} 
               carriersData={carriersData}
               shipmentId={currentOrder?.shipstationDetails?.orderId || ''}
-              setManualBoxesCount={setManualBoxesCount}
-              setManualTotalWeightOz={setManualTotalWeightOz}
+              handleMetricsOverride={handleMetricsOverride}
             />
           </div>
 

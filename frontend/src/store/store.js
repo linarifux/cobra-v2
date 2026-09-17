@@ -1,3 +1,5 @@
+// src/store/store.js
+
 import { configureStore } from '@reduxjs/toolkit';
 
 // Auth & Users
@@ -16,6 +18,9 @@ import receivingReducer from './slices/receivingSlice';
 import typePieceReducer from './slices/typePieceSlice';
 import uploadReducer from './slices/uploadSlice';
 import cartReducer from './slices/cartSlice';
+import rateReducer from './slices/rateSlice'; // Added missing rate slice
+
+// Vendors
 import vendorReducer from './slices/vendorSlice';
 import vendorCarrierReducer from './slices/vendorCarrierSlice';
 
@@ -37,6 +42,7 @@ export const store = configureStore({
     typePieces: typePieceReducer,
     upload: uploadReducer,
     cart: cartReducer,
+    rates: rateReducer, // Registered rate reducer
 
     // 3. Vendors
     vendors: vendorReducer,
