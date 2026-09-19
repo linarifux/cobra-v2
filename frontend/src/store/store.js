@@ -18,7 +18,8 @@ import receivingReducer from './slices/receivingSlice';
 import typePieceReducer from './slices/typePieceSlice';
 import uploadReducer from './slices/uploadSlice';
 import cartReducer from './slices/cartSlice';
-import rateReducer from './slices/rateSlice'; // Added missing rate slice
+import rateReducer from './slices/rateSlice'; 
+import processingChargeReducer from './slices/processingChargeSlice';
 
 // Vendors
 import vendorReducer from './slices/vendorSlice';
@@ -42,8 +43,9 @@ export const store = configureStore({
     typePieces: typePieceReducer,
     upload: uploadReducer,
     cart: cartReducer,
-    rates: rateReducer, // Registered rate reducer
-
+    rates: rateReducer, 
+    processingCharges: processingChargeReducer, // Registered processing charge reducer
+    
     // 3. Vendors
     vendors: vendorReducer,
 

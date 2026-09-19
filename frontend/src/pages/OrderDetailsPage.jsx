@@ -16,7 +16,9 @@ import {
 import { fetchInventory, updateInventory } from '../store/slices/inventorySlice'; 
 import { fetchUsers } from '../store/slices/userSlice'; 
 import { fetchCarriers, fetchCarrierPackages } from '../store/slices/carrierSlice';
-import { fetchChargeTypes } from '../store/slices/chargeTypeSlice';
+
+// ProcessingCharge system
+import { fetchProcessingChargesByCustomer } from '../store/slices/processingChargeSlice';
 
 import NotFoundPage from '../pages/NotFoundPage';
 import CreateShipmentModal from '../components/order-details/CreateShipmentModal';
@@ -75,13 +77,15 @@ export default function OrderDetailsPage() {
   const { items: inventoryData = [], status: inventoryStatus } = useSelector((state) => state.inventory || {});
   const { items: usersData = [], status: usersStatus } = useSelector((state) => state.users || {}); 
   const { items: carriersData = [], packageTypes = [] } = useSelector((state) => state.carriers || {});
-  const { items: chargeTypes = [], status: chargeTypeStatus } = useSelector((state) => state.chargeTypes || {});
+  
+  // Connect to the processingCharges state
+  const { items: customerCharges = [], status: processingStatus } = useSelector((state) => state.processingCharges || {});
 
   const [orderStatus, setOrderStatus] = useState('New');
   const [selectedUserId, setSelectedUserId] = useState(''); 
   const [shipping, setShipping] = useState({ carrierId: '', carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0, shipStationId: '' });
   
-  // State Initialization: Added companyName
+  // State Initialization
   const [address, setAddress] = useState({ name: '', companyName: '', email: '', phone: '', street: '', line2: '', city: '', state: '', zip: '', country: '' });
   const [items, setItems] = useState([]);
   const [notes, setNotes] = useState('');
@@ -137,15 +141,28 @@ export default function OrderDetailsPage() {
 
   const orderCreatorName = orderCreator ? (orderCreator.name || orderCreator.firstName || orderCreator.email) : null;
 
+  // Fetch processing charges when the order loads and we have the customer ID
   useEffect(() => {
-    if (chargeTypeStatus === 'idle') dispatch(fetchChargeTypes());
-  }, [chargeTypeStatus, dispatch]);
+    const customerId = currentOrder?.customer?._id || currentOrder?.customer;
+    if (customerId) {
+        dispatch(fetchProcessingChargesByCustomer(customerId));
+    }
+  }, [currentOrder?.customer, dispatch]);
 
   const processingFeesPreview = useMemo(() => {
-    const getFee = (name, fallback = 0) => {
-      const ct = chargeTypes.find(c => c.name === name && c.isActive !== false);
-      return ct && ct.defaultCharge !== undefined ? Number(ct.defaultCharge) : fallback;
-    };
+    // Determine configured fees (Strictly defaulting to 0 if not configured in the DB)
+    const config = customerCharges.length > 0 ? customerCharges[0] : {};
+    
+    // Configured values extracted directly from the processingCharges schema
+    const cfgBase = config.baseProcessingFee !== undefined ? Number(config.baseProcessingFee) : 0;
+    const cfgWeight = config.weightSurcharge !== undefined ? Number(config.weightSurcharge) : 0;
+    const cfgLineItem = config.lineItemSurcharge !== undefined ? Number(config.lineItemSurcharge) : 0;
+    const cfgPackage = config.packageSurcharge !== undefined ? Number(config.packageSurcharge) : 0;
+    const cfgPiece = config.pieceSurcharge !== undefined ? Number(config.pieceSurcharge) : 0;
+    const cfgCarton = config.cartonSurcharge !== undefined ? Number(config.cartonSurcharge) : 0;
+    const cfgPallet = config.palletProcessingFee !== undefined ? Number(config.palletProcessingFee) : 0;
+    const cfgRush = config.rushSurcharge !== undefined ? Number(config.rushSurcharge) : 0;
+    const cfgIntl = config.internationalSurcharge !== undefined ? Number(config.internationalSurcharge) : 0;
 
     const weightLbs = totalPackageWeightOz / 16;
     const lineItemsCount = items.length;
@@ -154,18 +171,33 @@ export default function OrderDetailsPage() {
     const cartonCount = Number(cartoonsCount) || 0;
     const palletCount = Number(palletsCount) || 0;
 
-    const baseFee = weightLbs <= 10 ? 5.07 : 5.68;
-    const weightSurcharge = weightLbs > 20 ? (weightLbs - 20) * getFee('Weight Surcharge', 0.15) : 0;
-    const lineItemSurcharge = lineItemsCount > 3 ? (lineItemsCount - 3) * getFee('Line Item Surcharge', 0.81) : 0;
-    const packageSurcharge = packageCount > 1 ? (packageCount - 1) * getFee('Package Surcharge', 0.71) : 0;
-    const pieceSurcharge = piecesCount * getFee('Piece Surcharge', 0.03);
-    const cartonSurcharge = cartonCount * getFee('Carton Surcharge', 2.05);
-    const palletFee = palletCount * getFee('Pallet Fee', 8.40);
-
-    const rushFee = isRushOrder ? getFee('Rush Fee', 20) : 0;
+    // Apply exact calculation rules derived from Rick_Billing_Formula.xlsx
     
+    // 1. Base Fee - Applied to 1st 3 lines. Assumes base covers < 10, otherwise scales. 
+    const baseFee = cfgBase; 
+    
+    // 2. Weight Surcharge - Only applied per lb OVER 20 lbs
+    const weightSurcharge = weightLbs > 20 ? (weightLbs - 20) * cfgWeight : 0;
+    
+    // 3. Line Item Surcharge - Only applied per line item OVER 3 items
+    const lineItemSurcharge = lineItemsCount > 3 ? (lineItemsCount - 3) * cfgLineItem : 0;
+    
+    // 4. Package Surcharge - Only applied per package OVER 1
+    const packageSurcharge = packageCount > 1 ? (packageCount - 1) * cfgPackage : 0;
+    
+    // 5. Piece Surcharge - Applied per piece total
+    const pieceSurcharge = piecesCount * cfgPiece;
+    
+    // 6. Carton Surcharge
+    const cartonSurcharge = cartonCount * cfgCarton;
+    
+    // 7. Pallet Fee
+    const palletFee = palletCount * cfgPallet;
+
+    // 8. Toggles
+    const rushFee = isRushOrder ? cfgRush : 0;
     const isLocalIntl = address.country && !['US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'].includes(address.country.toUpperCase().trim());
-    const internationalFee = isLocalIntl ? getFee('International Fee', 0) : 0;
+    const internationalFee = isLocalIntl ? cfgIntl : 0;
 
     const totalProcessingFee = baseFee + weightSurcharge + lineItemSurcharge + 
                                packageSurcharge + pieceSurcharge + cartonSurcharge + 
@@ -176,7 +208,7 @@ export default function OrderDetailsPage() {
       pieceSurcharge, cartonSurcharge, palletFee, rushFee,
       internationalFee, totalProcessingFee
     };
-  }, [totalPackageWeightOz, items, packages.length, cartoonsCount, palletsCount, isRushOrder, address.country, chargeTypes]);
+  }, [totalPackageWeightOz, items, packages.length, cartoonsCount, palletsCount, isRushOrder, address.country, customerCharges]);
 
   useEffect(() => {
     if (isValidMongoId) dispatch(fetchOrderById(id));

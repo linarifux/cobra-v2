@@ -68,7 +68,6 @@ export default function DivisionDetail() {
     if (custStatus === 'idle' || custStatus === 'failed') dispatch(fetchCustomers());
     if (tpStatus === 'idle' || tpStatus === 'failed') dispatch(fetchTypePieces());
     if (recStatus === 'idle' || recStatus === 'failed') dispatch(fetchReceivingLogs());
-    // Updated to pass the context of the divisionId to the fetch action
     if (rateStatus === 'idle' || rateStatus === 'failed') dispatch(fetchRates(divisionId));
   };
 

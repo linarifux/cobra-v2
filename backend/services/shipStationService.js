@@ -75,25 +75,6 @@ export const getRates = async (ratePayload) => {
 
 
 
-// export const getRatesByShipmentId = async (shipmentId, carrierIds = []) => {
-//   try {
-//     const payload = {
-//       shipment_id: String(shipmentId),
-//       rate_options: {
-//         carrier_ids: carrierIds
-//       }
-//     };
-    
-//     const response = await shipStationAPI.post('/rates', payload);
-//     return response.data;
-//   } catch (error) {
-//     handleApiError(error, 'getRatesByShipmentId');
-//   }
-// };
-
-
-
-
 // --- FIX: Strictly structured payload for querying rates on an existing Shipment ID (v2 endpoint) ---
 export const getRatesWithShipmentId = async (shipmentId, rateOptions = {}) => {
   try {

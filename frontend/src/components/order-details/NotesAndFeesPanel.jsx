@@ -13,8 +13,8 @@ const FeeRow = ({ label, sourceField, value, isZero }) => {
   );
 };
 
-export default function NotesAndFeesPanel({ notes, setNotes, currentOrder, processingFeesPreview }) {
-  // Safely extract the live fees
+export default function NotesAndFeesPanel({ notes, setNotes, processingFeesPreview }) {
+  // Safely extract the live fees calculated from the DB
   const pfp = processingFeesPreview || {};
   const total = pfp.totalProcessingFee || 0;
 
@@ -113,3 +113,4 @@ export default function NotesAndFeesPanel({ notes, setNotes, currentOrder, proce
     </div>
   );
 }
+

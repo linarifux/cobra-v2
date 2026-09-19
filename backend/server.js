@@ -21,14 +21,14 @@ import orderRoutes from './routes/orderRoutes.js';
 import addressRoutes from './routes/addressRoutes.js';
 import carrierRoutes from './routes/carrierRoutes.js';
 import userRoutes from './routes/userRoutes.js';
-import receivingRoutes from './routes/receivingRoutes.js'
-import uploadRoutes from './routes/uploadRoutes.js'
+import receivingRoutes from './routes/receivingRoutes.js';
+import uploadRoutes from './routes/uploadRoutes.js';
 import typePieceRouter from './routes/typePieceRoutes.js';
 import shipStationRoutes from './routes/shipStationRoutes.js';
 import cartRoutes from './routes/cartRoutes.js';
 import vendorRoutes from './routes/vendorRoutes.js';
 import vendorCarrierRoutes from './routes/vendorCarrierRoutes.js';
-
+import processingChargeRoutes from './routes/processingChargeRoutes.js';
 
 // 1. Initialize Database Connection
 connectDB();
@@ -62,7 +62,6 @@ app.use(cors({
   credentials: true 
 }));
 
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -86,14 +85,13 @@ app.use('/api/v1/addresses', addressRoutes);
 app.use('/api/v1/carriers', carrierRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/receiving', receivingRoutes);
-app.use('/api/v1/upload', uploadRoutes)
+app.use('/api/v1/upload', uploadRoutes);
 app.use('/api/v1/type-pieces', typePieceRouter);
-
 app.use('/api/v1/shipstation', shipStationRoutes);
-
 app.use('/api/v1/cart', cartRoutes);
 app.use('/api/v1/vendors', vendorRoutes);
 app.use('/api/v1/vendor-carriers', vendorCarrierRoutes);
+app.use('/api/v1/processing-charges', processingChargeRoutes);
 
 // 5. Global Error Handler
 app.use(globalErrorHandler);

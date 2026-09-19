@@ -293,41 +293,6 @@ export const fetchRateShoppers = catchAsync(async (req, res, next) => {
   }
 });
 
-// --- FIX: Fetch Rates by Shipment ID utilizing dynamic order context ---
-// export const fetchRatesByShipmentId = catchAsync(async (req, res, next) => {
-//   const { shipmentId } = req.params;
-//   if (!shipmentId) return next(new AppError('Shipment ID is required.', 400));
-
-//   try {
-//     // Attempt to locate the order owning this shipment ID to map the scoped carriers
-//     const order = await Order.findOne({ 'shipstationDetails.orderId': shipmentId });
-//     if (!order) return next(new AppError('The active order for this shipment could not be located.', 404));
-
-//     // Fetch the active carriers assigned to the exact division of this order
-//     const configuredCarriers = await Carrier.find({ division: order.division, isActive: true });
-
-//     // Fallback: If no carriers configured locally, we pass an empty array to ShipStation (which retrieves all defaults)
-//     const carrierIds = configuredCarriers.map(c => c.shipStationId);
-
-//     const response = await getRatesByShipmentId(shipmentId, carrierIds);
-
-//     // Destructure specifically based on your provided response schema
-//     const rawRates = response?.rate_response?.rates || [];
-
-//     // Normalize properties for the frontend
-//     const normalizedRates = rawRates.map(r => ({
-//       serviceCode: r.service_code,
-//       serviceName: r.service_type || r.service_code,
-//       shipmentCost: r.shipping_amount?.amount || 0,
-//       transitDays: r.delivery_days || null,
-//       carrierFriendlyName: r.carrier_friendly_name || r.carrier_code
-//     }));
-
-//     res.status(200).json({ status: 'success', results: normalizedRates.length, data: { rates: normalizedRates } });
-//   } catch (error) {
-//     return next(new AppError(`ShipStation Error: ${error.message}`, 502));
-//   }
-// });
 
 export const fetchRatesWithShipmentId = catchAsync(async (req, res, next) => {
   const { shipmentId } = req.params;
@@ -576,6 +541,7 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
         height: Number(p.height) || 10
       }));
     }
+    
 
     order.shipstationDetails = {
       ...order.shipstationDetails,
@@ -695,6 +661,12 @@ export const voidOrderLabel = catchAsync(async (req, res, next) => {
     return next(new AppError(`ShipStation Void Label Error: ${error.message}`, 502));
   }
 });
+
+
+
+
+
+
 
 export const cancelOrderShipment = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
