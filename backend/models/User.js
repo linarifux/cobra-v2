@@ -66,6 +66,10 @@ const userSchema = new mongoose.Schema({
     type: Number,
     min: [0, 'Order limit cannot be negative']
   },
+  showCostsInCp: {
+    type: Boolean,
+    default: false
+  },
   isActive: {
     type: Boolean,
     default: true
@@ -83,14 +87,23 @@ userSchema.pre('validate', function() {
     if (!adminRoles.includes(this.role)) {
       this.invalidate('role', `Invalid role for Admin Portal. Allowed: ${adminRoles.join(', ')}`);
     }
-    // Admin portal users will not have this field, automatically clear it if provided
+    // Admin portal users will not have these fields, automatically clear them if provided
     if (this.orderLimit !== undefined) {
       this.orderLimit = undefined;
     }
+    if (this.showCostsInCp !== undefined) {
+      this.showCostsInCp = undefined;
+    }
   }
   
-  if (this.portal === 'order' && !orderRoles.includes(this.role)) {
-    this.invalidate('role', `Invalid role for Order Portal. Allowed: ${orderRoles.join(', ')}`);
+  if (this.portal === 'order') {
+    if (!orderRoles.includes(this.role)) {
+      this.invalidate('role', `Invalid role for Order Portal. Allowed: ${orderRoles.join(', ')}`);
+    }
+    // Only order portal super_users can have the showCostsInCp field
+    if (this.role !== 'super_user' && this.showCostsInCp !== undefined) {
+      this.showCostsInCp = undefined;
+    }
   }
 });
 

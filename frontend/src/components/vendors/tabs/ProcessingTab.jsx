@@ -7,24 +7,25 @@ import ChargeList from './ChargeList';
 // Redux Actions
 import { fetchProcessingChargesByCustomer, updateProcessingCharge, createProcessingCharge } from '../../../store/slices/processingChargeSlice';
 
-// Map structure containing exact rule definitions from Rick_Billing_Formula.xlsx
+// Map structure containing exact rule definitions, but now strictly DYNAMIC.
+// The values are injected via ruleFn based on the live database or form state.
 const CHARGE_MAP = [
-  { id: 'baseFeeUpTo10lbs', name: 'Base Fee $5.07 (≤ 10 lbs)', rule: 'Applied to the 1st 3 line items if total weight is 10 lbs or less.' },
-  { id: 'baseFee11To20lbs', name: 'Base Fee $5.68 (11-20 lbs)', rule: 'Applied to the 1st 3 line items if total weight is between 11 and 20 lbs.' },
-  { id: 'weightSurcharge', name: 'Weight Surcharge', rule: '.15 per lb over 20 lbs.' },
-  { id: 'lineItemSurcharge', name: 'Line Item Surcharge', rule: '.81 cents per line item over 3 line items.' },
-  { id: 'packageSurcharge', name: 'Package Surcharge', rule: '.71 per package over 1.' },
-  { id: 'pieceSurcharge', name: 'Piece Surcharge', rule: '.03 per piece.' },
-  { id: 'cartonSurcharge', name: 'Carton Surcharge', rule: '2.05 per carton.' },
-  { id: 'palletProcessingFee', name: 'Pallet Processing Fee', rule: '8.40 per pallet fee.' },
-  { id: 'rushSurcharge', name: 'Rush Surcharge', rule: 'Applied if \'Rush\' status toggle is active.' },
-  { id: 'internationalSurcharge', name: 'International Surcharge', rule: 'Applied if \'Intl\' status toggle is active.' },
+  { id: 'baseFeeUpTo10lbs', name: 'Base Fee (≤ 10 lbs)', ruleFn: (v) => `Applied to the 1st 3 line items if total weight is 10 lbs or less ($${v}).` },
+  { id: 'baseFee11To20lbs', name: 'Base Fee (11-20 lbs)', ruleFn: (v) => `Applied to the 1st 3 line items if total weight is between 11 and 20 lbs ($${v}).` },
+  { id: 'weightSurcharge', name: 'Weight Surcharge', ruleFn: (v) => `$${v} per lb over 20 lbs.` },
+  { id: 'lineItemSurcharge', name: 'Line Item Surcharge', ruleFn: (v) => `$${v} per line item over 3 line items.` },
+  { id: 'packageSurcharge', name: 'Package Surcharge', ruleFn: (v) => `$${v} per package over 1.` },
+  { id: 'pieceSurcharge', name: 'Piece Surcharge', ruleFn: (v) => `$${v} per piece.` },
+  { id: 'cartonSurcharge', name: 'Carton Surcharge', ruleFn: (v) => `$${v} per carton.` },
+  { id: 'palletProcessingFee', name: 'Pallet Processing Fee', ruleFn: (v) => `$${v} per pallet fee.` },
+  { id: 'rushSurcharge', name: 'Rush Surcharge', ruleFn: (v) => `Applied if 'Rush' status toggle is active ($${v}).` },
+  { id: 'internationalSurcharge', name: 'International Surcharge', ruleFn: (v) => `Applied if 'Intl' status toggle is active ($${v}).` },
 ];
 
 const RECEIVING_CHARGE_MAP = [
-  { id: 'unloadingFee', name: 'Unloading Fee', rule: 'Per Line item up to 100 lbs ($15.00).' },
-  { id: 'weightSurcharge', name: 'Weight Surcharge', rule: '.15 each additional pound.' },
-  { id: 'palletFee', name: 'Pallet Fee', rule: '8.40 per Pallet.' }
+  { id: 'unloadingFee', name: 'Unloading Fee', ruleFn: (v) => `Per Line item up to 100 lbs ($${v}).` },
+  { id: 'weightSurcharge', name: 'Weight Surcharge', ruleFn: (v) => `$${v} each additional pound.` },
+  { id: 'palletFee', name: 'Pallet Fee', ruleFn: (v) => `$${v} per Pallet.` }
 ];
 
 export default function ProcessingTab({ customerData }) {
@@ -62,7 +63,7 @@ export default function ProcessingTab({ customerData }) {
     }
   }, [targetCustomerId, dispatch]);
 
-  // Sync DB data into local UI format with rules attached
+  // Sync DB data into local UI format with dynamic rule functions attached
   useEffect(() => {
     if (status === 'succeeded') {
       const activeConfig = globalCharges.length > 0 ? globalCharges[0] : null;
@@ -70,8 +71,8 @@ export default function ProcessingTab({ customerData }) {
       const mappedUIArray = CHARGE_MAP.map(field => ({
         id: field.id,
         name: field.name,
-        rule: field.rule, // Evaluated mapped rule definition for ChargeList UI
-        value: activeConfig && activeConfig[field.id] !== undefined 
+        ruleFn: field.ruleFn, 
+        value: activeConfig && activeConfig[field.id] !== undefined && activeConfig[field.id] !== null
           ? Number(activeConfig[field.id]).toFixed(2) 
           : ''
       }));
@@ -119,25 +120,32 @@ export default function ProcessingTab({ customerData }) {
     );
   }
 
-  // Helper component to render the rules text securely
-  const RulesCard = ({ title, rulesMap }) => (
+  // Helper component to render the rules text securely AND dynamically
+  const RulesCard = ({ title, chargesData }) => (
     <div className="bg-white/40 backdrop-blur-xl border border-white/60 p-6 rounded-3xl shadow-sm">
       <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
         <FileText size={16} className="text-brand-gold" />
         {title} Rules
       </h3>
       <div className="space-y-4">
-        {rulesMap.map((item, idx) => (
-          <div key={idx} className="flex gap-4 p-4 bg-white/50 border border-white/80 rounded-2xl">
-            <div className="flex-shrink-0 mt-0.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2"></div>
+        {chargesData.map((item, idx) => {
+          // Resolve current value, default to "0.00" if blank
+          const displayVal = item.value !== '' && !isNaN(item.value) ? Number(item.value).toFixed(2) : '0.00';
+          
+          return (
+            <div key={idx} className="flex gap-4 p-4 bg-white/50 border border-white/80 rounded-2xl">
+              <div className="flex-shrink-0 mt-0.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2"></div>
+              </div>
+              <div>
+                <p className="text-sm font-bold text-slate-900">{item.name}</p>
+                <p className="text-xs font-medium text-slate-600 mt-1 leading-relaxed">
+                  {item.ruleFn ? item.ruleFn(displayVal) : 'Rule not defined.'}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-bold text-slate-900">{item.name}</p>
-              <p className="text-xs font-medium text-slate-600 mt-1 leading-relaxed">{item.rule}</p>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -216,7 +224,7 @@ export default function ProcessingTab({ customerData }) {
                 setCharges={setProcessingCharges} 
               />
             ) : (
-              <RulesCard title="Processing" rulesMap={CHARGE_MAP} />
+              <RulesCard title="Processing" chargesData={processingCharges} />
             )
           )}
 
@@ -229,7 +237,7 @@ export default function ProcessingTab({ customerData }) {
                 setCharges={setReceivingCharges} 
               />
             ) : (
-              <RulesCard title="Receiving" rulesMap={RECEIVING_CHARGE_MAP} />
+              <RulesCard title="Receiving" chargesData={receivingCharges} />
             )
           )}
 

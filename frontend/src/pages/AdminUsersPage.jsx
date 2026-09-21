@@ -33,7 +33,8 @@ const INITIAL_FORM_STATE = {
   customer: '',
   divisions: [],
   chargeCode: '',
-  orderLimit: '' // ADDED
+  orderLimit: '',
+  showCostsInCp: false // ADDED
 };
 
 export default function AdminUsersPage() {
@@ -146,7 +147,8 @@ export default function AdminUsersPage() {
       customer: typeof user.customer === 'object' ? user.customer?._id : (user.customer || ''),
       divisions: user.divisions?.map(d => typeof d === 'object' ? d._id : d) || [],
       chargeCode: user.chargeCode || '',
-      orderLimit: user.orderLimit ?? '' // ADDED
+      orderLimit: user.orderLimit ?? '', 
+      showCostsInCp: user.showCostsInCp || false // ADDED
     });
     setIsModalOpen(true);
   };
@@ -167,7 +169,8 @@ export default function AdminUsersPage() {
       customer: newPortal === 'admin' ? '' : formData.customer,
       divisions: newPortal === 'admin' ? [] : formData.divisions,
       chargeCode: newPortal === 'admin' ? '' : formData.chargeCode,
-      orderLimit: newPortal === 'admin' ? '' : formData.orderLimit // ADDED
+      orderLimit: newPortal === 'admin' ? '' : formData.orderLimit,
+      showCostsInCp: newPortal === 'admin' ? false : formData.showCostsInCp // ADDED
     });
   };
 
@@ -202,11 +205,17 @@ export default function AdminUsersPage() {
     };
     delete payload.address; // Remove the frontend-only 'address' wrapper
     
-    // Safely parse orderLimit
-    if (payload.portal === 'admin' || payload.orderLimit === '') {
-      delete payload.orderLimit; // Let the backend handle missing values safely
+    // Safely format optional fields based on portal and role limitations
+    if (payload.portal === 'admin') {
+      delete payload.orderLimit; 
+      delete payload.showCostsInCp;
     } else {
-      payload.orderLimit = Number(payload.orderLimit);
+      payload.orderLimit = payload.orderLimit === '' ? undefined : Number(payload.orderLimit);
+      
+      // Ensure only super_users actually submit this property to update the database
+      if (payload.role !== 'super_user') {
+        payload.showCostsInCp = false;
+      }
     }
 
     try {
@@ -258,7 +267,6 @@ export default function AdminUsersPage() {
         handleOpenCreateModal={handleOpenCreateModal}
         isSuperAdmin={isSuperAdmin}
       />
-
 
       {!canManageUsers && (
         <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-start gap-3 shadow-sm">

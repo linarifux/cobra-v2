@@ -1,8 +1,8 @@
 import Order from '../models/Order.js';
 import Customer from '../models/Customer.js';
 import Inventory from '../models/Inventory.js';
-import ChargeType from '../models/ChargeType.js'; 
-import User from '../models/User.js'; // Imported User model to access orderLimit
+import ProcessingCharge from '../models/ProcessingCharge.js'; // Ensure correct import here
+import User from '../models/User.js';
 import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 import { cancelShipment, voidLabel } from '../services/shipStationService.js';
@@ -23,16 +23,41 @@ const checkIfInternational = (countryStr) => {
   return !domesticVariants.includes(normalizedCountry);
 };
 
+// Helper to calculate the grand total of the order
+const calculateTotalAmount = (orderData, calculatedFees) => {
+  // 1. Sum up Line Items Total Price
+  const itemsTotal = orderData.items ? orderData.items.reduce((sum, item) => sum + (Number(item.totalPrice) || 0), 0) : 0;
+  
+  // 2. Shipping Cost
+  const shippingCost = Number(orderData.shippingDetails?.shippingCost) || 0;
+  
+  // 3. Total Processing Fees
+  const processingTotal = Number(calculatedFees?.totalProcessingFee) || 0;
+  
+  // 4. Return Grand Total (Rounded to 2 decimals)
+  return Math.round((itemsTotal + shippingCost + processingTotal) * 100) / 100;
+};
+
 // --- DYNAMIC FEE CALCULATION ENGINE ---
 const calculateProcessingFees = async (orderData) => {
-  // Fetch active charge types from the DB
-  const chargeTypes = await ChargeType.find({ isActive: true });
+  // Fetch active charge configuration specific to the customer
+  let config = {};
+  if (orderData.customer) {
+     const dbConfig = await ProcessingCharge.findOne({ customer: orderData.customer, isActive: true });
+     if (dbConfig) config = dbConfig;
+  }
   
-  // Helper to extract a dynamic fee, or fallback to 0
-  const getFee = (name, fallback = 0) => {
-    const ct = chargeTypes.find(c => c.name === name);
-    return ct && ct.defaultCharge !== undefined ? Number(ct.defaultCharge) : fallback;
-  };
+  // Extract specific values, defaulting to 0 if none exist
+  const cfgBaseUpTo10 = config.baseFeeUpTo10lbs !== undefined ? Number(config.baseFeeUpTo10lbs) : 0;
+  const cfgBase11To20 = config.baseFee11To20lbs !== undefined ? Number(config.baseFee11To20lbs) : 0;
+  const cfgWeight = config.weightSurcharge !== undefined ? Number(config.weightSurcharge) : 0;
+  const cfgLineItem = config.lineItemSurcharge !== undefined ? Number(config.lineItemSurcharge) : 0;
+  const cfgPackage = config.packageSurcharge !== undefined ? Number(config.packageSurcharge) : 0;
+  const cfgPiece = config.pieceSurcharge !== undefined ? Number(config.pieceSurcharge) : 0;
+  const cfgCarton = config.cartonSurcharge !== undefined ? Number(config.cartonSurcharge) : 0;
+  const cfgPallet = config.palletProcessingFee !== undefined ? Number(config.palletProcessingFee) : 0;
+  const cfgRush = config.rushSurcharge !== undefined ? Number(config.rushSurcharge) : 0;
+  const cfgIntl = config.internationalSurcharge !== undefined ? Number(config.internationalSurcharge) : 0;
 
   const fees = {
     baseFee: 0,
@@ -47,42 +72,43 @@ const calculateProcessingFees = async (orderData) => {
     totalProcessingFee: 0
   };
 
-  // 1. Weight & Base Fee (Currently base fees are fixed based on spreadsheet, can be abstracted later if needed)
+  // 1. Weight & Base Fee 
   const weightLbs = (orderData.shippingDetails?.totalWeightOunces || 0) / 16;
-  fees.baseFee = weightLbs <= 10 ? 5.07 : 5.68;
+  fees.baseFee = weightLbs <= 10 ? cfgBaseUpTo10 : cfgBase11To20;
   
+  // 2. Weight Surcharge (Over 20 lbs)
   if (weightLbs > 20) {
-    fees.weightSurcharge = (weightLbs - 20) * getFee('Weight Surcharge', 0.15); 
+    fees.weightSurcharge = (weightLbs - 20) * cfgWeight; 
   }
 
-  // 2. Line Items
+  // 3. Line Items (Over 3 lines)
   const lineItemsCount = orderData.items ? orderData.items.length : 0;
   if (lineItemsCount > 3) {
-    fees.lineItemSurcharge = (lineItemsCount - 3) * getFee('Line Item Surcharge', 0.81);
+    fees.lineItemSurcharge = (lineItemsCount - 3) * cfgLineItem;
   }
 
-  // 3. Packages
+  // 4. Packages (Over 1 package)
   const packageCount = orderData.shippingDetails?.totalBoxes || 
                       (orderData.shippingDetails?.packages ? orderData.shippingDetails.packages.length : 1);
   if (packageCount > 1) {
-    fees.packageSurcharge = (packageCount - 1) * getFee('Package Surcharge', 0.71);
+    fees.packageSurcharge = (packageCount - 1) * cfgPackage;
   }
 
-  // 4. Pieces
+  // 5. Pieces
   const totalPieces = orderData.items ? orderData.items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0) : 0;
-  fees.pieceSurcharge = totalPieces * getFee('Piece Surcharge', 0.03);
+  fees.pieceSurcharge = totalPieces * cfgPiece;
 
-  // 5. Cartons
+  // 6. Cartons
   const cartonCount = orderData.shippingDetails?.cartoons || 0; 
-  fees.cartonSurcharge = cartonCount * getFee('Carton Surcharge', 2.05);
+  fees.cartonSurcharge = cartonCount * cfgCarton;
 
-  // 6. Pallets
+  // 7. Pallets
   const palletCount = orderData.shippingDetails?.pallets || 0;
-  fees.palletFee = palletCount * getFee('Pallet Fee', 8.40);
+  fees.palletFee = palletCount * cfgPallet;
 
-  // 7. Toggles
-  fees.rushFee = orderData.isRushOrder ? getFee('Rush Fee', 20) : 0;
-  fees.internationalFee = orderData.isInternational ? getFee('International Fee', 0) : 0;
+  // 8. Toggles
+  fees.rushFee = orderData.isRushOrder ? cfgRush : 0;
+  fees.internationalFee = orderData.isInternational ? cfgIntl : 0;
 
   // Rounding utility to prevent floating-point precision issues
   const round2 = (num) => Math.round(num * 100) / 100;
@@ -123,8 +149,11 @@ export const createOrder = catchAsync(async (req, res, next) => {
   const orderCountry = req.body.shippingAddress?.country || 'US';
   req.body.isInternational = checkIfInternational(orderCountry);
 
-  // --- AWAIT THE DYNAMIC CALCULATION ---
+  // --- CALCULATE PROCESSING FEES ---
   req.body.processingFees = await calculateProcessingFees(req.body);
+
+  // --- CALCULATE TOTAL AMOUNT ---
+  req.body.totalAmount = calculateTotalAmount(req.body, req.body.processingFees);
 
   let order = new Order(req.body);
   order.customer = customer;
@@ -286,7 +315,6 @@ export const updateOrder = catchAsync(async (req, res, next) => {
     }
   }
 
-  // --- AUTOMATED FEE RECALCULATION & INTERNATIONAL DETECTION ON UPDATE ---
   const mergedData = { 
     ...order.toObject(), 
     ...req.body,
@@ -303,9 +331,13 @@ export const updateOrder = catchAsync(async (req, res, next) => {
   
   // Re-evaluate international status in case the address was updated
   req.body.isInternational = checkIfInternational(mergedData.shippingAddress?.country);
-  mergedData.isInternational = req.body.isInternational; // Push to merged data so fee calculation sees it
+  mergedData.isInternational = req.body.isInternational; 
 
+  // --- RE-CALCULATE FEES ON UPDATE ---
   req.body.processingFees = await calculateProcessingFees(mergedData);
+
+  // --- RE-CALCULATE TOTAL AMOUNT ON UPDATE ---
+  req.body.totalAmount = calculateTotalAmount(mergedData, req.body.processingFees);
 
   if (req.body.status === 'Cancelled' && order.status !== 'Cancelled') {
     const labelId = order.shipstationDetails?.labelId;
