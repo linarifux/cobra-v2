@@ -607,7 +607,6 @@ export default function OrderDetailsPage() {
       return toast.error("State must be exactly a 2-character code (e.g., NY, CA). Please use the dropdown selector.");
     }
 
-    // Include companyName in payload
     const payload = {
       status: orderStatus,
       isRushOrder: isRushOrder,
@@ -1042,12 +1041,13 @@ export default function OrderDetailsPage() {
             inventoryStatus={inventoryStatus} 
           />
 
+          {/* Render the InvoicePanel, passing the correct subtotal */}
           <InvoicePanel 
-            subtotal={subtotal} 
+            subtotal={currentOrder?.subtotal || subtotal} 
             shipping={shipping} 
             setShipping={setShipping} 
             tax={tax} 
-            grandTotal={grandTotal} 
+            grandTotal={currentOrder?.totalAmount || grandTotal} 
           />
         </div>
       </div>

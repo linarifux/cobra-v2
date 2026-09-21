@@ -1,7 +1,7 @@
 import Order from '../models/Order.js';
 import Customer from '../models/Customer.js';
 import Inventory from '../models/Inventory.js';
-import ProcessingCharge from '../models/ProcessingCharge.js'; // Ensure correct import here
+import ProcessingCharge from '../models/ProcessingCharge.js'; 
 import User from '../models/User.js';
 import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
@@ -23,19 +23,18 @@ const checkIfInternational = (countryStr) => {
   return !domesticVariants.includes(normalizedCountry);
 };
 
+// Helper to calculate the Subtotal of line items
+const calculateSubtotal = (orderData) => {
+  return orderData.items ? orderData.items.reduce((sum, item) => sum + (Number(item.totalPrice) || 0), 0) : 0;
+};
+
 // Helper to calculate the grand total of the order
-const calculateTotalAmount = (orderData, calculatedFees) => {
-  // 1. Sum up Line Items Total Price
-  const itemsTotal = orderData.items ? orderData.items.reduce((sum, item) => sum + (Number(item.totalPrice) || 0), 0) : 0;
-  
-  // 2. Shipping Cost
+const calculateTotalAmount = (orderData, calculatedFees, subtotal) => {
   const shippingCost = Number(orderData.shippingDetails?.shippingCost) || 0;
-  
-  // 3. Total Processing Fees
   const processingTotal = Number(calculatedFees?.totalProcessingFee) || 0;
   
-  // 4. Return Grand Total (Rounded to 2 decimals)
-  return Math.round((itemsTotal + shippingCost + processingTotal) * 100) / 100;
+  // Return Grand Total (Rounded to 2 decimals)
+  return Math.round((subtotal + shippingCost + processingTotal) * 100) / 100;
 };
 
 // --- DYNAMIC FEE CALCULATION ENGINE ---
@@ -149,11 +148,12 @@ export const createOrder = catchAsync(async (req, res, next) => {
   const orderCountry = req.body.shippingAddress?.country || 'US';
   req.body.isInternational = checkIfInternational(orderCountry);
 
-  // --- CALCULATE PROCESSING FEES ---
+  // --- CALCULATE SUBTOTAL & PROCESSING FEES ---
+  req.body.subtotal = calculateSubtotal(req.body);
   req.body.processingFees = await calculateProcessingFees(req.body);
 
-  // --- CALCULATE TOTAL AMOUNT ---
-  req.body.totalAmount = calculateTotalAmount(req.body, req.body.processingFees);
+  // --- CALCULATE GRAND TOTAL ---
+  req.body.totalAmount = calculateTotalAmount(req.body, req.body.processingFees, req.body.subtotal);
 
   let order = new Order(req.body);
   order.customer = customer;
@@ -227,7 +227,6 @@ export const getAllOrders = catchAsync(async (req, res, next) => {
   if (req.query.user && req.query.user !== 'All') filter.user = req.query.user;
   if (req.query.status && req.query.status !== 'All') filter.status = req.query.status;
 
-  // --- UPDATED: Added companyName to global text search ---
   if (req.query.search) {
     filter.$or = [
       { orderNumber: { $regex: req.query.search, $options: 'i' } },
@@ -329,15 +328,13 @@ export const updateOrder = catchAsync(async (req, res, next) => {
     items: req.body.items || order.items
   };
   
-  // Re-evaluate international status in case the address was updated
   req.body.isInternational = checkIfInternational(mergedData.shippingAddress?.country);
   mergedData.isInternational = req.body.isInternational; 
 
-  // --- RE-CALCULATE FEES ON UPDATE ---
+  // --- RE-CALCULATE SUBTOTAL, FEES & TOTAL ON UPDATE ---
+  req.body.subtotal = calculateSubtotal(mergedData);
   req.body.processingFees = await calculateProcessingFees(mergedData);
-
-  // --- RE-CALCULATE TOTAL AMOUNT ON UPDATE ---
-  req.body.totalAmount = calculateTotalAmount(mergedData, req.body.processingFees);
+  req.body.totalAmount = calculateTotalAmount(mergedData, req.body.processingFees, req.body.subtotal);
 
   if (req.body.status === 'Cancelled' && order.status !== 'Cancelled') {
     const labelId = order.shipstationDetails?.labelId;

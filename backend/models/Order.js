@@ -49,6 +49,15 @@ const orderSchema = new mongoose.Schema(
       required: false
     },
     items: [orderItemSchema],
+    
+    // NEW: Subtotal of just the items
+    subtotal: {
+      type: Number,
+      required: true,
+      default: 0
+    },
+    
+    // Grand Total (Subtotal + Shipping + Processing)
     totalAmount: {
       type: Number,
       required: true,
@@ -67,7 +76,6 @@ const orderSchema = new mongoose.Schema(
       default: false
     },
 
-// add a field for "company name" to the order schema in the shipping address section
     shippingAddress: {
       companyName: { type: String, default: '' },
       recipientName: { type: String, required: true },
@@ -81,9 +89,7 @@ const orderSchema = new mongoose.Schema(
       country: { type: String, default: 'US' }
     },
 
-
-    
-    // NEW: Comprehensive Order Processing Fees Breakdown
+    // Comprehensive Order Processing Fees Breakdown
     processingFees: {
       baseFee: { type: Number, default: 0 },            // Base fee for 1st 3 line items
       weightSurcharge: { type: Number, default: 0 },    // Surcharge for weight > 20 lbs
@@ -106,7 +112,7 @@ const orderSchema = new mongoose.Schema(
       shippingCost: { type: Number, default: 0 },
       // Package configuration tracking
       cartoons: { type: Number, default: 0 },
-      pallets: { type: Number, default: 0 }, // NEW: Added to track pallet processing fee trigger
+      pallets: { type: Number, default: 0 }, // Added to track pallet processing fee trigger
       totalBoxes: { type: Number, default: 0 },
       totalWeightOunces: { type: Number, default: 0 },
       packages: [{
@@ -136,9 +142,9 @@ const orderSchema = new mongoose.Schema(
 );
 
 orderSchema.pre('save', function() {
-  // 1. Calculate Product Total Amount
+  // 1. Calculate Product Subtotal
   if (this.items && this.items.length > 0) {
-    this.totalAmount = this.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0);
+    this.subtotal = this.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0);
   }
 
   // 2. Auto-calculate Grand Total for Processing Fees
