@@ -9,7 +9,8 @@ import { fetchProcessingChargesByCustomer, updateProcessingCharge, createProcess
 
 // Map structure containing exact rule definitions from Rick_Billing_Formula.xlsx
 const CHARGE_MAP = [
-  { id: 'baseProcessingFee', name: 'Base Processing Fee', rule: '≤ 10 lbs for 1st 3 line items ($5.07) or 11-20 lbs for 1st 3 line items ($5.68).' },
+  { id: 'baseFeeUpTo10lbs', name: 'Base Fee $5.07 (≤ 10 lbs)', rule: 'Applied to the 1st 3 line items if total weight is 10 lbs or less.' },
+  { id: 'baseFee11To20lbs', name: 'Base Fee $5.68 (11-20 lbs)', rule: 'Applied to the 1st 3 line items if total weight is between 11 and 20 lbs.' },
   { id: 'weightSurcharge', name: 'Weight Surcharge', rule: '.15 per lb over 20 lbs.' },
   { id: 'lineItemSurcharge', name: 'Line Item Surcharge', rule: '.81 cents per line item over 3 line items.' },
   { id: 'packageSurcharge', name: 'Package Surcharge', rule: '.71 per package over 1.' },

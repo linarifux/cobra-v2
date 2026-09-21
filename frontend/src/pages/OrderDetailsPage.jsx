@@ -154,7 +154,8 @@ export default function OrderDetailsPage() {
     const config = customerCharges.length > 0 ? customerCharges[0] : {};
     
     // Configured values extracted directly from the processingCharges schema
-    const cfgBase = config.baseProcessingFee !== undefined ? Number(config.baseProcessingFee) : 0;
+    const cfgBaseUpTo10 = config.baseFeeUpTo10lbs !== undefined ? Number(config.baseFeeUpTo10lbs) : 0;
+    const cfgBase11To20 = config.baseFee11To20lbs !== undefined ? Number(config.baseFee11To20lbs) : 0;
     const cfgWeight = config.weightSurcharge !== undefined ? Number(config.weightSurcharge) : 0;
     const cfgLineItem = config.lineItemSurcharge !== undefined ? Number(config.lineItemSurcharge) : 0;
     const cfgPackage = config.packageSurcharge !== undefined ? Number(config.packageSurcharge) : 0;
@@ -171,10 +172,10 @@ export default function OrderDetailsPage() {
     const cartonCount = Number(cartoonsCount) || 0;
     const palletCount = Number(palletsCount) || 0;
 
-    // Apply exact calculation rules derived from Rick_Billing_Formula.xlsx
+    // Apply exact calculation rules
     
-    // 1. Base Fee - Applied to 1st 3 lines. Assumes base covers < 10, otherwise scales. 
-    const baseFee = cfgBase; 
+    // 1. Base Fee - Applied to 1st 3 lines, conditional on the weight
+    const baseFee = weightLbs <= 10 ? cfgBaseUpTo10 : cfgBase11To20;
     
     // 2. Weight Surcharge - Only applied per lb OVER 20 lbs
     const weightSurcharge = weightLbs > 20 ? (weightLbs - 20) * cfgWeight : 0;
@@ -1028,6 +1029,7 @@ export default function OrderDetailsPage() {
             setNotes={setNotes} 
             currentOrder={currentOrder} 
             processingFeesPreview={processingFeesPreview} 
+            processingStatus={processingStatus}
           />
 
         </div>

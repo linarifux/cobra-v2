@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare, Calculator, Info } from 'lucide-react';
+import { MessageSquare, Calculator, Info, Loader2 } from 'lucide-react';
 
 const FeeRow = ({ label, sourceField, value, isZero }) => {
   return (
@@ -13,10 +13,13 @@ const FeeRow = ({ label, sourceField, value, isZero }) => {
   );
 };
 
-export default function NotesAndFeesPanel({ notes, setNotes, processingFeesPreview }) {
-  // Safely extract the live fees calculated from the DB
+export default function NotesAndFeesPanel({ notes, setNotes, processingFeesPreview, processingStatus }) {
+  // Safely extract the live fees
   const pfp = processingFeesPreview || {};
   const total = pfp.totalProcessingFee || 0;
+  
+  // Prevent showing default 0s before the DB has finished fetching the customer's actual config
+  const isLoadingFees = processingStatus === 'idle' || processingStatus === 'loading';
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -39,78 +42,86 @@ export default function NotesAndFeesPanel({ notes, setNotes, processingFeesPrevi
           <Calculator size={14} className="text-brand-gold"/> Processing Fees Breakdown
         </h3>
         
-        <div className="flex-1 flex flex-col overflow-y-auto custom-scrollbar pr-2 mb-4">
-          <FeeRow 
-            label="Base Processing Fee" 
-            sourceField="Applied to the 1st 3 line items. Scales up if total weight > 10 lbs." 
-            value={pfp.baseFee} 
-            isZero={!pfp.baseFee} 
-          />
-          <FeeRow 
-            label="Weight Surcharge" 
-            sourceField="Applied per lb if total order weight is > 20 lbs." 
-            value={pfp.weightSurcharge} 
-            isZero={!pfp.weightSurcharge} 
-          />
-          <FeeRow 
-            label="Line Item Surcharge" 
-            sourceField="Applied per line item over 3 items." 
-            value={pfp.lineItemSurcharge} 
-            isZero={!pfp.lineItemSurcharge} 
-          />
-          <FeeRow 
-            label="Package Surcharge" 
-            sourceField="Applied per package over 1 package." 
-            value={pfp.packageSurcharge} 
-            isZero={!pfp.packageSurcharge} 
-          />
-          <FeeRow 
-            label="Piece Surcharge" 
-            sourceField="Applied per total piece/unit count." 
-            value={pfp.pieceSurcharge} 
-            isZero={!pfp.pieceSurcharge} 
-          />
-          <FeeRow 
-            label="Carton Surcharge" 
-            sourceField="Applied per carton used." 
-            value={pfp.cartonSurcharge} 
-            isZero={!pfp.cartonSurcharge} 
-          />
-          <FeeRow 
-            label="Pallet Processing Fee" 
-            sourceField="Applied per pallet used." 
-            value={pfp.palletFee} 
-            isZero={!pfp.palletFee} 
-          />
-          <FeeRow 
-            label="Rush Surcharge" 
-            sourceField="Applied if 'Rush' status toggle is active." 
-            value={pfp.rushFee} 
-            isZero={!pfp.rushFee} 
-          />
-          <FeeRow 
-            label="International Surcharge" 
-            sourceField="Applied if 'Intl' status toggle is active." 
-            value={pfp.internationalFee} 
-            isZero={!pfp.internationalFee} 
-          />
-        </div>
-
-        <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200/60 shadow-inner shrink-0">
-          <div className="flex justify-between items-end">
-            <div className="flex flex-col">
-              <span className="text-[10px] uppercase tracking-widest font-black text-slate-500">Total Calculation</span>
-              <span className="text-[9px] font-bold text-slate-400 mt-1 flex items-center gap-1">
-                <Info size={10} /> Auto-calculated from order attributes
-              </span>
-            </div>
-            <span className="font-mono text-2xl font-black text-brand-gold tracking-tight">
-              ${total.toFixed(2)}
-            </span>
+        {isLoadingFees ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-slate-400 gap-3">
+            <Loader2 className="animate-spin text-brand-gold" size={28} />
+            <span className="text-[10px] font-bold uppercase tracking-widest">Loading Customer Fees...</span>
           </div>
-        </div>
+        ) : (
+          <>
+            <div className="flex-1 flex flex-col overflow-y-auto custom-scrollbar pr-2 mb-4">
+              <FeeRow 
+                label="Base Processing Fee" 
+                sourceField="Applied to the 1st 3 line items. Scales up if total weight > 10 lbs." 
+                value={pfp.baseFee} 
+                isZero={!pfp.baseFee} 
+              />
+              <FeeRow 
+                label="Weight Surcharge" 
+                sourceField="Applied per lb if total order weight is > 20 lbs." 
+                value={pfp.weightSurcharge} 
+                isZero={!pfp.weightSurcharge} 
+              />
+              <FeeRow 
+                label="Line Item Surcharge" 
+                sourceField="Applied per line item over 3 items." 
+                value={pfp.lineItemSurcharge} 
+                isZero={!pfp.lineItemSurcharge} 
+              />
+              <FeeRow 
+                label="Package Surcharge" 
+                sourceField="Applied per package over 1 package." 
+                value={pfp.packageSurcharge} 
+                isZero={!pfp.packageSurcharge} 
+              />
+              <FeeRow 
+                label="Piece Surcharge" 
+                sourceField="Applied per total piece/unit count." 
+                value={pfp.pieceSurcharge} 
+                isZero={!pfp.pieceSurcharge} 
+              />
+              <FeeRow 
+                label="Carton Surcharge" 
+                sourceField="Applied per carton used." 
+                value={pfp.cartonSurcharge} 
+                isZero={!pfp.cartonSurcharge} 
+              />
+              <FeeRow 
+                label="Pallet Processing Fee" 
+                sourceField="Applied per pallet used." 
+                value={pfp.palletFee} 
+                isZero={!pfp.palletFee} 
+              />
+              <FeeRow 
+                label="Rush Surcharge" 
+                sourceField="Applied if 'Rush' status toggle is active." 
+                value={pfp.rushFee} 
+                isZero={!pfp.rushFee} 
+              />
+              <FeeRow 
+                label="International Surcharge" 
+                sourceField="Applied if 'Intl' status toggle is active." 
+                value={pfp.internationalFee} 
+                isZero={!pfp.internationalFee} 
+              />
+            </div>
+
+            <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200/60 shadow-inner shrink-0">
+              <div className="flex justify-between items-end">
+                <div className="flex flex-col">
+                  <span className="text-[10px] uppercase tracking-widest font-black text-slate-500">Total Calculation</span>
+                  <span className="text-[9px] font-bold text-slate-400 mt-1 flex items-center gap-1">
+                    <Info size={10} /> Auto-calculated from order attributes
+                  </span>
+                </div>
+                <span className="font-mono text-2xl font-black text-brand-gold tracking-tight">
+                  ${total.toFixed(2)}
+                </span>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
 }
-

@@ -7,9 +7,14 @@ const processingChargeSchema = new mongoose.Schema({
     required: [true, 'A customer reference is required for processing charges.'],
     unique: true // Ensures only one configuration exists per customer
   },
-  baseProcessingFee: {
+  baseFeeUpTo10lbs: {
     type: Number,
-    required: [true, 'Base processing fee is required'],
+    required: [true, 'Base fee for up to 10 lbs is required'],
+    default: 5.07
+  },
+  baseFee11To20lbs: {
+    type: Number,
+    required: [true, 'Base fee for 11-20 lbs is required'],
     default: 5.68
   },
   weightSurcharge: {
