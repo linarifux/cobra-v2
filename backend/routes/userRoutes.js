@@ -1,15 +1,18 @@
+import multer from 'multer';
 import express from 'express';
 import {
   createUser,
   getAllUsers,
   updateUser,
-  deleteUser
+  deleteUser,
+  bulkUploadUsers
 } from '../controllers/userController.js';
 import { protect, requirePortal, restrictTo } from '../middlewares/authMiddleware.js';
 import addressRouter from './addressRoutes.js';
 
 const router = express.Router({ mergeParams: true }); // Merge params to access :customerId in nested routes
 
+const upload = multer({ storage: multer.memoryStorage() });
 
 router.use('/:userId/addresses', addressRouter); // Nested route for user addresses
 // ALL user management requires the user to be logged in
@@ -17,6 +20,10 @@ router.use(protect);
 
 // ALL user management requires the user to be on the ADMIN portal
 router.use(requirePortal('admin'));
+
+
+router.post('/bulk-upload', protect, restrictTo('super_admin', 'admin'), upload.single('file'), bulkUploadUsers);
+
 
 // Admin & Super Admin can view, create, and update
 router.route('/')

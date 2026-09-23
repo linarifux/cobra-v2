@@ -1,11 +1,17 @@
 import User from '../models/User.js';
 import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
+import bcrypt from 'bcryptjs';
+import { parse } from 'csv-parse/sync';
 
 // @desc    Create a new user (Order Portal users or Admin users)
 // @route   POST /api/v1/users
 export const createUser = catchAsync(async (req, res, next) => {
-  let { name, email, phone, addresses, userAddress, password, portal, role, customer, divisions, chargeCode, orderLimit } = req.body;
+  let { 
+    name, email, phone, addresses, userAddress, password, 
+    portal, role, customer, divisions, chargeCode, orderLimit, 
+    showCostsInCp, isActive 
+  } = req.body;
 
   // Security Check: Only super_admins can create other Admin portal users
   if (portal === 'admin' && req.user.role !== 'super_admin') {
@@ -33,7 +39,9 @@ export const createUser = catchAsync(async (req, res, next) => {
     portal,
     role,
     chargeCode,
-    orderLimit: portal === 'order' ? req.body.orderLimit : undefined,
+    orderLimit: portal === 'order' ? orderLimit : undefined,
+    showCostsInCp: portal === 'order' ? showCostsInCp : undefined,
+    isActive: isActive !== undefined ? isActive : true,
     customer: portal === 'order' ? customer : undefined,
     divisions: portal === 'order' ? (divisions || []) : []
   });
@@ -133,4 +141,160 @@ export const getUser = catchAsync(async (req, res, next) => {
     status: 'success',
     data: { user }
   });
+});
+
+// @desc    Bulk upload users from CSV
+// @route   POST /api/v1/users/bulk-upload
+// @access  Private/Admin
+export const bulkUploadUsers = catchAsync(async (req, res, next) => {
+  if (!req.file) {
+    return next(new AppError('Please provide a CSV file.', 400));
+  }
+
+  try {
+    const fileContent = req.file.buffer.toString('utf-8');
+    
+    const records = parse(fileContent, {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+      bom: true 
+    });
+
+    if (records.length === 0) {
+      return next(new AppError('The uploaded CSV file is empty.', 400));
+    }
+
+    const usersToInsert = [];
+    const errors = [];
+    const processedEmails = new Set();
+
+    const emailsInCsv = records.map(r => r['Email']?.toLowerCase()).filter(Boolean);
+    const existingUsers = await User.find({ email: { $in: emailsInCsv } }).select('email').lean();
+    const existingEmailSet = new Set(existingUsers.map(u => u.email));
+
+    for (let i = 0; i < records.length; i++) {
+      const row = records[i];
+      const rowNum = i + 2; 
+
+      if (!row['Email'] || !row['Name'] || !row['Password']) {
+        errors.push(`Row ${rowNum} (${row['Name'] || 'Unknown'}): Missing Name, Email, or Password.`);
+        continue;
+      }
+
+      const email = row['Email'].toLowerCase();
+
+      if (existingEmailSet.has(email)) {
+        errors.push(`Row ${rowNum} (${row['Name']}): User with email ${email} already exists.`);
+        continue;
+      }
+
+      if (processedEmails.has(email)) {
+        errors.push(`Row ${rowNum} (${row['Name']}): Duplicate email found within the CSV file itself.`);
+        continue;
+      }
+
+      if (row['Password'].length < 6) {
+        errors.push(`Row ${rowNum} (${row['Name']}): Password must be at least 6 characters.`);
+        continue;
+      }
+
+      const portalType = row['Portal (admin | order)'] || 'order';
+
+      if (portalType === 'order') {
+        if (!row['Customer_ID']) {
+          errors.push(`Row ${rowNum} (${row['Name']}): Missing Customer_ID. Please ensure the Customer_ID column is filled for ALL rows.`);
+          continue;
+        }
+        if (!row['Division_ID']) {
+          errors.push(`Row ${rowNum} (${row['Name']}): Missing Division_ID. Please ensure the Division_ID column is filled for ALL rows.`);
+          continue;
+        }
+      }
+
+      const userDoc = {
+        name: row['Name'],
+        email: email,
+        password: row['Password'], 
+        phone: row['Phone'] || '',
+        portal: portalType,
+        role: row['Role (super_admin | admin | super_user | manager | standard)'] || 'standard',
+        chargeCode: row['ChargeCode'] || '',
+        orderLimit: row['OrderLimit'] ? Number(row['OrderLimit']) : undefined,
+        showCostsInCp: row['ShowCostsInCp (true | false)'] === 'true',
+        isActive: row['IsActive (true | false)'] !== 'false',
+        
+        userAddress: {
+          street1: row['Street1'] || '',
+          street2: row['Street2'] || '',
+          city: row['City'] || '',
+          state: row['State'] || '',
+          zipCode: row['ZipCode'] || '',
+          country: row['Country'] || 'US'
+        },
+      };
+
+      // FIX: Aggressively strip out hidden characters (like \r or \n) from ObjectIds
+      if (row['Customer_ID']) userDoc.customer = row['Customer_ID'].replace(/[\r\n\s]+/g, '');
+      if (row['Division_ID']) userDoc.divisions = [row['Division_ID'].replace(/[\r\n\s]+/g, '')];
+
+      const tempUser = new User(userDoc);
+      const validationError = tempUser.validateSync();
+      if (validationError) {
+        errors.push(`Row ${rowNum} (${row['Name']}): Schema Error - ${validationError.message}`);
+        continue;
+      }
+
+      userDoc.password = await bcrypt.hash(userDoc.password, 12);
+
+      usersToInsert.push(userDoc);
+      processedEmails.add(email);
+    }
+
+    if (usersToInsert.length === 0) {
+      return res.status(400).json({
+        status: 'fail',
+        message: 'No valid users could be imported. Please review the specific row errors.',
+        errors: errors
+      });
+    }
+
+    let insertedCount = 0;
+
+    try {
+      const result = await User.insertMany(usersToInsert, { ordered: false, rawResult: true });
+      insertedCount = result.insertedCount || usersToInsert.length;
+    } catch (dbError) {
+      if (['MongoBulkWriteError', 'BulkWriteError', 'MongooseBulkWriteError'].includes(dbError.name)) {
+        insertedCount = dbError.insertedCount || dbError.result?.nInserted || 0;
+        const writeErrors = dbError.writeErrors?.map(e => e.errmsg) || [dbError.message];
+        errors.push(...writeErrors);
+      } else {
+        throw dbError; 
+      }
+    }
+
+    if (errors.length > 0) {
+       return res.status(207).json({
+         status: 'partial_success',
+         message: `Imported ${insertedCount} users, but ${errors.length} failed.`,
+         data: {
+           count: insertedCount,
+           errors: errors
+         }
+       });
+    }
+
+    res.status(201).json({
+      status: 'success',
+      data: {
+        count: insertedCount,
+        errors: null
+      }
+    });
+
+  } catch (error) {
+    console.error("Bulk Upload Error:", error);
+    return next(new AppError('Critical error processing CSV file: ' + error.message, 500));
+  }
 });
