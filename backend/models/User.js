@@ -70,6 +70,10 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  releasePendingOrders: {
+    type: Boolean,
+    default: false
+  },
   isActive: {
     type: Boolean,
     default: true
@@ -103,6 +107,10 @@ userSchema.pre('validate', function() {
     // Only order portal super_users can have the showCostsInCp field
     if (this.role !== 'super_user' && this.showCostsInCp !== undefined) {
       this.showCostsInCp = undefined;
+    }
+    // Only order portal super_users can have the releasePendingOrders field
+    if (this.role !== 'super_user' && this.releasePendingOrders !== undefined) {
+      this.releasePendingOrders = undefined;
     }
   }
 });

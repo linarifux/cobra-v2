@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { 
   UserPlus, ShieldCheck, Mail, Lock, Building2, 
   BadgeCheck, X, Loader2, AlertCircle, MapPin, Check, 
-  User, Users, Briefcase, Edit2, Phone, Home, ShoppingCart, DollarSign
+  User, Users, Briefcase, Edit2, Phone, Home, ShoppingCart, DollarSign, Unlock
 } from 'lucide-react';
 
 export default function UserModal({
@@ -266,28 +266,54 @@ export default function UserModal({
                 </div>
               </div>
 
-              {/* Show Costs in CP Checkbox - Only for Order Portal Super Users */}
+              {/* Special Permissions Checkboxes - Only for Order Portal Super Users */}
               {formData.portal === 'order' && formData.role === 'super_user' && (
-                <div className="pt-2">
-                  <label className="flex items-center gap-3 cursor-pointer group w-max">
-                    <div className={`flex h-5 w-5 sm:h-6 sm:w-6 items-center justify-center rounded-lg border transition-all duration-300 ${formData.showCostsInCp ? 'bg-blue-600 border-blue-600 shadow-md shadow-blue-500/30' : 'bg-slate-50 border-slate-300 group-hover:border-blue-500 group-hover:bg-slate-50'}`}>
-                      <input 
-                        type="checkbox" 
-                        name="showCostsInCp" 
-                        checked={formData.showCostsInCp || false} 
-                        onChange={(e) => setFormData({...formData, showCostsInCp: e.target.checked})}
-                        className="sr-only"
-                      />
-                      {formData.showCostsInCp && <Check className="h-3 w-3 sm:h-4 sm:w-4 text-white" />}
-                    </div>
-                    <span className="text-xs sm:text-sm font-bold text-slate-900 select-none flex items-center gap-2">
-                      <DollarSign size={14} className="text-blue-500" />
-                      Show Costs in CP
-                    </span>
-                  </label>
-                  <p className="text-[10px] sm:text-[11px] font-bold text-slate-500 mt-1.5 ml-8 sm:ml-9 uppercase tracking-widest leading-tight">
-                    Allows user to see Shipping Costs and Processing Fees in the client portal.
-                  </p>
+                <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Show Costs Checkbox */}
+                  <div>
+                    <label className="flex items-center gap-3 cursor-pointer group w-max">
+                      <div className={`flex h-5 w-5 sm:h-6 sm:w-6 items-center justify-center rounded-lg border transition-all duration-300 ${formData.showCostsInCp ? 'bg-blue-600 border-blue-600 shadow-md shadow-blue-500/30' : 'bg-slate-50 border-slate-300 group-hover:border-blue-500 group-hover:bg-slate-50'}`}>
+                        <input 
+                          type="checkbox" 
+                          name="showCostsInCp" 
+                          checked={formData.showCostsInCp || false} 
+                          onChange={(e) => setFormData({...formData, showCostsInCp: e.target.checked})}
+                          className="sr-only"
+                        />
+                        {formData.showCostsInCp && <Check className="h-3 w-3 sm:h-4 sm:w-4 text-white" />}
+                      </div>
+                      <span className="text-xs sm:text-sm font-bold text-slate-900 select-none flex items-center gap-2">
+                        <DollarSign size={14} className="text-blue-500" />
+                        Show Costs in CP
+                      </span>
+                    </label>
+                    <p className="text-[10px] sm:text-[11px] font-bold text-slate-500 mt-1.5 ml-8 sm:ml-9 uppercase tracking-widest leading-tight">
+                      Allows user to see Shipping & Processing Fees.
+                    </p>
+                  </div>
+
+                  {/* Release Pending Orders Checkbox */}
+                  <div>
+                    <label className="flex items-center gap-3 cursor-pointer group w-max">
+                      <div className={`flex h-5 w-5 sm:h-6 sm:w-6 items-center justify-center rounded-lg border transition-all duration-300 ${formData.releasePendingOrders ? 'bg-emerald-600 border-emerald-600 shadow-md shadow-emerald-500/30' : 'bg-slate-50 border-slate-300 group-hover:border-emerald-500 group-hover:bg-slate-50'}`}>
+                        <input 
+                          type="checkbox" 
+                          name="releasePendingOrders" 
+                          checked={formData.releasePendingOrders || false} 
+                          onChange={(e) => setFormData({...formData, releasePendingOrders: e.target.checked})}
+                          className="sr-only"
+                        />
+                        {formData.releasePendingOrders && <Check className="h-3 w-3 sm:h-4 sm:w-4 text-white" />}
+                      </div>
+                      <span className="text-xs sm:text-sm font-bold text-slate-900 select-none flex items-center gap-2">
+                        <Unlock size={14} className="text-emerald-500" />
+                        Release Pending Orders
+                      </span>
+                    </label>
+                    <p className="text-[10px] sm:text-[11px] font-bold text-slate-500 mt-1.5 ml-8 sm:ml-9 uppercase tracking-widest leading-tight">
+                      Allows user to release over-limit orders.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>

@@ -10,7 +10,7 @@ export const createUser = catchAsync(async (req, res, next) => {
   let { 
     name, email, phone, addresses, userAddress, password, 
     portal, role, customer, divisions, chargeCode, orderLimit, 
-    showCostsInCp, isActive 
+    showCostsInCp, isActive, releasePendingOrders 
   } = req.body;
 
   // Security Check: Only super_admins can create other Admin portal users
@@ -41,6 +41,7 @@ export const createUser = catchAsync(async (req, res, next) => {
     chargeCode,
     orderLimit: portal === 'order' ? orderLimit : undefined,
     showCostsInCp: portal === 'order' ? showCostsInCp : undefined,
+    releasePendingOrders: portal === 'order' ? releasePendingOrders : undefined,
     isActive: isActive !== undefined ? isActive : true,
     customer: portal === 'order' ? customer : undefined,
     divisions: portal === 'order' ? (divisions || []) : []
@@ -152,6 +153,7 @@ export const bulkUploadUsers = catchAsync(async (req, res, next) => {
   }
 
   try {
+    // 1. Add BOM stripping to gracefully handle Excel-exported CSVs
     const fileContent = req.file.buffer.toString('utf-8');
     
     const records = parse(fileContent, {
@@ -169,6 +171,7 @@ export const bulkUploadUsers = catchAsync(async (req, res, next) => {
     const errors = [];
     const processedEmails = new Set();
 
+    // 2. Pre-fetch existing emails to avoid O(N) database queries in the loop
     const emailsInCsv = records.map(r => r['Email']?.toLowerCase()).filter(Boolean);
     const existingUsers = await User.find({ email: { $in: emailsInCsv } }).select('email').lean();
     const existingEmailSet = new Set(existingUsers.map(u => u.email));
@@ -177,6 +180,7 @@ export const bulkUploadUsers = catchAsync(async (req, res, next) => {
       const row = records[i];
       const rowNum = i + 2; 
 
+      // Check critical required fields
       if (!row['Email'] || !row['Name'] || !row['Password']) {
         errors.push(`Row ${rowNum} (${row['Name'] || 'Unknown'}): Missing Name, Email, or Password.`);
         continue;
@@ -184,16 +188,19 @@ export const bulkUploadUsers = catchAsync(async (req, res, next) => {
 
       const email = row['Email'].toLowerCase();
 
+      // Check DB Duplicates
       if (existingEmailSet.has(email)) {
         errors.push(`Row ${rowNum} (${row['Name']}): User with email ${email} already exists.`);
         continue;
       }
 
+      // Check In-CSV Duplicates
       if (processedEmails.has(email)) {
         errors.push(`Row ${rowNum} (${row['Name']}): Duplicate email found within the CSV file itself.`);
         continue;
       }
 
+      // Validate Password Length
       if (row['Password'].length < 6) {
         errors.push(`Row ${rowNum} (${row['Name']}): Password must be at least 6 characters.`);
         continue;
@@ -201,6 +208,7 @@ export const bulkUploadUsers = catchAsync(async (req, res, next) => {
 
       const portalType = row['Portal (admin | order)'] || 'order';
 
+      // Check Customer/Division requirements for Order Portal users
       if (portalType === 'order') {
         if (!row['Customer_ID']) {
           errors.push(`Row ${rowNum} (${row['Name']}): Missing Customer_ID. Please ensure the Customer_ID column is filled for ALL rows.`);
@@ -222,6 +230,7 @@ export const bulkUploadUsers = catchAsync(async (req, res, next) => {
         chargeCode: row['ChargeCode'] || '',
         orderLimit: row['OrderLimit'] ? Number(row['OrderLimit']) : undefined,
         showCostsInCp: row['ShowCostsInCp (true | false)'] === 'true',
+        releasePendingOrders: row['ReleasePendingOrders (true | false)'] === 'true',
         isActive: row['IsActive (true | false)'] !== 'false',
         
         userAddress: {
@@ -234,10 +243,11 @@ export const bulkUploadUsers = catchAsync(async (req, res, next) => {
         },
       };
 
-      // FIX: Aggressively strip out hidden characters (like \r or \n) from ObjectIds
+      // Aggressively strip out hidden characters (like \r or \n) from ObjectIds
       if (row['Customer_ID']) userDoc.customer = row['Customer_ID'].replace(/[\r\n\s]+/g, '');
       if (row['Division_ID']) userDoc.divisions = [row['Division_ID'].replace(/[\r\n\s]+/g, '')];
 
+      // 3. Mongoose Pre-Validation: Catch schema errors BEFORE insertMany aborts the whole batch
       const tempUser = new User(userDoc);
       const validationError = tempUser.validateSync();
       if (validationError) {
@@ -245,12 +255,14 @@ export const bulkUploadUsers = catchAsync(async (req, res, next) => {
         continue;
       }
 
+      // Hash password manually since insertMany bypasses standard pre('save') hooks
       userDoc.password = await bcrypt.hash(userDoc.password, 12);
 
       usersToInsert.push(userDoc);
       processedEmails.add(email);
     }
 
+    // If NO users passed validation, reject the entire request and show exactly why
     if (usersToInsert.length === 0) {
       return res.status(400).json({
         status: 'fail',
@@ -262,6 +274,8 @@ export const bulkUploadUsers = catchAsync(async (req, res, next) => {
     let insertedCount = 0;
 
     try {
+      // 4. Insert ignoring model validations (since we pre-validated)
+      // rawResult: true returns lightweight metadata instead of heavy populated Mongoose docs
       const result = await User.insertMany(usersToInsert, { ordered: false, rawResult: true });
       insertedCount = result.insertedCount || usersToInsert.length;
     } catch (dbError) {
@@ -274,6 +288,7 @@ export const bulkUploadUsers = catchAsync(async (req, res, next) => {
       }
     }
 
+    // If SOME users passed but others failed, return 207 Multi-Status
     if (errors.length > 0) {
        return res.status(207).json({
          status: 'partial_success',
@@ -285,6 +300,7 @@ export const bulkUploadUsers = catchAsync(async (req, res, next) => {
        });
     }
 
+    // 100% Success
     res.status(201).json({
       status: 'success',
       data: {

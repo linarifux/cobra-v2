@@ -34,7 +34,8 @@ const INITIAL_FORM_STATE = {
   divisions: [],
   chargeCode: '',
   orderLimit: '',
-  showCostsInCp: false // ADDED
+  showCostsInCp: false,
+  releasePendingOrders: false // ADDED
 };
 
 export default function AdminUsersPage() {
@@ -148,7 +149,8 @@ export default function AdminUsersPage() {
       divisions: user.divisions?.map(d => typeof d === 'object' ? d._id : d) || [],
       chargeCode: user.chargeCode || '',
       orderLimit: user.orderLimit ?? '', 
-      showCostsInCp: user.showCostsInCp || false // ADDED
+      showCostsInCp: user.showCostsInCp || false,
+      releasePendingOrders: user.releasePendingOrders || false // ADDED
     });
     setIsModalOpen(true);
   };
@@ -170,7 +172,8 @@ export default function AdminUsersPage() {
       divisions: newPortal === 'admin' ? [] : formData.divisions,
       chargeCode: newPortal === 'admin' ? '' : formData.chargeCode,
       orderLimit: newPortal === 'admin' ? '' : formData.orderLimit,
-      showCostsInCp: newPortal === 'admin' ? false : formData.showCostsInCp // ADDED
+      showCostsInCp: newPortal === 'admin' ? false : formData.showCostsInCp,
+      releasePendingOrders: newPortal === 'admin' ? false : formData.releasePendingOrders // ADDED
     });
   };
 
@@ -209,12 +212,14 @@ export default function AdminUsersPage() {
     if (payload.portal === 'admin') {
       delete payload.orderLimit; 
       delete payload.showCostsInCp;
+      delete payload.releasePendingOrders;
     } else {
       payload.orderLimit = payload.orderLimit === '' ? undefined : Number(payload.orderLimit);
       
-      // Ensure only super_users actually submit this property to update the database
+      // Ensure only super_users actually submit these properties to update the database
       if (payload.role !== 'super_user') {
         payload.showCostsInCp = false;
+        payload.releasePendingOrders = false;
       }
     }
 

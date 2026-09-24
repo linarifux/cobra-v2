@@ -7,6 +7,8 @@ import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 import { cancelShipment, voidLabel } from '../services/shipStationService.js';
 
+import { sendPendingOrderEmail, sendOrderConfirmationEmail } from '../utils/emailService.js'; // Using your custom email service
+
 // Helper to determine the user's access tier
 const getAccessLevel = (user) => {
   if (!user) return 'guest';
@@ -163,9 +165,11 @@ export const createOrder = catchAsync(async (req, res, next) => {
   }
 
   // --- MONTHLY ORDER LIMIT CHECK ---
+  let orderUser = null;
   const targetUserId = req.body.user || (req.user ? req.user._id : null);
+  
   if (targetUserId) {
-    const orderUser = await User.findById(targetUserId);
+    orderUser = await User.findById(targetUserId);
     if (orderUser && typeof orderUser.orderLimit === 'number') {
       const now = new Date();
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -183,6 +187,48 @@ export const createOrder = catchAsync(async (req, res, next) => {
   }
 
   await order.save();
+
+  // --- EMAIL TRIGGER LOGIC ---
+  const recipientName = orderUser?.name || order.shippingAddress?.recipientName;
+  const fallbackEmail = orderUser?.email || order.shippingAddress?.email;
+
+  if (fallbackEmail) {
+    try {
+      if (order.status === 'Pending') {
+        // ALWAYS send alert to the operations team
+        await sendPendingOrderEmail('orders@mi-kro.com', recipientName, order.orderNumber, order.subtotal);
+        
+        // Privilege Check: If current user cannot release orders, find an admin/super_user who can
+        let notifyEmail = null;
+
+        if (orderUser && orderUser.releasePendingOrders === true) {
+          notifyEmail = orderUser.email;
+        } else {
+          // Find the first active user under this specific customer who possesses release permissions
+          const privilegedUser = await User.findOne({ 
+            customer: order.customer, 
+            releasePendingOrders: true,
+            isActive: true 
+          }).select('email');
+
+          if (privilegedUser) {
+            notifyEmail = privilegedUser.email;
+          }
+        }
+
+        // Dispatch alert if a valid target was identified
+        if (notifyEmail) {
+          await sendPendingOrderEmail(notifyEmail, recipientName, order.orderNumber, order.subtotal);
+        }
+
+      } else {
+        // Standard Confirmation
+        await sendOrderConfirmationEmail(fallbackEmail, order);
+      }
+    } catch (emailError) {
+      console.error(`Failed to send email for order ${order.orderNumber}:`, emailError);
+    }
+  }
 
   if (order.items && order.items.length > 0) {
     try {
@@ -293,7 +339,8 @@ export const getOrder = catchAsync(async (req, res, next) => {
 
 // @desc    Update an order
 export const updateOrder = catchAsync(async (req, res, next) => {
-  let order = await Order.findById(req.params.id);
+  let order = await Order.findById(req.params.id)
+    .populate('user', 'email name releasePendingOrders');
 
   if (!order) return next(new AppError('No order found with that ID', 404));
 
@@ -313,6 +360,12 @@ export const updateOrder = catchAsync(async (req, res, next) => {
       }
     }
   }
+
+  // --- EVENT CATCH: DETECT STATUS CHANGE TO PENDING ---
+  const isChangingToPending = req.body.status === 'Pending' && order.status !== 'Pending';
+  
+  // --- EVENT CATCH: DETECT ANY UPDATE ON A NEW ORDER ---
+  const isStandardUpdate = !isChangingToPending && req.body.status !== 'Cancelled';
 
   const mergedData = { 
     ...order.toObject(), 
@@ -374,8 +427,51 @@ export const updateOrder = catchAsync(async (req, res, next) => {
   order = await Order.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true })
     .populate('customer', 'customerName')
     .populate('division', 'divisionName divisionCode')
-    .populate('user', 'name firstName lastName email')
+    .populate('user', 'name firstName lastName email releasePendingOrders')
     .populate('shippingDetails.carrierId', 'carrierType accountName');
+
+  // --- EMAIL TRIGGER LOGIC FOR UPDATES ---
+  const orderUser = order.user;
+  const recipientEmail = orderUser?.email || order.shippingAddress?.email;
+  const recipientName = orderUser?.name || order.shippingAddress?.recipientName;
+
+  if (recipientEmail) {
+    try {
+      if (isChangingToPending) {
+        // ALWAYS send alert to the operations team
+        await sendPendingOrderEmail('orders@mi-kro.com', recipientName, order.orderNumber, order.subtotal);
+        
+        // Privilege Check: If current user cannot release orders, find an admin/super_user who can
+        let notifyEmail = null;
+
+        if (orderUser && orderUser.releasePendingOrders === true) {
+          notifyEmail = orderUser.email;
+        } else {
+          // Find the first active user under this specific customer who possesses release permissions
+          const privilegedUser = await User.findOne({ 
+            customer: order.customer, 
+            releasePendingOrders: true,
+            isActive: true 
+          }).select('email');
+
+          if (privilegedUser) {
+            notifyEmail = privilegedUser.email;
+          }
+        }
+
+        // Dispatch alert if a valid target was identified
+        if (notifyEmail) {
+          await sendPendingOrderEmail(notifyEmail, recipientName, order.orderNumber, order.subtotal);
+        }
+
+      } else if (isStandardUpdate) {
+        // Standard Update Confirmation
+        await sendOrderConfirmationEmail(recipientEmail, order);
+      }
+    } catch (emailError) {
+      console.error(`Failed to send email update for order ${order.orderNumber}:`, emailError);
+    }
+  }
 
   res.status(200).json({ status: 'success', data: { order } });
 });

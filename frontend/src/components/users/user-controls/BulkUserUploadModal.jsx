@@ -39,6 +39,7 @@ export default function BulkUserUploadModal({ onClose, customers, availableDivis
       'ChargeCode', 
       'OrderLimit',
       'ShowCostsInCp (true | false)',
+      'ReleasePendingOrders (true | false)', // ADDED
       'IsActive (true | false)',
       'Customer_ID', 
       'Division_ID'
@@ -60,6 +61,7 @@ export default function BulkUserUploadModal({ onClose, customers, availableDivis
       'CHG-001', 
       '1', 
       'false',
+      'false', // Default false for new column
       'true',
       bulkCustomer,
       bulkDivision
