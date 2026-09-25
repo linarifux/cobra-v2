@@ -2,10 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  ArrowLeft, Edit, Building2, User as UserIcon, Mail, Phone, MapPin, 
-  Package, Users, DollarSign, Loader2, AlertTriangle, RefreshCw 
-} from 'lucide-react';
+import { ArrowLeft, Edit, Building2, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 // Redux Actions
@@ -19,8 +16,10 @@ import { fetchRates } from '../store/slices/rateSlice';
 
 // Components
 import AddDivisionForm from '../components/division/AddDivisionForm';
+import DivisionHeader from '../components/division-detail/DivisionHeader';
+import DivisionKPIs from '../components/division-detail/DivisionKPIs';
 
-// Tab Components imports
+// Tab Components
 import OverviewTab from '../components/vendors/tabs/OverviewTab';
 import InventoriesOfDivision from '../components/division/InventoriesOfDivision'; 
 import ProcessingTab from '../components/vendors/tabs/ProcessingTab';
@@ -55,7 +54,6 @@ export default function DivisionDetail() {
   const { items: customers = [], status: custStatus } = useSelector(state => state.customers || {});
   const { currentCustomer: customer } = useSelector((state) => state.customers || {});
   
-  // Extract the arrays for the child tabs
   const { items: allTypePieces = [], status: tpStatus, error: tpError } = useSelector(state => state.typePieces || {});
   const { items: allReceivingLogs = [], status: recStatus } = useSelector(state => state.receiving || {});
   const { items: allRates = [], status: rateStatus } = useSelector(state => state.rates || {});
@@ -261,7 +259,6 @@ export default function DivisionDetail() {
 
   if (!division) return null;
 
-  // Dynamically Resolve the Active Tab Component
   const ActiveTabComponent = TabComponents[activeTab] || TabComponents['Overview'];
 
   return (
@@ -286,104 +283,20 @@ export default function DivisionDetail() {
 
       <div className="flex flex-col xl:flex-row gap-6 items-start">
         
-        {/* 2. Left Sidebar: Identity Card */}
-        <div className="space-y-6 w-full xl:w-[340px] shrink-0 min-w-0">
-          <div className="bg-slate-950 text-white p-5 rounded-2xl shadow-xl border border-slate-900 transition-all duration-300 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-48 h-48 bg-brand-gold/10 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/4" />
-            
-            <div className="relative z-10">
-              <div className="flex justify-between items-start gap-4 mb-4 pb-4 border-b border-white/10">
-                <div className="min-w-0">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-0.5 block">Operational Identity</span>
-                  <p className="font-black text-xl tracking-tight text-white truncate" title={division.divisionName}>
-                    {division.divisionName}
-                  </p>
-                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-widest border ${
-                    division.status === 'Active' 
-                      ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' 
-                      : 'bg-slate-500/15 text-slate-400 border-slate-500/20'
-                  }`}>
-                    {division.status || 'Active'}
-                  </span>
-                </div>
-                <div className="w-10 h-10 bg-brand-gold text-slate-950 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-brand-gold/20">
-                  <Building2 size={20} strokeWidth={2.5} />
-                </div>
-              </div>
-
-              <p className="text-[10px] text-slate-300 font-mono mb-4 px-1">
-                ID: {division.divisionCode || division.code || 'N/A'}
-              </p>
-
-              {/* Micro-Cards for Contact Info */}
-              <div className="space-y-2.5 text-xs font-medium">
-                <div className="flex items-center gap-3 min-w-0 bg-white/5 p-2.5 rounded-xl border border-white/5 hover:bg-white/10 transition-colors duration-150 cursor-default">
-                  <UserIcon size={14} className="text-brand-gold shrink-0" />
-                  <span className="truncate font-semibold tracking-wide text-slate-200">
-                    {division.contactName || 'No contact specified'}
-                  </span>
-                </div>
-                
-                <div className="flex items-center gap-3 min-w-0 bg-white/5 p-2.5 rounded-xl border border-white/5 hover:bg-white/10 transition-colors duration-150 cursor-default">
-                  <Mail size={14} className="text-brand-gold shrink-0" />
-                  <span className="break-all select-all font-semibold tracking-wide text-slate-200">
-                    {division.contactEmail || 'No email provided'}
-                  </span>
-                </div>
-                
-                <div className="flex items-center gap-3 min-w-0 bg-white/5 p-2.5 rounded-xl border border-white/5 hover:bg-white/10 transition-colors duration-150 cursor-default">
-                  <Phone size={14} className="text-brand-gold shrink-0" />
-                  <span className="truncate font-semibold tracking-wide text-slate-200">
-                    {division.contactNumber || 'No phone provided'}
-                  </span>
-                </div>
-                
-                <div className="flex items-start gap-3 min-w-0 bg-white/5 p-2.5 rounded-xl border border-white/5 hover:bg-white/10 transition-colors duration-150 cursor-default">
-                  <MapPin size={14} className="text-brand-gold shrink-0 mt-0.5" />
-                  <span className="break-words font-semibold tracking-wide text-slate-200 leading-relaxed">
-                    {formatAddress(division.address)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* 2. Left Sidebar: Identity Card (Abstracted) */}
+        <div className="w-full xl:w-[340px] shrink-0 min-w-0">
+          <DivisionHeader division={division} formatAddress={formatAddress} />
         </div>
 
         {/* 3. Main Content Area */}
         <div className="flex-1 w-full min-w-0 space-y-5">
           
-          {/* Top KPI Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white/40 border border-white/60 p-4 rounded-2xl flex items-center justify-between shadow-sm backdrop-blur-sm transition-all duration-300 hover:bg-white/60">
-              <div>
-                <p className="text-[10px] uppercase font-black text-slate-500 tracking-wider mb-0.5">Total Assets</p>
-                <p className="font-black text-lg text-slate-900">{totalAssets.toLocaleString()}</p>
-              </div>
-              <div className="p-2 bg-white/60 rounded-xl shadow-sm border border-white/80">
-                <Package size={16} className="text-blue-500" />
-              </div>
-            </div>
-
-            <div className="bg-white/40 border border-white/60 p-4 rounded-2xl flex items-center justify-between shadow-sm backdrop-blur-sm transition-all duration-300 hover:bg-white/60">
-              <div>
-                <p className="text-[10px] uppercase font-black text-slate-500 tracking-wider mb-0.5">Authorized Staff</p>
-                <p className="font-black text-lg text-slate-900">{activeStaffCount}</p>
-              </div>
-              <div className="p-2 bg-white/60 rounded-xl shadow-sm border border-white/80">
-                <Users size={16} className="text-emerald-500" />
-              </div>
-            </div>
-
-            <div className="bg-white/40 border border-white/60 p-4 rounded-2xl flex items-center justify-between shadow-sm backdrop-blur-sm transition-all duration-300 hover:bg-white/60">
-              <div>
-                <p className="text-[10px] uppercase font-black text-slate-500 tracking-wider mb-0.5">Pool Valuation</p>
-                <p className="font-black text-lg text-slate-900">${(totalValuation).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
-              </div>
-              <div className="p-2 bg-white/60 rounded-xl shadow-sm border border-white/80">
-                <DollarSign size={16} className="text-brand-gold" />
-              </div>
-            </div>
-          </div>
+          {/* Top KPI Row (Abstracted) */}
+          <DivisionKPIs 
+            totalAssets={totalAssets} 
+            activeStaffCount={activeStaffCount} 
+            totalValuation={totalValuation} 
+          />
 
           {/* Scrolling Tab Nav */}
           <div className="overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">

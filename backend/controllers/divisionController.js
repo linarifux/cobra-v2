@@ -5,6 +5,79 @@ import Inventory from '../models/Inventory.js';
 import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 import { createTag } from '../services/shipStationService.js';
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import crypto from 'crypto';
+import path from 'path';
+
+// --- AWS S3 CONFIGURATION ---
+const s3 = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+});
+
+// @desc    Upload division logo to S3
+// @route   PUT /api/v1/divisions/:id/logo
+export const uploadDivisionLogo = catchAsync(async (req, res, next) => {
+  if (!req.file) {
+    return next(new AppError('Please provide an image file.', 400));
+  }
+
+  // Authorization Check
+  if (req.user && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+    const isAuthorized = req.user.divisions.some(
+      (assignedId) => assignedId.toString() === req.params.id
+    );
+    if (!isAuthorized) {
+      return next(new AppError('You do not have permission to modify this division.', 403));
+    }
+  }
+
+  const division = await Division.findById(req.params.id);
+  if (!division) {
+    return next(new AppError('No division found with that ID', 404));
+  }
+
+  // Generate unique filename
+  const fileExtension = path.extname(req.file.originalname);
+  const randomString = crypto.randomBytes(8).toString('hex');
+  const s3FileName = `division-logos/${division._id}-${randomString}${fileExtension}`;
+
+  // S3 Upload Parameters
+  const params = {
+    Bucket: process.env.AWS_S3_BUCKET_NAME,
+    Key: s3FileName,
+    Body: req.file.buffer,
+    ContentType: req.file.mimetype,
+    // Note: ACL 'public-read' requires bucket settings to allow public access.
+  
+  };
+
+  // Upload to S3
+  const command = new PutObjectCommand(params);
+  await s3.send(command);
+
+  // The public URL formulation
+  const logoUrl = `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3FileName}`;
+
+  // Update Database
+  division.divisionLogo = logoUrl;
+  await division.save();
+
+  // Repopulate user access before returning to match standard update responses
+  await division.populate('customer', 'customerName contactEmail');
+  await division.populate({
+    path: 'users',
+    select: 'name email role portal isActive'
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: { division }
+  });
+});
 
 // @desc    Create a new division
 // @route   POST /api/v1/divisions
@@ -56,9 +129,6 @@ export const getAllDivisions = catchAsync(async (req, res, next) => {
   // ==========================================
   // SECURITY: TENANT ISOLATION
   // ==========================================
-  // If the requester is a standard user/client, automatically restrict the database 
-  // query to only return the division IDs they are explicitly assigned to.
-  // Admins bypass this filter to manage the whole system.
   if (req.user && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
     filter._id = { $in: req.user.divisions };
   }
@@ -95,8 +165,6 @@ export const getDivision = catchAsync(async (req, res, next) => {
   // ==========================================
   // SECURITY: ID GUESSING PREVENTION
   // ==========================================
-  // Prevent users from manually typing a division ID into the URL to view it 
-  // if they aren't authorized for it.
   if (req.user && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
     const isAuthorized = req.user.divisions.some(
       (assignedId) => assignedId.toString() === division._id.toString()
@@ -158,7 +226,6 @@ export const deleteDivision = catchAsync(async (req, res, next) => {
     return next(new AppError('Only system administrators can delete divisions.', 403));
   }
 
-  // Use findById instead of findByIdAndDelete so we can trigger cleanup logic
   const division = await Division.findById(req.params.id);
 
   if (!division) {
@@ -168,16 +235,10 @@ export const deleteDivision = catchAsync(async (req, res, next) => {
   // ==========================================
   // CASCADING DELETES (Data Integrity)
   // ==========================================
-  // Wipe all resources that were strictly scoped to this specific division 
-  // so they don't become orphaned in the database.
   await Carrier.deleteMany({ division: division._id });
   await TypePiece.deleteMany({ division: division._id });
   await Inventory.deleteMany({ division: division._id });
-  
-  // NOTE: If you have Receiving Logs, Rates, or Orders scoped to this division, 
-  // you can add `await Model.deleteMany(...)` for them here as well.
 
-  // Finally, delete the division itself
   await division.deleteOne();
 
   res.status(204).json({

@@ -29,6 +29,14 @@ const divisionSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+
+     // --- Media (Cloudinary/S3 Hosting) ---
+    divisionLogo: { 
+      type: String, 
+      trim: true,
+      default: ''
+    },
+
     address: {
       line1: { type: String, trim: true },
       line2: { type: String, trim: true },

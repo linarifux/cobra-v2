@@ -134,6 +134,7 @@ const calculateProcessingFees = async (orderData) => {
 };
 
 // @desc    Create a new order
+
 export const createOrder = catchAsync(async (req, res, next) => {
   if (!req.body.customer && req.params.customerId) req.body.customer = req.params.customerId;
   if (!req.body.division && req.params.divisionId) req.body.division = req.params.divisionId;
@@ -197,6 +198,9 @@ export const createOrder = catchAsync(async (req, res, next) => {
       if (order.status === 'Pending') {
         // ALWAYS send alert to the operations team
         await sendPendingOrderEmail('orders@mi-kro.com', recipientName, order.orderNumber, order.subtotal);
+
+        // send alert to the user placed the order
+        await sendPendingOrderEmail(orderUser.email, recipientName, order.orderNumber, order.subtotal);
         
         // Privilege Check: If current user cannot release orders, find an admin/super_user who can
         let notifyEmail = null;
@@ -440,6 +444,8 @@ export const updateOrder = catchAsync(async (req, res, next) => {
       if (isChangingToPending) {
         // ALWAYS send alert to the operations team
         await sendPendingOrderEmail('orders@mi-kro.com', recipientName, order.orderNumber, order.subtotal);
+
+        await sendPendingOrderEmail(orderUser?.email, recipientName, order.orderNumber, order.subtotal);
         
         // Privilege Check: If current user cannot release orders, find an admin/super_user who can
         let notifyEmail = null;

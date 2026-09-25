@@ -1,19 +1,15 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import api from '../../utils/api'; // Adjust the import path if necessary based on your folder structure
+import api from '../../utils/api'; 
 
 // --- Thunks ---
 
-
-// 1. Fetch Divisions (Supports fetching globally OR scoped to a specific customer)
+// 1. Fetch Divisions
 export const fetchDivisions = createAsyncThunk(
   'divisions/fetchDivisions',
   async (customerId = '', { rejectWithValue }) => {
     try {
-      // Dynamically switch to the nested route if filtering by a specific customer
       const url = customerId ? `/customers/${customerId}/divisions` : '/divisions';
       const response = await api.get(url);
-      
-      // Defensive fallback against API wrapping changes
       return response.data.data.divisions || response.data.data || [];
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch divisions');
@@ -47,13 +43,31 @@ export const updateDivision = createAsyncThunk(
   }
 );
 
+// NEW: Upload Division Logo
+export const uploadDivisionLogo = createAsyncThunk(
+  'divisions/uploadDivisionLogo',
+  async ({ id, file }, { rejectWithValue }) => {
+    try {
+      const formData = new FormData();
+      formData.append('logo', file);
+
+      const response = await api.put(`/divisions/${id}/logo`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      return response.data.data.division; // Backend should return updated division object
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to upload logo');
+    }
+  }
+);
+
 // 4. Delete Division
 export const deleteDivision = createAsyncThunk(
   'divisions/deleteDivision',
   async (id, { rejectWithValue }) => {
     try {
       await api.delete(`/divisions/${id}`);
-      return id; // Return ID to filter out of the Redux state array
+      return id; 
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to delete division');
     }
@@ -69,7 +83,6 @@ const divisionSlice = createSlice({
     error: null
   },
   reducers: {
-    // Utility to wipe state (e.g., on user logout or when leaving a customer context)
     clearDivisions: (state) => {
       state.items = [];
       state.status = 'idle';
@@ -97,9 +110,14 @@ const divisionSlice = createSlice({
         state.items.push(action.payload);
       })
       
-      // --- Update ---
+      // --- Update (Standard & Logo) ---
       .addCase(updateDivision.fulfilled, (state, action) => {
-        // Enforce string comparison to prevent ID type mismatch bugs
+        const index = state.items.findIndex(div => String(div._id) === String(action.payload._id));
+        if (index !== -1) {
+          state.items[index] = action.payload;
+        }
+      })
+      .addCase(uploadDivisionLogo.fulfilled, (state, action) => {
         const index = state.items.findIndex(div => String(div._id) === String(action.payload._id));
         if (index !== -1) {
           state.items[index] = action.payload;
@@ -108,7 +126,6 @@ const divisionSlice = createSlice({
       
       // --- Delete ---
       .addCase(deleteDivision.fulfilled, (state, action) => {
-        // Enforce string comparison to prevent ID type mismatch bugs
         state.items = state.items.filter(div => String(div._id) !== String(action.payload));
       });
   }

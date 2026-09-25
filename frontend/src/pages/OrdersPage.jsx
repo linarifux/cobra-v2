@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, MapPin, Package, Loader2, Filter, X, 
   Calendar, Building2, User, Plus, FileText, Truck,
-  Layers, Edit2, Trash2, Save, Briefcase, Printer, CheckSquare, AlertTriangle
+  Layers, Edit2, Trash2, Save, Briefcase, Printer, CheckSquare, AlertTriangle, Unlock
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -23,7 +23,6 @@ import { fetchCustomers } from '../store/slices/customerSlice';
 import { fetchDivisions } from '../store/slices/divisionSlice';
 import { fetchInventory } from '../store/slices/inventorySlice';
 
-
 export default function OrdersPage() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -33,9 +32,11 @@ export default function OrdersPage() {
   const { items: customersData = [] } = useSelector((state) => state.customers || {});
   const { items: divisionsData = [] } = useSelector((state) => state.divisions || {});
   const { items: inventoryData = [], status: inventoryStatus } = useSelector((state) => state.inventory || {});
+  const { user: currentUser } = useSelector((state) => state.auth || {});
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrders, setSelectedOrders] = useState([]);
+  const [isReleasing, setIsReleasing] = useState(null);
   
   // Start with 'New' so it doesn't flash the entire database while loading
   const [filters, setFilters] = useState({
@@ -56,6 +57,10 @@ export default function OrdersPage() {
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [isGeneratingDocs, setIsGeneratingDocs] = useState(false);
 
+  // --- RBAC CHECKS ---
+  const canReleaseOrder = ['super_user', 'super_admin', 'admin'].includes(currentUser?.role) || currentUser?.portal === 'admin' || currentUser?.releasePendingOrders === true;
+  const canViewCosts = currentUser?.showCostsInCp === true || ['admin', 'super_admin'].includes(currentUser?.role);
+
   // --- SMART DEFAULT FILTER LOGIC ---
   const filterInitialized = useRef(false);
 
@@ -72,9 +77,8 @@ export default function OrdersPage() {
   // Evaluates database payload to determine optimal default status view
   useEffect(() => {
     if (ordersStatus === 'succeeded' && !filterInitialized.current) {
-      // Calculate effective statuses to ensure Pending orders aren't hidden by a strict 'New' filter
-      const hasNewOrders = ordersData.some(o => (o.qtyLimitExceeds && o.status === 'New' ? 'Pending' : (o.status || 'New')) === 'New');
-      const hasPendingOrders = ordersData.some(o => (o.qtyLimitExceeds && o.status === 'New' ? 'Pending' : (o.status || 'New')) === 'Pending');
+      const hasNewOrders = ordersData.some(o => (o.status || 'New') === 'New');
+      const hasPendingOrders = ordersData.some(o => (o.status || 'New') === 'Pending');
       
       setFilters(prev => ({
         ...prev,
@@ -127,9 +131,8 @@ export default function OrdersPage() {
 
   const clearAllFilters = () => {
     setSearchQuery('');
-    // Ensure the 'Clear Filters' button respects the dynamic smart default
-    const hasNewOrders = ordersData.some(o => (o.qtyLimitExceeds && o.status === 'New' ? 'Pending' : (o.status || 'New')) === 'New');
-    const hasPendingOrders = ordersData.some(o => (o.qtyLimitExceeds && o.status === 'New' ? 'Pending' : (o.status || 'New')) === 'Pending');
+    const hasNewOrders = ordersData.some(o => (o.status || 'New') === 'New');
+    const hasPendingOrders = ordersData.some(o => (o.status || 'New') === 'Pending');
     setFilters({
       status: hasNewOrders ? 'New' : (hasPendingOrders ? 'Pending' : 'All'),
       orderType: 'All',
@@ -191,11 +194,10 @@ export default function OrdersPage() {
       
       // Only tally orders that pass the current top-bar filters (ignores the sidebar status filter itself)
       if (matchSearch && matchOrderType && matchCustomer && matchDivision && matchUser && matchDateStart && matchDateEnd) {
-        const effectiveStatus = order.qtyLimitExceeds && order.status === 'New' ? 'Pending' : (order.status || 'New');
-        
+        const exactStatus = order.status || 'New';
         counts.All++;
-        if (counts[effectiveStatus] !== undefined) {
-          counts[effectiveStatus]++;
+        if (counts[exactStatus] !== undefined) {
+          counts[exactStatus]++;
         }
       }
     });
@@ -223,8 +225,7 @@ export default function OrdersPage() {
         if (order.createdAt) orderDate = new Date(order.createdAt).toISOString().split('T')[0];
       } catch (e) {}
 
-      // Auto-override the status mapping if qty limits are exceeded
-      const effectiveStatus = order.qtyLimitExceeds && order.status === 'New' ? 'Pending' : (order.status || 'New');
+      const exactStatus = order.status || 'New';
 
       const matchSearch = customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -232,7 +233,7 @@ export default function OrdersPage() {
                           companyName.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           orderType.toLowerCase().includes(searchQuery.toLowerCase());
                           
-      const matchStatus = filters.status === 'All' || effectiveStatus === filters.status;
+      const matchStatus = filters.status === 'All' || exactStatus === filters.status;
       const matchOrderType = filters.orderType === 'All' || orderType === filters.orderType;
       const matchCustomer = filters.customer === 'All' || orderCustomerId === String(filters.customer);
       const matchDivision = filters.division === 'All' || orderDivisionId === String(filters.division);
@@ -264,13 +265,12 @@ export default function OrdersPage() {
 
   // --- Inline Action Handlers ---
   const openQuickEdit = (order) => {
-    const effectiveStatus = order.qtyLimitExceeds && order.status === 'New' ? 'Pending' : (order.status || 'New');
     setEditingOrder({
       _id: order._id,
       orderNumber: order.orderNumber,
-      status: effectiveStatus,
+      status: order.status || 'New',
       notes: order.notes || '',
-      orderType: order.orderType || 'WEBORD' // Added Order Type initialization
+      orderType: order.orderType || 'WEBORD'
     });
     setIsEditModalOpen(true);
   };
@@ -342,6 +342,19 @@ export default function OrdersPage() {
         console.error(err);
         toast.error(`Failed to delete order: ${err.message || 'Unknown error'}`);
       }
+    }
+  };
+
+  const handleReleaseOrder = async (orderId) => {
+    setIsReleasing(orderId);
+    try {
+      await dispatch(updateOrder({ id: orderId, updateData: { status: 'New', qtyLimitExceeds: false } })).unwrap();
+      toast.success("Order released successfully.");
+      dispatch(fetchOrders({}));
+    } catch (err) {
+      toast.error("Failed to release order: " + (err.message || err));
+    } finally {
+      setIsReleasing(null);
     }
   };
 
@@ -438,6 +451,8 @@ export default function OrdersPage() {
         
         const address = order.shippingAddress || {};
         const phone = address.phone || order.customer?.contactNumber || '';
+        
+        // Use standard notes
         const notes = order.notes || '';
 
         // --- TOP HEADER ---
@@ -544,9 +559,9 @@ export default function OrdersPage() {
             return [
                 item.sku,
                 item.name,
-                qtyStr,     // Qty Picked (Left blank for manual fill)
+                " ",    // Qty Picked (Left blank for manual fill)
                 qtyStr, // Qty Ordered
-                qtyStr  // Qty Shipped
+                " "  // Qty Shipped
             ];
         });
 
@@ -605,7 +620,7 @@ export default function OrdersPage() {
 
       // 3. BULK UPDATE STATUS TO "PICKED" FOR ELIGIBLE ORDERS ONLY
       const eligibleOrders = selectedOrderObjects.filter(order => {
-        const st = order.qtyLimitExceeds && order.status === 'New' ? 'Pending' : (order.status || 'New');
+        const st = order.status || 'New';
         return st === 'New' || st === 'Pending';
       });
 
@@ -643,7 +658,8 @@ export default function OrdersPage() {
     if (['Hold', 'Cancelled'].includes(status)) return 'bg-rose-50 text-rose-600 border-rose-200';
     if (status === 'Picked') return 'bg-indigo-50 text-indigo-600 border-indigo-200';
     if (status === 'New') return 'bg-blue-50 text-blue-600 border-blue-200';
-    return 'bg-amber-50 text-amber-600 border-amber-200'; // Default (Pending)
+    if (status === 'Pending') return 'bg-amber-50 text-amber-600 border-amber-200';
+    return 'bg-slate-50 text-slate-600 border-slate-200';
   };
 
   return (
@@ -673,10 +689,7 @@ export default function OrdersPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
               { label: 'Total Orders', val: ordersData.length, color: 'text-slate-900' },
-              { label: 'Awaiting Action', val: ordersData.filter(o => {
-                  const st = o.qtyLimitExceeds && o.status === 'New' ? 'Pending' : (o.status || 'New');
-                  return ['New', 'Pending'].includes(st);
-                }).length, color: 'text-rose-600' },
+              { label: 'Awaiting Action', val: ordersData.filter(o => ['New', 'Pending'].includes(o.status || 'New')).length, color: 'text-rose-600' },
               { label: 'Picked / Ready', val: ordersData.filter(o => o.status === 'Picked').length, color: 'text-indigo-600' },
               { label: 'Shipped / Billed', val: ordersData.filter(o => ['Shipped', 'Delivered', 'Billed'].includes(o.status)).length, color: 'text-emerald-600' },
             ].map((stat, i) => (
@@ -815,7 +828,7 @@ export default function OrdersPage() {
                           .filter(Boolean)
                           .join(', ') || 'N/A';
                         
-                        const grandTotal = (order.totalAmount || 0) + (order.shippingDetails?.shippingCost || 0);
+                        const grandTotal = (order.totalAmount || 0);
 
                         const divRef = order.division;
                         const divisionObj = divisionsData.find(d => d._id === (divRef?._id || divRef));
@@ -823,8 +836,8 @@ export default function OrdersPage() {
 
                         const shopperName = order.user?.name || order.user?.firstName || order.shippingAddress?.recipientName || 'Unknown Shopper';
                         
-                        // Effective status dynamically overrides "New" to "Pending" visually if quantities exceed limits
-                        const effectiveStatus = order.qtyLimitExceeds && order.status === 'New' ? 'Pending' : (order.status || 'New');
+                        // Exact database status string
+                        const currentStatus = order.status || 'New';
 
                         return (
                           <tr key={order._id} className="hover:bg-white/80 transition-colors group cursor-pointer" onClick={() => navigate(`/orders/${order._id}`)}>
@@ -843,7 +856,9 @@ export default function OrdersPage() {
                                   {order.orderType || 'WEBORD'}
                                 </span>
                               </div>
-                              <div className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 w-max mt-1 tracking-widest">${grandTotal.toFixed(2)}</div>
+                              <div className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 w-max mt-1 tracking-widest">
+                                {canViewCosts ? `$${grandTotal.toFixed(2)}` : '***'}
+                              </div>
                             </td>
                             <td className="p-5 text-slate-500 font-bold">{displayDate}</td>
                             <td className="p-5">
@@ -863,15 +878,28 @@ export default function OrdersPage() {
                             </td>
                             <td className="p-5">
                               <span 
-                                className={`px-2.5 py-1 text-[9px] uppercase tracking-wider rounded border shadow-sm font-black flex items-center gap-1.5 w-max ${getStatusBadgeStyle(effectiveStatus)}`}
-                                title={order.qtyLimitExceeds && effectiveStatus === 'Pending' ? "Quantity limit exceeded. Requires approval." : ""}
+                                className={`px-2.5 py-1 text-[9px] uppercase tracking-wider rounded border shadow-sm font-black flex items-center gap-1.5 w-max ${getStatusBadgeStyle(currentStatus)}`}
+                                title={order.qtyLimitExceeds ? "Quantity limit exceeded flag is active." : ""}
                               >
-                                {effectiveStatus}
-                                {order.qtyLimitExceeds && effectiveStatus === 'Pending' && <AlertTriangle size={10} className="shrink-0" />}
+                                {currentStatus}
+                                {order.qtyLimitExceeds && <AlertTriangle size={10} className="shrink-0 text-amber-500" />}
                               </span>
                             </td>
                             <td className="p-5 text-right pr-6" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {(currentStatus === 'Pending' || order.qtyLimitExceeds) && canReleaseOrder && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      handleReleaseOrder(order._id);
+                                    }}
+                                    disabled={isReleasing === order._id}
+                                    className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50 shadow-sm transition-all"
+                                    title="Release Order"
+                                  >
+                                    {isReleasing === order._id ? <Loader2 size={14} className="animate-spin" /> : <Unlock size={14} />}
+                                  </button>
+                                )}
                                 <button 
                                   onClick={() => openQuickEdit(order)}
                                   className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 shadow-sm transition-all" 
