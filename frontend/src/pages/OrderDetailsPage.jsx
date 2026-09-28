@@ -141,7 +141,6 @@ export default function OrderDetailsPage() {
 
   const orderCreatorName = orderCreator ? (orderCreator.name || orderCreator.firstName || orderCreator.email) : null;
 
-  // Fetch processing charges when the order loads and we have the customer ID
   useEffect(() => {
     const customerId = currentOrder?.customer?._id || currentOrder?.customer;
     if (customerId) {
@@ -150,10 +149,8 @@ export default function OrderDetailsPage() {
   }, [currentOrder?.customer, dispatch]);
 
   const processingFeesPreview = useMemo(() => {
-    // Determine configured fees (Strictly defaulting to 0 if not configured in the DB)
     const config = customerCharges.length > 0 ? customerCharges[0] : {};
     
-    // Configured values extracted directly from the processingCharges schema
     const cfgBaseUpTo10 = config.baseFeeUpTo10lbs !== undefined ? Number(config.baseFeeUpTo10lbs) : 0;
     const cfgBase11To20 = config.baseFee11To20lbs !== undefined ? Number(config.baseFee11To20lbs) : 0;
     const cfgWeight = config.weightSurcharge !== undefined ? Number(config.weightSurcharge) : 0;
@@ -172,30 +169,14 @@ export default function OrderDetailsPage() {
     const cartonCount = Number(cartoonsCount) || 0;
     const palletCount = Number(palletsCount) || 0;
 
-    // Apply exact calculation rules
-    
-    // 1. Base Fee - Applied to 1st 3 lines, conditional on the weight
     const baseFee = weightLbs <= 10 ? cfgBaseUpTo10 : cfgBase11To20;
-    
-    // 2. Weight Surcharge - Only applied per lb OVER 20 lbs
     const weightSurcharge = weightLbs > 20 ? (weightLbs - 20) * cfgWeight : 0;
-    
-    // 3. Line Item Surcharge - Only applied per line item OVER 3 items
     const lineItemSurcharge = lineItemsCount > 3 ? (lineItemsCount - 3) * cfgLineItem : 0;
-    
-    // 4. Package Surcharge - Only applied per package OVER 1
     const packageSurcharge = packageCount > 1 ? (packageCount - 1) * cfgPackage : 0;
-    
-    // 5. Piece Surcharge - Applied per piece total
     const pieceSurcharge = piecesCount * cfgPiece;
-    
-    // 6. Carton Surcharge
     const cartonSurcharge = cartonCount * cfgCarton;
-    
-    // 7. Pallet Fee
     const palletFee = palletCount * cfgPallet;
 
-    // 8. Toggles
     const rushFee = isRushOrder ? cfgRush : 0;
     const isLocalIntl = address.country && !['US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'].includes(address.country.toUpperCase().trim());
     const internationalFee = isLocalIntl ? cfgIntl : 0;
@@ -279,7 +260,6 @@ export default function OrderDetailsPage() {
         shipStationId: currentOrder.shippingDetails?.shipStationId || ''
       });
 
-      // Included companyName Population
       setAddress({ 
         name: currentOrder.shippingAddress?.recipientName || '', 
         companyName: currentOrder.shippingAddress?.companyName || '',
@@ -325,7 +305,28 @@ export default function OrderDetailsPage() {
         }
       }
     }
-  }, [currentOrder, inventoryData]); 
+  }, [currentOrder]); 
+
+  // --- THESE WERE MISSING ---
+  const addPackage = () => setPackages(prev => [...prev, { id: generateLocalId(), packageCode: 'package', weightInOunces: 16, length: 10, width: 10, height: 10 }]);
+  const updatePackage = (id, field, value) => setPackages(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
+  const removePackage = (id) => setPackages(prev => prev.filter(p => p.id !== id));
+
+  const handleWeightChange = (id, currentTotalOz, type, value) => {
+    const numVal = value === '' ? '' : Number(value);
+    const currentLbs = Math.floor((Number(currentTotalOz) || 0) / 16);
+    const currentOz = (Number(currentTotalOz) || 0) % 16;
+
+    let newTotal = 0;
+    if (type === 'lbs') {
+      newTotal = (numVal === '' ? 0 : numVal * 16) + currentOz;
+    } else {
+      newTotal = (currentLbs * 16) + (numVal === '' ? 0 : numVal);
+    }
+
+    updatePackage(id, 'weightInOunces', newTotal);
+  };
+  // -------------------------
 
   const handleMetricsOverride = (newTotalWeightOz, newTotalBoxes) => {
     let currentPkgs = [...packages];
@@ -564,33 +565,14 @@ export default function OrderDetailsPage() {
     }
   };
 
-  const addPackage = () => setPackages(prev => [...prev, { id: generateLocalId(), packageCode: 'package', weightInOunces: 16, length: 10, width: 10, height: 10 }]);
-  const updatePackage = (id, field, value) => setPackages(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
-  const removePackage = (id) => setPackages(prev => prev.filter(p => p.id !== id));
-
-  const handleWeightChange = (id, currentTotalOz, type, value) => {
-    const numVal = value === '' ? '' : Number(value);
-    const currentLbs = Math.floor((Number(currentTotalOz) || 0) / 16);
-    const currentOz = (Number(currentTotalOz) || 0) % 16;
-
-    let newTotal = 0;
-    if (type === 'lbs') {
-      newTotal = (numVal === '' ? 0 : numVal * 16) + currentOz;
-    } else {
-      newTotal = (currentLbs * 16) + (numVal === '' ? 0 : numVal);
-    }
-
-    updatePackage(id, 'weightInOunces', newTotal);
-  };
-
   const restoreInventoryStock = async () => {
     try {
       await Promise.all(items.map(async (item) => {
         const stockItem = inventoryData.find(inv => inv.sku === item.sku);
         if (stockItem) {
-          const currentStock = Number(stockItem.unitsOnHand) || Number(stockItem.available) || 0;
+          const currentStock = Number(stockItem.available) || 0;
           const restoredStock = currentStock + Number(item.quantity);
-          const updatedData = { ...stockItem, unitsOnHand: restoredStock, available: restoredStock };
+          const updatedData = { ...stockItem, available: restoredStock };
           await dispatch(updateInventory({ id: stockItem._id, inventoryData: updatedData })).unwrap();
         }
       }));
@@ -606,6 +588,64 @@ export default function OrderDetailsPage() {
       setIsSaving(false);
       return toast.error("State must be exactly a 2-character code (e.g., NY, CA). Please use the dropdown selector.");
     }
+
+    // --- DEFERRED INVENTORY SYNC LOGIC ---
+    try {
+      const originalItems = currentOrder.items || [];
+      const inventoryUpdates = [];
+
+      // 1. Check for newly added items or items with increased/decreased quantity
+      for (const currentItem of items) {
+        const originalItem = originalItems.find(o => o.sku === currentItem.sku);
+        const originalQty = originalItem ? Number(originalItem.quantity) : 0;
+        const newQty = Number(currentItem.qty);
+
+        if (newQty !== originalQty) {
+          const matchedStockItem = inventoryData.find(inv => inv.sku === currentItem.sku);
+          if (matchedStockItem) {
+            const currentStock = Number(matchedStockItem.available) || 0;
+            const diff = newQty - originalQty; // Positive = user ordered more, Negative = user ordered less
+            const newStockLevel = currentStock - diff;
+
+            inventoryUpdates.push(
+              dispatch(updateInventory({ 
+                id: matchedStockItem._id, 
+                inventoryData: { available: newStockLevel } 
+              })).unwrap()
+            );
+          }
+        }
+      }
+
+      // 2. Check for completely removed items (Restore Stock)
+      for (const originalItem of originalItems) {
+        const stillExists = items.find(i => i.sku === originalItem.sku);
+        if (!stillExists) {
+          const matchedStockItem = inventoryData.find(inv => inv.sku === originalItem.sku);
+          if (matchedStockItem) {
+            const currentStock = Number(matchedStockItem.available) || 0;
+            const restoredStockLevel = currentStock + Number(originalItem.quantity);
+
+            inventoryUpdates.push(
+              dispatch(updateInventory({ 
+                id: matchedStockItem._id, 
+                inventoryData: { available: restoredStockLevel } 
+              })).unwrap()
+            );
+          }
+        }
+      }
+
+      if (inventoryUpdates.length > 0) {
+        await Promise.all(inventoryUpdates);
+        dispatch(fetchInventory()); 
+      }
+    } catch (err) {
+      toast.error("Failed to synchronize inventory adjustments.");
+      setIsSaving(false);
+      return;
+    }
+    // -------------------------------------
 
     const payload = {
       status: orderStatus,
@@ -656,6 +696,9 @@ export default function OrderDetailsPage() {
       } else {
         toast.success('Order saved successfully.');
       }
+      
+      dispatch(fetchOrderById(currentOrder._id));
+
     } catch (error) {
       toast.error(`Failed to save order: ${error}`);
     } finally {
@@ -1041,7 +1084,6 @@ export default function OrderDetailsPage() {
             inventoryStatus={inventoryStatus} 
           />
 
-          {/* Render the InvoicePanel, passing the correct subtotal */}
           <InvoicePanel 
             subtotal={currentOrder?.subtotal || subtotal} 
             shipping={shipping} 

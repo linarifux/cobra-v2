@@ -1,9 +1,15 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { PackageCheck, Trash2, ChevronDown, Search, Plus } from 'lucide-react';
+import { useDispatch } from 'react-redux';
+import { PackageCheck, Trash2, ChevronDown, Search, Plus, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 
+// Imported fetchInventory thunk for real-time DB synchronization
+import { fetchInventory } from '../../store/slices/inventorySlice';
+
 export default function ManifestPanel({ items, setItems, inventoryData, inventoryStatus }) {
+  const dispatch = useDispatch(); 
+  
   const [isInventoryDropdownOpen, setIsInventoryDropdownOpen] = useState(false);
   const [inventorySearch, setInventorySearch] = useState('');
   const [newItem, setNewItem] = useState({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
@@ -28,7 +34,8 @@ export default function ManifestPanel({ items, setItems, inventoryData, inventor
       name: inv.itemName || 'Unnamed Item',
       sku: inv.sku || '',
       price: inv.unitCost || inv.price || 0,
-      weight: inv.weight || 0
+      weight: inv.weight || 0,
+      stock: Number(inv.available) || 0 
     })).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   }, [inventoryData]);
 
@@ -41,17 +48,68 @@ export default function ManifestPanel({ items, setItems, inventoryData, inventor
 
   const handleAddItem = () => {
     if (!newItem.name || newItem.price === undefined) return toast.error("Please select an item to add.");
-    setItems(prev => [
-      ...prev, 
-      { 
-        ...newItem, 
-        id: generateLocalId(), 
-        qty: Number(newItem.qty), 
-        price: Number(newItem.price), 
-        weight: Number(newItem.weight || 0) 
-      }
-    ]);
+    
+    const qtyToAdd = Number(newItem.qty) || 1;
+    const matchedStockItem = availableInventories.find(inv => inv.sku === newItem.sku);
+    
+    if (!matchedStockItem) return toast.error("Item not found in inventory.");
+    
+    // Validate against current known stock + what is already drafted in the local `items` list
+    const draftedItem = items.find(i => i.sku === newItem.sku);
+    const draftedQty = draftedItem ? draftedItem.qty : 0;
+    
+    if (matchedStockItem.stock < (qtyToAdd + draftedQty)) {
+      return toast.error(`Insufficient stock. Only ${matchedStockItem.stock - draftedQty} more available.`);
+    }
+
+    if (draftedItem) {
+      setItems(items.map(i => i.sku === newItem.sku ? { ...i, qty: i.qty + qtyToAdd } : i));
+    } else {
+      setItems(prev => [
+        ...prev, 
+        { 
+          ...newItem, 
+          id: generateLocalId(), 
+          qty: qtyToAdd, 
+          price: Number(newItem.price), 
+          weight: Number(newItem.weight || 0) 
+        }
+      ]);
+    }
+    
     setNewItem({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
+    // toast.success("Item added to draft. Press 'Save Changes' to update inventory.");
+  };
+
+  const handleRemoveItem = (itemToRemove) => {
+    setItems(items.filter(i => i.id !== itemToRemove.id));
+  };
+
+  const handleQtyChange = (item, newQtyString) => {
+    const newQty = parseInt(newQtyString) || 1;
+    const currentQty = Number(item.qty);
+    const difference = newQty - currentQty; 
+
+    if (difference === 0) return; 
+
+    const matchedStockItem = availableInventories.find(inv => inv.sku === item.sku);
+    if (!matchedStockItem) return toast.error("Item not found in inventory.");
+
+    // Validate if increasing quantity
+    if (difference > 0 && matchedStockItem.stock < difference) {
+      return toast.error(`Insufficient stock. Only ${matchedStockItem.stock} more available.`);
+    }
+
+    setItems(items.map(i => i.id === item.id ? { ...i, qty: newQty } : i));
+  };
+
+  const openDropdown = async () => {
+    if (isInventoryDropdownOpen) {
+      setIsInventoryDropdownOpen(false);
+    } else {
+      await dispatch(fetchInventory()).unwrap(); 
+      setIsInventoryDropdownOpen(true);
+    }
   };
 
   return (
@@ -79,17 +137,14 @@ export default function ManifestPanel({ items, setItems, inventoryData, inventor
                           min="1" 
                           className="w-full bg-white border border-slate-200 rounded-lg text-center text-xs font-bold py-1.5 outline-none focus:border-brand-gold shadow-sm"
                           value={item.qty}
-                          onChange={(e) => {
-                              const newQty = parseInt(e.target.value) || 1;
-                              setItems(items.map(i => i.id === item.id ? { ...i, qty: newQty } : i));
-                          }}
+                          onChange={(e) => handleQtyChange(item, e.target.value)} 
                       />
                   </div>
                   <div className="w-20 shrink-0 text-right">
                       <p className="text-xs font-black text-slate-800">${(item.price * item.qty).toFixed(2)}</p>
                   </div>
                   <button 
-                      onClick={() => setItems(items.filter(i => i.id !== item.id))} 
+                      onClick={() => handleRemoveItem(item)} 
                       className="text-slate-300 hover:text-red-500 transition-colors duration-200 p-1 shrink-0"
                   >
                       <Trash2 size={16}/>
@@ -102,13 +157,13 @@ export default function ManifestPanel({ items, setItems, inventoryData, inventor
               
               <div className="relative w-full" ref={inventoryDropdownRef}>
                 <div
-                  className={`w-full bg-white p-2.5 rounded-lg text-xs font-bold border border-slate-200 focus-within:border-brand-gold shadow-sm flex items-center justify-between transition-all ${inventoryStatus === 'loading' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                  onClick={() => { if (inventoryStatus !== 'loading') setIsInventoryDropdownOpen(!isInventoryDropdownOpen); }}
+                  className={`w-full bg-white p-2.5 rounded-lg text-xs font-bold border border-slate-200 focus-within:border-brand-gold shadow-sm flex items-center justify-between transition-all cursor-pointer`}
+                  onClick={openDropdown}
                 >
                   <span className={newItem.name ? "text-slate-900" : "text-slate-400"}>
-                    {newItem.name ? `${newItem.name} (SKU: ${newItem.sku})` : (inventoryStatus === 'loading' ? 'Loading Catalog...' : 'Select Item from Catalog...')}
+                    {newItem.name ? `${newItem.name} (SKU: ${newItem.sku})` : (inventoryStatus === 'loading' ? 'Syncing Catalog...' : 'Select Item from Catalog...')}
                   </span>
-                  <ChevronDown size={14} className="text-slate-400" />
+                  {inventoryStatus === 'loading' ? <Loader2 size={14} className="text-brand-gold animate-spin" /> : <ChevronDown size={14} className="text-slate-400" />}
                 </div>
 
                 <AnimatePresence>
@@ -134,14 +189,21 @@ export default function ManifestPanel({ items, setItems, inventoryData, inventor
                           filteredInventories.map(inv => (
                             <div
                               key={inv.id}
-                              className="px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer flex flex-col transition-colors"
+                              className={`px-3 py-2.5 text-xs font-medium transition-colors flex flex-col ${inv.stock > 0 ? 'text-slate-700 hover:bg-slate-50 cursor-pointer' : 'text-slate-400 bg-slate-50 cursor-not-allowed'}`}
                               onClick={() => {
-                                setNewItem({ ...newItem, name: inv.name, sku: inv.sku, price: inv.price, weight: inv.weight });
-                                setIsInventoryDropdownOpen(false);
-                                setInventorySearch('');
+                                if (inv.stock > 0) {
+                                  setNewItem({ ...newItem, name: inv.name, sku: inv.sku, price: inv.price, weight: inv.weight });
+                                  setIsInventoryDropdownOpen(false);
+                                  setInventorySearch('');
+                                }
                               }}
                             >
-                              <span className="font-bold">{inv.name}</span>
+                              <div className="flex justify-between items-center">
+                                <span className="font-bold">{inv.name}</span>
+                                <span className={`text-[10px] font-bold ${inv.stock > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                  {inv.stock} in stock
+                                </span>
+                              </div>
                               <span className="text-slate-400 text-[10px]">SKU: {inv.sku}</span>
                             </div>
                           ))

@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Loader2, Save, ShieldAlert, FileText, Settings2 } from 'lucide-react';
+import { Loader2, Save, ShieldAlert, FileText, Settings2, Calculator } from 'lucide-react';
 import { toast } from 'sonner';
 import ChargeList from './ChargeList'; 
 
 // Redux Actions
 import { fetchProcessingChargesByCustomer, updateProcessingCharge, createProcessingCharge } from '../../../store/slices/processingChargeSlice';
+import { fetchReceivingCharges, updateReceivingCharge, createReceivingCharge } from '../../../store/slices/receivingChargeSlice';
 
-// Map structure containing exact rule definitions, but now strictly DYNAMIC.
-// The values are injected via ruleFn based on the live database or form state.
+// Map structure containing exact rule definitions.
 const CHARGE_MAP = [
   { id: 'baseFeeUpTo10lbs', name: 'Base Fee (≤ 10 lbs)', ruleFn: (v) => `Applied to the 1st 3 line items if total weight is 10 lbs or less ($${v}).` },
   { id: 'baseFee11To20lbs', name: 'Base Fee (11-20 lbs)', ruleFn: (v) => `Applied to the 1st 3 line items if total weight is between 11 and 20 lbs ($${v}).` },
@@ -23,9 +23,11 @@ const CHARGE_MAP = [
 ];
 
 const RECEIVING_CHARGE_MAP = [
-  { id: 'unloadingFee', name: 'Unloading Fee', ruleFn: (v) => `Per Line item up to 100 lbs ($${v}).` },
-  { id: 'weightSurcharge', name: 'Weight Surcharge', ruleFn: (v) => `$${v} each additional pound.` },
-  { id: 'palletFee', name: 'Pallet Fee', ruleFn: (v) => `$${v} per Pallet.` }
+  { id: 'baseRatePerLineItem', name: 'Per Line item up to Base Weight', ruleFn: (v) => `Base fee applied per line item ($${v}).` },
+  { id: 'baseWeightAllowance', name: 'Base Weight Allowance', ruleFn: (v) => `Weight included before overage triggers (${Number(v).toFixed(0)} lbs).` },
+  { id: 'overageRatePerPound', name: 'Each additional pound', ruleFn: (v) => `Fee per pound over the weight allowance ($${v}).` },
+  { id: 'palletProcessingFeeRate', name: 'Pallet Processing Fee (PPF)', ruleFn: (v) => `Processing fee for client-provided pallets ($${v}).` },
+  { id: 'providedPalletFeeRate', name: 'Pallet Fee (Provided)', ruleFn: (v) => `Fee for pallets provided to the client ($${v}).` }
 ];
 
 export default function ProcessingTab({ customerData }) {
@@ -33,41 +35,40 @@ export default function ProcessingTab({ customerData }) {
   
   // Navigation State
   const [activeMainTab, setActiveMainTab] = useState('Processing');
-  const [activeSubView, setActiveSubView] = useState('Form'); // 'Form' | 'Rules'
+  const [activeSubView, setActiveSubView] = useState('Form'); 
   
   const [isSaving, setIsSaving] = useState(false);
 
-  // Derive Customer ID regardless of whether customerData is populated object or string
+  // Simulation State for Receiving Calculator (Mapped strictly to spreadsheet inputs)
+  const [simWeight, setSimWeight] = useState(2116);
+  const [simLineItems, setSimLineItems] = useState(1);
+  const [simPPF, setSimPPF] = useState(2);
+  const [simPallet, setSimPallet] = useState(0);
+
   const targetCustomerId = typeof customerData === 'object' ? customerData?._id : customerData;
 
-  // Redux State
   const { user } = useSelector(state => state.auth);
-  const { items: globalCharges = [], status } = useSelector(state => state.processingCharges);
+  const { items: globalCharges = [], status: processingStatus } = useSelector(state => state.processingCharges);
+  const { items: globalReceiving = [], status: receivingStatus } = useSelector(state => state.receivingCharges);
   
-  // Local Form State
   const [processingCharges, setProcessingCharges] = useState([]);
-  const [receivingCharges, setReceivingCharges] = useState(
-    RECEIVING_CHARGE_MAP.map(charge => ({ ...charge, value: '' }))
-  );
+  const [receivingCharges, setReceivingCharges] = useState([]);
 
-  // Permission Evaluation
   const isOrderPortal = user?.portal === 'order';
   const isSuperUser = user?.role === 'super_user';
   const hasWriteAccess = !isOrderPortal && ['super_admin', 'admin', 'staff'].includes(user?.role);
   const hasReadAccess = hasWriteAccess || (isOrderPortal && isSuperUser);
 
-  // Fetch initial data targeted for THIS customer
   useEffect(() => {
     if (targetCustomerId) {
       dispatch(fetchProcessingChargesByCustomer(targetCustomerId));
+      dispatch(fetchReceivingCharges(targetCustomerId));
     }
   }, [targetCustomerId, dispatch]);
 
-  // Sync DB data into local UI format with dynamic rule functions attached
   useEffect(() => {
-    if (status === 'succeeded') {
+    if (processingStatus === 'succeeded') {
       const activeConfig = globalCharges.length > 0 ? globalCharges[0] : null;
-      
       const mappedUIArray = CHARGE_MAP.map(field => ({
         id: field.id,
         name: field.name,
@@ -76,32 +77,59 @@ export default function ProcessingTab({ customerData }) {
           ? Number(activeConfig[field.id]).toFixed(2) 
           : ''
       }));
-
       setProcessingCharges(mappedUIArray);
     }
-  }, [globalCharges, status]);
+  }, [globalCharges, processingStatus]);
 
-  const handleSaveProcessing = async () => {
+  useEffect(() => {
+    if (receivingStatus === 'succeeded') {
+      const activeConfig = globalReceiving.length > 0 ? globalReceiving[0] : null;
+      const mappedUIArray = RECEIVING_CHARGE_MAP.map(field => ({
+        id: field.id,
+        name: field.name,
+        ruleFn: field.ruleFn, 
+        value: activeConfig && activeConfig[field.id] !== undefined && activeConfig[field.id] !== null
+          ? field.id === 'baseWeightAllowance' 
+            ? Number(activeConfig[field.id]).toString()
+            : Number(activeConfig[field.id]).toFixed(2) 
+          : ''
+      }));
+      setReceivingCharges(mappedUIArray);
+    }
+  }, [globalReceiving, receivingStatus]);
+
+  const handleSaveConfiguration = async () => {
     if (!hasWriteAccess) return toast.error("You do not have permission to modify pricing.");
     if (!targetCustomerId) return toast.error("No active customer assigned to this division.");
     
     setIsSaving(true);
     
-    // Transform UI Array back to DB Schema Object
-    const payload = { customer: targetCustomerId };
-    
-    processingCharges.forEach(charge => {
-      // Cast to Number, treating empty strings as 0 to prevent NaN backend errors
-      payload[charge.id] = charge.value === '' ? 0 : Number(charge.value);
-    });
-    
     try {
-      if (globalCharges.length > 0) {
-        await dispatch(updateProcessingCharge({ id: globalCharges[0]._id, chargeData: payload })).unwrap();
-        toast.success("Customer processing charges successfully updated.");
-      } else {
-        await dispatch(createProcessingCharge(payload)).unwrap();
-        toast.success("Customer processing charges successfully initialized.");
+      if (activeMainTab === 'Processing') {
+        const payload = { customer: targetCustomerId };
+        processingCharges.forEach(charge => {
+          payload[charge.id] = charge.value === '' ? 0 : Number(charge.value);
+        });
+        
+        if (globalCharges.length > 0) {
+          await dispatch(updateProcessingCharge({ id: globalCharges[0]._id, chargeData: payload })).unwrap();
+        } else {
+          await dispatch(createProcessingCharge(payload)).unwrap();
+        }
+        toast.success("Processing pricing successfully updated.");
+
+      } else if (activeMainTab === 'Receiving') {
+        const payload = { customer: targetCustomerId };
+        receivingCharges.forEach(charge => {
+          payload[charge.id] = charge.value === '' ? 0 : Number(charge.value);
+        });
+
+        if (globalReceiving.length > 0) {
+          await dispatch(updateReceivingCharge({ id: globalReceiving[0]._id, updateData: payload })).unwrap();
+        } else {
+          await dispatch(createReceivingCharge(payload)).unwrap();
+        }
+        toast.success("Receiving pricing successfully updated.");
       }
     } catch (error) {
       toast.error(`Failed to save configuration: ${error}`);
@@ -109,6 +137,25 @@ export default function ProcessingTab({ customerData }) {
       setIsSaving(false);
     }
   };
+
+  // --- Dynamic Simulator Calculation (Replicates Excel Math) ---
+  const simulationTotal = useMemo(() => {
+    const getRate = (id) => Number(receivingCharges.find(c => c.id === id)?.value || 0);
+
+    const baseRate = getRate('baseRatePerLineItem');
+    const allowance = getRate('baseWeightAllowance');
+    const overageRate = getRate('overageRatePerPound');
+    const ppfRate = getRate('palletProcessingFeeRate');
+    const palletRate = getRate('providedPalletFeeRate');
+
+    const baseTotal = baseRate * simLineItems;
+    // IF(D4>=100, E6*(D4-100), 0)
+    const overageTotal = simWeight >= allowance ? (simWeight - allowance) * overageRate : 0;
+    const ppfTotal = ppfRate * simPPF;
+    const palletTotal = palletRate * simPallet;
+
+    return baseTotal + overageTotal + ppfTotal + palletTotal;
+  }, [receivingCharges, simWeight, simLineItems, simPPF, simPallet]);
 
   if (!hasReadAccess) {
     return (
@@ -120,7 +167,6 @@ export default function ProcessingTab({ customerData }) {
     );
   }
 
-  // Helper component to render the rules text securely AND dynamically
   const RulesCard = ({ title, chargesData }) => (
     <div className="bg-white/40 backdrop-blur-xl border border-white/60 p-6 rounded-3xl shadow-sm">
       <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
@@ -129,11 +175,12 @@ export default function ProcessingTab({ customerData }) {
       </h3>
       <div className="space-y-4">
         {chargesData.map((item, idx) => {
-          // Resolve current value, default to "0.00" if blank
-          const displayVal = item.value !== '' && !isNaN(item.value) ? Number(item.value).toFixed(2) : '0.00';
+          const displayVal = item.value !== '' && !isNaN(item.value) 
+            ? item.id === 'baseWeightAllowance' ? Number(item.value).toFixed(0) : Number(item.value).toFixed(2) 
+            : '0';
           
           return (
-            <div key={idx} className="flex gap-4 p-4 bg-white/50 border border-white/80 rounded-2xl">
+            <div key={idx} className="flex gap-4 p-4 bg-white/50 border border-white/80 rounded-2xl shadow-sm hover:shadow transition-all">
               <div className="flex-shrink-0 mt-0.5">
                 <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2"></div>
               </div>
@@ -150,20 +197,21 @@ export default function ProcessingTab({ customerData }) {
     </div>
   );
 
+  const isDataLoading = processingStatus === 'loading' || receivingStatus === 'loading';
+  const inputClass = "w-full bg-white/60 border border-slate-200 focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 rounded-lg px-3 py-2.5 text-sm font-bold text-slate-800 outline-none transition-all placeholder:text-slate-400 text-center";
+
   return (
     <div className="space-y-6">
       
       {/* Top Action Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        
-        {/* Main Navigation */}
         <div className="flex gap-2 p-1 bg-white/40 border border-white/60 rounded-xl w-fit shadow-sm backdrop-blur-md">
           {['Processing', 'Receiving'].map(tab => (
             <button 
               key={tab} 
               onClick={() => {
                 setActiveMainTab(tab);
-                setActiveSubView('Form'); // Reset to form view when switching main tabs
+                setActiveSubView('Form'); 
               }}
               className={`px-5 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${
                 activeMainTab === tab ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
@@ -174,11 +222,10 @@ export default function ProcessingTab({ customerData }) {
           ))}
         </div>
 
-        {/* Save Button for Admins (Only visible if looking at the Form) */}
-        {activeMainTab === 'Processing' && activeSubView === 'Form' && hasWriteAccess && (
+        {activeSubView === 'Form' && hasWriteAccess && (
           <button 
-            onClick={handleSaveProcessing}
-            disabled={isSaving || status === 'loading'}
+            onClick={handleSaveConfiguration}
+            disabled={isSaving || isDataLoading}
             className="flex items-center gap-2 px-6 py-2.5 bg-brand-gold text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-brand-gold/20 hover:scale-105 transition-all active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
           >
             {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
@@ -187,7 +234,7 @@ export default function ProcessingTab({ customerData }) {
         )}
       </div>
 
-      {/* Sub-View Toggles (Form vs Rules) */}
+      {/* Sub-View Toggles */}
       <div className="flex items-center gap-3 border-b border-slate-200/60 pb-3">
         <button 
           onClick={() => setActiveSubView('Form')}
@@ -208,7 +255,7 @@ export default function ProcessingTab({ customerData }) {
       </div>
 
       {/* View Content Logic */}
-      {status === 'loading' ? (
+      {isDataLoading ? (
         <div className="flex justify-center items-center py-20">
           <Loader2 size={32} className="animate-spin text-brand-gold" />
         </div>
@@ -231,16 +278,72 @@ export default function ProcessingTab({ customerData }) {
           {/* Receiving Route */}
           {activeMainTab === 'Receiving' && (
             activeSubView === 'Form' ? (
-              <ChargeList 
-                title="Order Receiving Fees" 
-                charges={receivingCharges} 
-                setCharges={setReceivingCharges} 
-              />
+              <div className="space-y-8">
+                <ChargeList 
+                  title="Order Receiving Fees" 
+                  charges={receivingCharges} 
+                  setCharges={setReceivingCharges} 
+                />
+
+                {/* --- Interactive Pricing Simulator --- */}
+                <div className="bg-white/40 backdrop-blur-xl border border-white/60 p-6 rounded-3xl shadow-sm">
+                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
+                    <Calculator size={16} className="text-brand-gold" />
+                    Receiving Simulator
+                  </h3>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block text-center">Weight (lbs)</label>
+                      <input 
+                        type="number" 
+                        value={simWeight}
+                        onChange={(e) => setSimWeight(Number(e.target.value))}
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block text-center"># of Line Items</label>
+                      <input 
+                        type="number" 
+                        value={simLineItems}
+                        onChange={(e) => setSimLineItems(Number(e.target.value))}
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block text-center">PPF</label>
+                      <input 
+                        type="number" 
+                        value={simPPF}
+                        onChange={(e) => setSimPPF(Number(e.target.value))}
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block text-center">Pallet</label>
+                      <input 
+                        type="number" 
+                        value={simPallet}
+                        onChange={(e) => setSimPallet(Number(e.target.value))}
+                        className={inputClass}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Result Bar */}
+                  <div className="bg-[#0f172a] rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 border border-[#1e293b] shadow-inner">
+                    <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Calculated Job Total</span>
+                    <span className="text-3xl font-black text-emerald-400 tracking-tight">
+                      ${simulationTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              </div>
             ) : (
               <RulesCard title="Receiving" chargesData={receivingCharges} />
             )
           )}
-
         </div>
       )}
     </div>

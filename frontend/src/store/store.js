@@ -20,6 +20,7 @@ import uploadReducer from './slices/uploadSlice';
 import cartReducer from './slices/cartSlice';
 import rateReducer from './slices/rateSlice'; 
 import processingChargeReducer from './slices/processingChargeSlice';
+import receivingChargeReducer from './slices/receivingChargeSlice'; // Import the receiving charge slice
 
 // Vendors
 import vendorReducer from './slices/vendorSlice';
@@ -45,7 +46,7 @@ export const store = configureStore({
     cart: cartReducer,
     rates: rateReducer, 
     processingCharges: processingChargeReducer, // Registered processing charge reducer
-    
+    receivingCharges: receivingChargeReducer, // Registered receiving charge reducer
     // 3. Vendors
     vendors: vendorReducer,
 

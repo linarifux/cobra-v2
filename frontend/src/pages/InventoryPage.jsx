@@ -184,7 +184,7 @@ export default function InventoryPage() {
       locationId: item.location?._id || '',
       typePiece: item.typePiece?.typeName || 'Unassigned',
       price: item.price ?? 0,
-      available: item.available ?? item.unitsOnHand ?? 0,
+      available: item.available ?? 0,
       onOrder: item.pipelineSupply ?? item.openOrders ?? 0,
       minThreshold: item.min ?? item.safetyBuffer ?? 0,
     }));

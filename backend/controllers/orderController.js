@@ -241,7 +241,7 @@ export const createOrder = catchAsync(async (req, res, next) => {
         await Inventory.findOneAndUpdate(
           { sku: item.sku, customer: order.customer },
           {
-            $inc: { available: -deduction, unitsOnHand: -deduction },$push: {
+            $inc: { available: -deduction },$push: {
               auditLedger: {
                 event: 'Order Placed',
                 referenceId: order.orderNumber || order._id.toString(),
@@ -411,7 +411,7 @@ export const updateOrder = catchAsync(async (req, res, next) => {
           await Inventory.findOneAndUpdate(
             { sku: item.sku, customer: order.customer },
             {
-              $inc: { available: restockQty, unitsOnHand: restockQty },$push: {
+              $inc: { available: restockQty },$push: {
                 auditLedger: {
                   event: 'Order Cancellation Restock',
                   referenceId: order.orderNumber || order._id.toString(),
@@ -526,7 +526,7 @@ export const deleteOrder = catchAsync(async (req, res, next) => {
         await Inventory.findOneAndUpdate(
           { sku: item.sku, customer: order.customer },
           {
-            $inc: { available: restockQty, unitsOnHand: restockQty },$push: {
+            $inc: { available: restockQty },$push: {
               auditLedger: {
                 event: 'Order Deletion Restock',
                 referenceId: order.orderNumber || order._id.toString(),

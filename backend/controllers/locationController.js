@@ -21,7 +21,7 @@ export const createLocation = catchAsync(async (req, res, next) => {
   // 3. Populate the nested inventory so the frontend immediately gets the SKU/Name
   location = await location.populate({
     path: 'assignedMaterials.inventory',
-    select: 'itemName sku unitCost unitsOnHand'
+    select: 'itemName sku unitCost available'
   });
 
   res.status(201).json({
@@ -39,7 +39,7 @@ export const getAllLocations = catchAsync(async (req, res, next) => {
     .sort('designation')
     .populate({
       path: 'assignedMaterials.inventory',
-      select: 'itemName sku unitCost unitsOnHand'
+      select: 'itemName sku unitCost available'
     });
 
   res.status(200).json({
@@ -55,7 +55,7 @@ export const getLocationById = catchAsync(async (req, res, next) => {
   const location = await Location.findById(req.params.id)
     .populate({
       path: 'assignedMaterials.inventory',
-      select: 'itemName sku unitCost unitsOnHand'
+      select: 'itemName sku unitCost available'
     });
 
   if (!location) {
@@ -119,7 +119,7 @@ export const updateLocation = catchAsync(async (req, res, next) => {
   // 3. Repopulate the updated document before sending it back to the client
   location = await location.populate({
     path: 'assignedMaterials.inventory',
-    select: 'itemName sku unitCost unitsOnHand'
+    select: 'itemName sku unitCost available'
   });
 
   res.status(200).json({

@@ -167,12 +167,11 @@ export default function CreateOrderPage() {
         
         const stockItem = inventory.find(inv => inv._id === item.inventoryId);
         if (stockItem) {
-          const currentStock = Number(stockItem.unitsOnHand) || Number(stockItem.available) || 0;
+          const currentStock = Number(stockItem.available) || 0;
           const newStock = Math.max(0, currentStock - Number(item.quantity)); 
           
           const updatedData = { 
-            ...stockItem, 
-            unitsOnHand: newStock, 
+            ...stockItem,
             available: newStock 
           };
           

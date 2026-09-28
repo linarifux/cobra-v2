@@ -551,7 +551,7 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
                   <div>
                     <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest block mb-1">Current Stock Level</span>
                     <span className="text-2xl font-black text-emerald-400 font-mono drop-shadow-md tracking-tight">
-                      {selectedInvDetails.available || selectedInvDetails.unitsOnHand || 0}
+                      {selectedInvDetails.available || 0}
                     </span>
                   </div>
                   <div className="text-right">

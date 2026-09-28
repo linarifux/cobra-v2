@@ -91,7 +91,6 @@ const inventorySchema = new mongoose.Schema(
       default: 0,
       min: [0, 'Available units cannot be negative outside of ledger calculations']
     },
-    unitsOnHand: { type: Number, default: 0 }, 
     openOrders: { type: Number, default: 0 },
     qtyLastReceived: { type: Number, default: 0 },
     dateLastReceived: { type: Date },
@@ -120,7 +119,7 @@ const inventorySchema = new mongoose.Schema(
 
 // Virtual field to calculate Total Asset Pool Valuation on the fly
 inventorySchema.virtual('totalValuation').get(function() {
-  const currentQty = this.available || this.unitsOnHand || 0;
+  const currentQty = this.available || 0;
   const currentCost = this.price || this.unitCost || 0;
   return (currentQty * currentCost).toFixed(2);
 });

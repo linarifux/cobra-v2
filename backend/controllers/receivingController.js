@@ -34,7 +34,6 @@ export const createReceiving = catchAsync(async (req, res, next) => {
   
   if (inventoryItem) {
     inventoryItem.available += receiving.quantity;
-    inventoryItem.unitsOnHand += receiving.quantity; // Keep internal fallback synced
     inventoryItem.qtyLastReceived = receiving.quantity;
     inventoryItem.dateLastReceived = receiving.dateReceived || Date.now();
     
@@ -157,7 +156,6 @@ export const updateReceiving = catchAsync(async (req, res, next) => {
       const inventoryItem = await Inventory.findById(newInventoryId);
       if (inventoryItem) {
         inventoryItem.available += delta;
-        inventoryItem.unitsOnHand += delta;
         inventoryItem.auditLedger.push({
           event: 'Receipt Modification',
           referenceId: receiving.receivingId,
@@ -171,7 +169,6 @@ export const updateReceiving = catchAsync(async (req, res, next) => {
     const oldInv = await Inventory.findById(oldInventoryId);
     if (oldInv) {
       oldInv.available -= oldQuantity;
-      oldInv.unitsOnHand -= oldQuantity;
       oldInv.auditLedger.push({
         event: 'Receipt Reassigned (Removed)',
         referenceId: receiving.receivingId,
@@ -183,7 +180,6 @@ export const updateReceiving = catchAsync(async (req, res, next) => {
     const newInv = await Inventory.findById(newInventoryId);
     if (newInv) {
       newInv.available += newQuantity;
-      newInv.unitsOnHand += newQuantity;
       newInv.qtyLastReceived = newQuantity;
       newInv.dateLastReceived = receiving.dateReceived || Date.now();
       newInv.auditLedger.push({
@@ -232,7 +228,6 @@ export const deleteReceiving = catchAsync(async (req, res, next) => {
   const inventoryItem = await Inventory.findById(receiving.inventoryItem);
   if (inventoryItem) {
     inventoryItem.available -= receiving.quantity;
-    inventoryItem.unitsOnHand -= receiving.quantity;
     inventoryItem.auditLedger.push({
       event: 'Receipt Deleted / Reversed',
       referenceId: receiving.receivingId,
