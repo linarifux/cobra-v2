@@ -44,6 +44,8 @@ export const createReceivingCharge = catchAsync(async (req, res, next) => {
     return next(new AppError('A receiving configuration already exists for this customer. Please update the existing one.', 400));
   }
 
+  
+
   const charge = await ReceivingCharge.create(req.body);
   await charge.populate('customer', 'customerName');
 

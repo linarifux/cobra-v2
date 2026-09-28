@@ -40,18 +40,10 @@ const receivingSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Vendor'
     },
-    fallbackVendor: {
-      type: String,
-      trim: true
-    },
     
     carrier: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'VendorCarrier'
-    },
-    fallbackCarrier: {
-      type: String,
-      trim: true
     },
     
     // Vendor Contact Fields (Cached at time of receipt)

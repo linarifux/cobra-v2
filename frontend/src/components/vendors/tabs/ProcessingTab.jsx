@@ -23,11 +23,11 @@ const CHARGE_MAP = [
 ];
 
 const RECEIVING_CHARGE_MAP = [
-  { id: 'baseRatePerLineItem', name: 'Per Line item up to Base Weight', ruleFn: (v) => `Base fee applied per line item ($${v}).` },
-  { id: 'baseWeightAllowance', name: 'Base Weight Allowance', ruleFn: (v) => `Weight included before overage triggers (${Number(v).toFixed(0)} lbs).` },
-  { id: 'overageRatePerPound', name: 'Each additional pound', ruleFn: (v) => `Fee per pound over the weight allowance ($${v}).` },
-  { id: 'palletProcessingFeeRate', name: 'Pallet Processing Fee (PPF)', ruleFn: (v) => `Processing fee for client-provided pallets ($${v}).` },
-  { id: 'providedPalletFeeRate', name: 'Pallet Fee (Provided)', ruleFn: (v) => `Fee for pallets provided to the client ($${v}).` }
+  { id: 'baseRatePerLineItem', name: 'Base Rate Per Line Item', ruleFn: (v) => `Base fee applied per line item ($${v}).` },
+  { id: 'baseWeightAllowance', name: 'Base Weight Allowance', ruleFn: (v) => `Weight included before overage triggers (${Number(v || 0).toFixed(0)} lbs).` },
+  { id: 'overageRatePerPound', name: 'Overage Rate Per Pound', ruleFn: (v) => `Fee per pound over the weight allowance ($${v}).` },
+  { id: 'palletProcessingFeeRate', name: 'Pallet Processing Fee Rate', ruleFn: (v) => `Processing fee for client-provided pallets ($${v}).` },
+  { id: 'providedPalletFeeRate', name: 'Provided Pallet Fee Rate', ruleFn: (v) => `Fee for pallets provided to the client ($${v}).` }
 ];
 
 export default function ProcessingTab({ customerData }) {
@@ -51,8 +51,9 @@ export default function ProcessingTab({ customerData }) {
   const { items: globalCharges = [], status: processingStatus } = useSelector(state => state.processingCharges);
   const { items: globalReceiving = [], status: receivingStatus } = useSelector(state => state.receivingCharges);
   
-  const [processingCharges, setProcessingCharges] = useState([]);
-  const [receivingCharges, setReceivingCharges] = useState([]);
+  // Initialize with mapped arrays to ensure fields always render even if API is empty
+  const [processingCharges, setProcessingCharges] = useState(() => CHARGE_MAP.map(c => ({...c, value: ''})));
+  const [receivingCharges, setReceivingCharges] = useState(() => RECEIVING_CHARGE_MAP.map(c => ({...c, value: ''})));
 
   const isOrderPortal = user?.portal === 'order';
   const isSuperUser = user?.role === 'super_user';
@@ -66,37 +67,34 @@ export default function ProcessingTab({ customerData }) {
     }
   }, [targetCustomerId, dispatch]);
 
+  // Continuously map incoming global Redux data without waiting strictly for a 'succeeded' flag
   useEffect(() => {
-    if (processingStatus === 'succeeded') {
-      const activeConfig = globalCharges.length > 0 ? globalCharges[0] : null;
-      const mappedUIArray = CHARGE_MAP.map(field => ({
-        id: field.id,
-        name: field.name,
-        ruleFn: field.ruleFn, 
-        value: activeConfig && activeConfig[field.id] !== undefined && activeConfig[field.id] !== null
-          ? Number(activeConfig[field.id]).toFixed(2) 
-          : ''
-      }));
-      setProcessingCharges(mappedUIArray);
-    }
-  }, [globalCharges, processingStatus]);
+    const activeConfig = globalCharges.length > 0 ? globalCharges[0] : null;
+    const mappedUIArray = CHARGE_MAP.map(field => ({
+      id: field.id,
+      name: field.name,
+      ruleFn: field.ruleFn, 
+      value: activeConfig && activeConfig[field.id] !== undefined && activeConfig[field.id] !== null
+        ? Number(activeConfig[field.id]).toFixed(2) 
+        : ''
+    }));
+    setProcessingCharges(mappedUIArray);
+  }, [globalCharges]);
 
   useEffect(() => {
-    if (receivingStatus === 'succeeded') {
-      const activeConfig = globalReceiving.length > 0 ? globalReceiving[0] : null;
-      const mappedUIArray = RECEIVING_CHARGE_MAP.map(field => ({
-        id: field.id,
-        name: field.name,
-        ruleFn: field.ruleFn, 
-        value: activeConfig && activeConfig[field.id] !== undefined && activeConfig[field.id] !== null
-          ? field.id === 'baseWeightAllowance' 
-            ? Number(activeConfig[field.id]).toString()
-            : Number(activeConfig[field.id]).toFixed(2) 
-          : ''
-      }));
-      setReceivingCharges(mappedUIArray);
-    }
-  }, [globalReceiving, receivingStatus]);
+    const activeConfig = globalReceiving.length > 0 ? globalReceiving[0] : null;
+    const mappedUIArray = RECEIVING_CHARGE_MAP.map(field => ({
+      id: field.id,
+      name: field.name,
+      ruleFn: field.ruleFn, 
+      value: activeConfig && activeConfig[field.id] !== undefined && activeConfig[field.id] !== null
+        ? field.id === 'baseWeightAllowance' 
+          ? Number(activeConfig[field.id]).toString()
+          : Number(activeConfig[field.id]).toFixed(2) 
+        : ''
+    }));
+    setReceivingCharges(mappedUIArray);
+  }, [globalReceiving]);
 
   const handleSaveConfiguration = async () => {
     if (!hasWriteAccess) return toast.error("You do not have permission to modify pricing.");
@@ -280,7 +278,7 @@ export default function ProcessingTab({ customerData }) {
             activeSubView === 'Form' ? (
               <div className="space-y-8">
                 <ChargeList 
-                  title="Order Receiving Fees" 
+                  title="Receiving Configuration Rates" 
                   charges={receivingCharges} 
                   setCharges={setReceivingCharges} 
                 />
@@ -333,7 +331,7 @@ export default function ProcessingTab({ customerData }) {
 
                   {/* Result Bar */}
                   <div className="bg-[#0f172a] rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 border border-[#1e293b] shadow-inner">
-                    <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Calculated Job Total</span>
+                    <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Calculated Total Cost</span>
                     <span className="text-3xl font-black text-emerald-400 tracking-tight">
                       ${simulationTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>

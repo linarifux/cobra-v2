@@ -29,6 +29,7 @@ import cartRoutes from './routes/cartRoutes.js';
 import vendorRoutes from './routes/vendorRoutes.js';
 import vendorCarrierRoutes from './routes/vendorCarrierRoutes.js';
 import processingChargeRoutes from './routes/processingChargeRoutes.js';
+import receivingChargeRoutes from './routes/receivingChargeRoutes.js';
 
 // 1. Initialize Database Connection
 connectDB();
@@ -92,6 +93,7 @@ app.use('/api/v1/cart', cartRoutes);
 app.use('/api/v1/vendors', vendorRoutes);
 app.use('/api/v1/vendor-carriers', vendorCarrierRoutes);
 app.use('/api/v1/processing-charges', processingChargeRoutes);
+app.use('/api/v1/receiving-charges', receivingChargeRoutes);
 
 // 5. Global Error Handler
 app.use(globalErrorHandler);
