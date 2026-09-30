@@ -6,7 +6,7 @@ import ChargeList from './ChargeList';
 
 // Redux Actions
 import { fetchProcessingChargesByCustomer, updateProcessingCharge, createProcessingCharge } from '../../../store/slices/processingChargeSlice';
-import { fetchReceivingCharges, updateReceivingCharge, createReceivingCharge } from '../../../store/slices/receivingChargeSlice';
+import { fetchReceivingChargesByCustomer, updateReceivingCharge, createReceivingCharge } from '../../../store/slices/receivingChargeSlice';
 
 // Map structure containing exact rule definitions.
 const CHARGE_MAP = [
@@ -26,8 +26,9 @@ const RECEIVING_CHARGE_MAP = [
   { id: 'baseRatePerLineItem', name: 'Base Rate Per Line Item', ruleFn: (v) => `Base fee applied per line item ($${v}).` },
   { id: 'baseWeightAllowance', name: 'Base Weight Allowance', ruleFn: (v) => `Weight included before overage triggers (${Number(v || 0).toFixed(0)} lbs).` },
   { id: 'overageRatePerPound', name: 'Overage Rate Per Pound', ruleFn: (v) => `Fee per pound over the weight allowance ($${v}).` },
+  { id: 'weightOfPallet', name: 'Standard Pallet Weight', ruleFn: (v) => `Weight of an empty pallet added to total shipping weight (${Number(v || 0).toFixed(0)} lbs).` },
   { id: 'palletProcessingFeeRate', name: 'Pallet Processing Fee Rate', ruleFn: (v) => `Processing fee for client-provided pallets ($${v}).` },
-  { id: 'providedPalletFeeRate', name: 'Provided Pallet Fee Rate', ruleFn: (v) => `Fee for pallets provided to the client ($${v}).` }
+  { id: 'suppliedPalletFeeRate', name: 'Supplied Pallet Fee Rate', ruleFn: (v) => `Fee for pallets provided to the client ($${v}).` }
 ];
 
 export default function ProcessingTab({ customerData }) {
@@ -39,7 +40,7 @@ export default function ProcessingTab({ customerData }) {
   
   const [isSaving, setIsSaving] = useState(false);
 
-  // Simulation State for Receiving Calculator (Mapped strictly to spreadsheet inputs)
+  // Simulation State for Receiving Calculator
   const [simWeight, setSimWeight] = useState(2116);
   const [simLineItems, setSimLineItems] = useState(1);
   const [simPPF, setSimPPF] = useState(2);
@@ -63,11 +64,10 @@ export default function ProcessingTab({ customerData }) {
   useEffect(() => {
     if (targetCustomerId) {
       dispatch(fetchProcessingChargesByCustomer(targetCustomerId));
-      dispatch(fetchReceivingCharges(targetCustomerId));
+      dispatch(fetchReceivingChargesByCustomer(targetCustomerId)); // Updated to new fetch thunk
     }
   }, [targetCustomerId, dispatch]);
 
-  // Continuously map incoming global Redux data without waiting strictly for a 'succeeded' flag
   useEffect(() => {
     const activeConfig = globalCharges.length > 0 ? globalCharges[0] : null;
     const mappedUIArray = CHARGE_MAP.map(field => ({
@@ -88,13 +88,17 @@ export default function ProcessingTab({ customerData }) {
       name: field.name,
       ruleFn: field.ruleFn, 
       value: activeConfig && activeConfig[field.id] !== undefined && activeConfig[field.id] !== null
-        ? field.id === 'baseWeightAllowance' 
+        ? (field.id === 'baseWeightAllowance' || field.id === 'weightOfPallet')
           ? Number(activeConfig[field.id]).toString()
           : Number(activeConfig[field.id]).toFixed(2) 
         : ''
     }));
     setReceivingCharges(mappedUIArray);
   }, [globalReceiving]);
+
+  const handleReceivingValueChange = (id, newValue) => {
+    setReceivingCharges(receivingCharges.map(c => c.id === id ? { ...c, value: newValue } : c));
+  };
 
   const handleSaveConfiguration = async () => {
     if (!hasWriteAccess) return toast.error("You do not have permission to modify pricing.");
@@ -136,19 +140,24 @@ export default function ProcessingTab({ customerData }) {
     }
   };
 
-  // --- Dynamic Simulator Calculation (Replicates Excel Math) ---
+  // --- Dynamic Simulator Calculation ---
   const simulationTotal = useMemo(() => {
     const getRate = (id) => Number(receivingCharges.find(c => c.id === id)?.value || 0);
 
     const baseRate = getRate('baseRatePerLineItem');
     const allowance = getRate('baseWeightAllowance');
     const overageRate = getRate('overageRatePerPound');
+    const palletWeight = getRate('weightOfPallet');
     const ppfRate = getRate('palletProcessingFeeRate');
-    const palletRate = getRate('providedPalletFeeRate');
+    const palletRate = getRate('suppliedPalletFeeRate');
+
+    // Calculate dynamic payload weight including standard pallet weight deductions
+    const totalPallets = simPPF + simPallet;
+    const combinedWeight = simWeight + (totalPallets * palletWeight);
 
     const baseTotal = baseRate * simLineItems;
-    // IF(D4>=100, E6*(D4-100), 0)
-    const overageTotal = simWeight >= allowance ? (simWeight - allowance) * overageRate : 0;
+    // Apply overage rate to the combined weight of products + pallets
+    const overageTotal = combinedWeight >= allowance ? (combinedWeight - allowance) * overageRate : 0;
     const ppfTotal = ppfRate * simPPF;
     const palletTotal = palletRate * simPallet;
 
@@ -174,7 +183,7 @@ export default function ProcessingTab({ customerData }) {
       <div className="space-y-4">
         {chargesData.map((item, idx) => {
           const displayVal = item.value !== '' && !isNaN(item.value) 
-            ? item.id === 'baseWeightAllowance' ? Number(item.value).toFixed(0) : Number(item.value).toFixed(2) 
+            ? (item.id === 'baseWeightAllowance' || item.id === 'weightOfPallet') ? Number(item.value).toFixed(0) : Number(item.value).toFixed(2) 
             : '0';
           
           return (
@@ -277,22 +286,48 @@ export default function ProcessingTab({ customerData }) {
           {activeMainTab === 'Receiving' && (
             activeSubView === 'Form' ? (
               <div className="space-y-8">
-                <ChargeList 
-                  title="Receiving Configuration Rates" 
-                  charges={receivingCharges} 
-                  setCharges={setReceivingCharges} 
-                />
+                
+                {/* --- Grid Layout for Receiving Configuration Rates --- */}
+                <div className="space-y-4">
+                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Receiving Configuration Rates</h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {receivingCharges.map((charge) => (
+                      <div key={charge.id} className="flex justify-between items-center p-4 bg-white/50 rounded-xl border border-white/50 shadow-sm transition-all hover:bg-white/80">
+                        <p className="font-bold text-sm text-slate-800">{charge.name}</p>
+                        <div className="flex items-center gap-2 pl-4">
+                          <div className="relative">
+                            {charge.id !== 'baseWeightAllowance' && charge.id !== 'weightOfPallet' && (
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
+                            )}
+                            <input 
+                              type="number" 
+                              step="any"
+                              className={`w-28 bg-white p-2 ${charge.id !== 'baseWeightAllowance' && charge.id !== 'weightOfPallet' ? 'pl-7' : 'pl-3'} rounded-lg text-sm font-bold text-slate-900 border border-slate-200 outline-none focus:ring-2 focus:ring-brand-gold/20 transition-all`} 
+                              value={charge.value} 
+                              onChange={(e) => handleReceivingValueChange(charge.id, e.target.value)}
+                              placeholder="0.00"
+                            />
+                          </div>
+                          {(charge.id === 'baseWeightAllowance' || charge.id === 'weightOfPallet') && (
+                            <span className="text-xs font-bold text-slate-500 ml-1">lbs</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
                 {/* --- Interactive Pricing Simulator --- */}
                 <div className="bg-white/40 backdrop-blur-xl border border-white/60 p-6 rounded-3xl shadow-sm">
-                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
-                    <Calculator size={16} className="text-brand-gold" />
+                  <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
+                    <Calculator size={14} className="text-brand-gold" />
                     Receiving Simulator
                   </h3>
                   
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                     <div>
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block text-center">Weight (lbs)</label>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block text-center">Payload Weight (lbs)</label>
                       <input 
                         type="number" 
                         value={simWeight}
@@ -310,7 +345,7 @@ export default function ProcessingTab({ customerData }) {
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block text-center">PPF</label>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block text-center">Incoming PPF</label>
                       <input 
                         type="number" 
                         value={simPPF}
@@ -319,7 +354,7 @@ export default function ProcessingTab({ customerData }) {
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block text-center">Pallet</label>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block text-center">Provided Pallet</label>
                       <input 
                         type="number" 
                         value={simPallet}

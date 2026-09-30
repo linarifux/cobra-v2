@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { createPortal } from 'react-dom'; // <-- NEW IMPORT
+import { createPortal } from 'react-dom'; 
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Package, Plus, Trash2, X, Loader2, DollarSign, 
-  Filter, AlertCircle, Calendar, Truck, Building2, MapPin, Check, Store 
+  Filter, AlertCircle, Calendar, Truck, Building2, MapPin, Check, Store, Calculator
 } from 'lucide-react';
 
 // Redux Thunks
@@ -12,6 +12,7 @@ import { createReceivingLog, updateReceivingLog } from '../../store/slices/recei
 import { fetchInventory } from '../../store/slices/inventorySlice'; 
 import { fetchVendors } from '../../store/slices/vendorSlice'; 
 import { fetchVendorCarriers } from '../../store/slices/vendorCarrierSlice';
+import { fetchReceivingChargesByCustomer } from '../../store/slices/receivingChargeSlice';
 
 const INITIAL_FORM_STATE = {
   dateReceived: new Date().toISOString().split('T')[0],
@@ -34,10 +35,8 @@ const INITIAL_FORM_STATE = {
   cartonBreakdown: [{ id: Date.now(), cartons: '', unitsPerCarton: '', weightPerCarton: '' }],
   quantity: 0,
   numberOfCartons: 0,
-  totalWeight: 0, 
-  pallets: '',
-  palletProcessingFee: '',
-  charge: ''
+  suppliedPallets: '',
+  palletsReceived: ''
 };
 
 export default function ReceivingModal({ isOpen, onClose, record }) {
@@ -61,6 +60,9 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
   const { items: divisions = [] } = useSelector(state => state.divisions || {});
   const { items: vendors = [], status: vendorStatus } = useSelector(state => state.vendors || {}); 
   const { items: vendorCarriers = [], status: carrierStatus } = useSelector(state => state.vendorCarriers || {});
+  
+  // Receiving Charges Pricing Model
+  const { items: customerReceivingCharges = [], status: receivingChargeStatus } = useSelector(state => state.receivingCharges || {});
 
   // Fetch missing relational data
   useEffect(() => {
@@ -69,6 +71,13 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
       if (carrierStatus === 'idle') dispatch(fetchVendorCarriers());
     }
   }, [isOpen, vendorStatus, carrierStatus, dispatch]);
+
+  // Fetch dynamic pricing model when customer is selected
+  useEffect(() => {
+    if (formData.customer) {
+      dispatch(fetchReceivingChargesByCustomer(formData.customer)); 
+    }
+  }, [formData.customer, dispatch]);
 
   // Map Record to Form State
   useEffect(() => {
@@ -106,7 +115,6 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
           }
         }
 
-        // Determine correct display strings
         const initVendorStr = record.fallbackVendor || record.vendor?.vendorName || (typeof record.vendor === 'string' ? record.vendor : '');
         const initCarrierStr = record.fallbackCarrier || record.carrier?.carrierName || (typeof record.carrier === 'string' ? record.carrier : '');
 
@@ -131,10 +139,8 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
           cartonBreakdown: breakdown,
           quantity: record.quantity || 0,
           numberOfCartons: record.numberOfCartons || breakdown.reduce((sum, r) => sum + (Number(r.cartons)||0), 0),
-          totalWeight: record.totalWeight || breakdown.reduce((sum, r) => sum + ((Number(r.cartons)||0) * (Number(r.weightPerCarton)||0)), 0),
-          pallets: record.pallets || '',
-          palletProcessingFee: record.palletProcessingFee || '',
-          charge: record.charge || ''
+          suppliedPallets: record.suppliedPallets || '',
+          palletsReceived: record.palletsReceived || ''
         });
 
         setVendorSearch(initVendorStr);
@@ -194,6 +200,46 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
     return vendors.filter(v => v.isActive && v.vendorName.toLowerCase().includes(vendorSearch.toLowerCase()));
   }, [vendors, vendorSearch]);
 
+  // --- Dynamic Calculations Based on Real Pricing Model ---
+  const activePricingConfig = useMemo(() => {
+    if (customerReceivingCharges && customerReceivingCharges.length > 0) {
+      return customerReceivingCharges[0];
+    }
+    return null;
+  }, [customerReceivingCharges]);
+
+  const calculatedTotalWeight = useMemo(() => {
+    // Determine the pallet weight. If config isn't loaded yet, default to 40.
+    const palletWeight = activePricingConfig?.weightOfPallet ?? 40; 
+
+    const cartonsWeight = formData.cartonBreakdown.reduce((sum, row) => sum + ((Number(row.cartons) || 0) * (Number(row.weightPerCarton) || 0)), 0);
+    const palletsWeight = ((Number(formData.suppliedPallets) || 0) + (Number(formData.palletsReceived) || 0)) * palletWeight;
+    
+    return cartonsWeight + palletsWeight;
+  }, [formData.cartonBreakdown, formData.suppliedPallets, formData.palletsReceived, activePricingConfig]);
+
+  const simulationTotal = useMemo(() => {
+    if (!activePricingConfig) return 0; // Return 0 if the config hasn't loaded to prevent flash of generic prices
+
+    const baseRate = activePricingConfig.baseRatePerLineItem ?? 0;
+    const allowance = activePricingConfig.baseWeightAllowance ?? 0;
+    const overageRate = activePricingConfig.overageRatePerPound ?? 0;
+    const ppfRate = activePricingConfig.palletProcessingFeeRate ?? 0;
+    const providedRate = activePricingConfig.providedPalletFeeRate ?? 0;
+
+    const simLineItems = 1; // Standard 1 line item per receiving receipt
+    const simWeight = calculatedTotalWeight;
+    const simPPF = Number(formData.palletsReceived) || 0;
+    const simPallet = Number(formData.suppliedPallets) || 0;
+
+    const baseTotal = baseRate * simLineItems;
+    const overageTotal = simWeight >= allowance ? (simWeight - allowance) * overageRate : 0;
+    const ppfTotal = ppfRate * simPPF;
+    const palletTotal = providedRate * simPallet;
+
+    return baseTotal + overageTotal + ppfTotal + palletTotal;
+  }, [activePricingConfig, calculatedTotalWeight, formData.palletsReceived, formData.suppliedPallets]);
+
   // Handlers
   const handleCustomerChange = (e) => setFormData({ ...formData, customer: e.target.value, division: '', inventoryItem: '', description: '', description2: ''});
   const handleDivisionChange = (e) => setFormData({ ...formData, division: e.target.value, inventoryItem: '', description: '', description2: ''});
@@ -220,7 +266,7 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
   };
 
   const handleAddLocation = (loc) => {
-    const incomingPallets = Number(formData.pallets) || 0;
+    const incomingPallets = (Number(formData.suppliedPallets) || 0) + (Number(formData.palletsReceived) || 0);
     const maxLimit = loc.capacity || loc.maxSkids || loc.maxPallets; 
     const currentUsage = loc.utilized || loc.currentSkids || loc.currentPallets || 0;
 
@@ -248,8 +294,7 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
     const updatedBreakdown = formData.cartonBreakdown.map(row => row.id === id ? { ...row, [field]: value } : row);
     const totalCartons = updatedBreakdown.reduce((sum, row) => sum + (Number(row.cartons) || 0), 0);
     const totalQty = updatedBreakdown.reduce((sum, row) => sum + ((Number(row.cartons) || 0) * (Number(row.unitsPerCarton) || 0)), 0);
-    const totalWgt = updatedBreakdown.reduce((sum, row) => sum + ((Number(row.cartons) || 0) * (Number(row.weightPerCarton) || 0)), 0);
-    setFormData({ ...formData, cartonBreakdown: updatedBreakdown, numberOfCartons: totalCartons, quantity: totalQty, totalWeight: totalWgt });
+    setFormData({ ...formData, cartonBreakdown: updatedBreakdown, numberOfCartons: totalCartons, quantity: totalQty });
   };
 
   const addBreakdownRow = () => setFormData({ ...formData, cartonBreakdown: [...formData.cartonBreakdown, { id: Date.now(), cartons: '', unitsPerCarton: '', weightPerCarton: '' }] });
@@ -258,8 +303,7 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
     const updatedBreakdown = formData.cartonBreakdown.filter(row => row.id !== id);
     const totalCartons = updatedBreakdown.reduce((sum, row) => sum + (Number(row.cartons) || 0), 0);
     const totalQty = updatedBreakdown.reduce((sum, row) => sum + ((Number(row.cartons) || 0) * (Number(row.unitsPerCarton) || 0)), 0);
-    const totalWgt = updatedBreakdown.reduce((sum, row) => sum + ((Number(row.cartons) || 0) * (Number(row.weightPerCarton) || 0)), 0);
-    setFormData({ ...formData, cartonBreakdown: updatedBreakdown, numberOfCartons: totalCartons, quantity: totalQty, totalWeight: totalWgt });
+    setFormData({ ...formData, cartonBreakdown: updatedBreakdown, numberOfCartons: totalCartons, quantity: totalQty });
   };
 
   const handleSaveShipment = async (e) => {
@@ -280,10 +324,12 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
     payload.location = formData.locations.length > 0 ? formData.locations[0] : null; 
     payload.quantity = Number(formData.quantity) || 0;
     payload.numberOfCartons = Number(formData.numberOfCartons) || 0;
-    payload.totalWeight = Number(formData.totalWeight) || 0;
-    payload.pallets = Number(formData.pallets) || 0;
-    payload.palletProcessingFee = Number(formData.palletProcessingFee) || 0;
-    payload.charge = Number(formData.charge) || 0;
+    
+    // Inject strictly mapped calculation properties
+    payload.totalWeight = calculatedTotalWeight;
+    payload.suppliedPallets = Number(formData.suppliedPallets) || 0;
+    payload.palletsReceived = Number(formData.palletsReceived) || 0;
+
     payload.cartonBreakdown = formData.cartonBreakdown.map(r => ({
       cartons: Number(r.cartons) || 0, unitsPerCarton: Number(r.unitsPerCarton) || 0, weightPerCarton: Number(r.weightPerCarton) || 0
     }));
@@ -316,7 +362,6 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
   const cardClass = "bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-5";
   const cardHeaderClass = "text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 border-b border-slate-100 pb-3";
 
-  // Render via createPortal to break out of CSS transforms/animations
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 h-[100dvh] w-screen overflow-hidden">
       {/* Backdrop */}
@@ -328,7 +373,7 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
         onClick={onClose} 
       />
 
-      {/* Centered Form Panel (Removed Drawer classes) */}
+      {/* Centered Form Panel */}
       <motion.div 
         initial={{ opacity: 0, scale: 0.95, y: 20 }} 
         animate={{ opacity: 1, scale: 1, y: 0 }} 
@@ -553,6 +598,7 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
                     <span className="text-2xl font-black text-emerald-400 font-mono drop-shadow-md tracking-tight">
                       {selectedInvDetails.available || 0}
                     </span>
+                    
                   </div>
                   <div className="text-right">
                     <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest block mb-1.5">Asset Categories</span>
@@ -712,29 +758,43 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
               </div>
               <div className="bg-emerald-50 border border-emerald-200/60 p-4 rounded-2xl flex flex-col items-center justify-center shadow-inner">
                 <span className="text-[10px] font-black text-emerald-600/70 uppercase tracking-widest mb-1">Total Wgt (lbs)</span>
-                <span className="text-2xl font-black text-emerald-600 tracking-tight">{formData.totalWeight.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span className="text-2xl font-black text-emerald-600 tracking-tight">{calculatedTotalWeight.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
             </div>
           </div>
 
           {/* Card 4: Pallets & Fees */}
           <div className={cardClass}>
-             <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+            <h3 className={cardHeaderClass}>
+              <Package size={14} className="text-brand-gold" /> Pallets & Weight Configuration
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
-                <label className={labelClass}>Pallets</label>
-                <input type="number" min="0" value={formData.pallets} onChange={(e) => setFormData({...formData, pallets: e.target.value})} disabled={isSubmitting} className={inputClass} />
+                <label className={labelClass}>Supplied Pallets</label>
+                <input type="number" min="0" value={formData.suppliedPallets} onChange={(e) => setFormData({...formData, suppliedPallets: e.target.value})} disabled={isSubmitting} className={inputClass} />
               </div>
               <div>
-                <label className={`${labelClass} flex items-center gap-1`}><DollarSign size={12}/> Pallet Processing Fee</label>
-                <input type="number" step="0.01" min="0" value={formData.palletProcessingFee} onChange={(e) => setFormData({...formData, palletProcessingFee: e.target.value})} disabled={isSubmitting} className={inputClass} />
-              </div>
-              <div>
-                <label className={`${labelClass} flex items-center gap-1`}><DollarSign size={12}/> Applied Charge</label>
-                <div className="relative">
-                   <input type="number" step="0.01" min="0" value={formData.charge} onChange={(e) => setFormData({...formData, charge: e.target.value})} disabled={isSubmitting} className={`${inputClass} !text-emerald-700 !bg-emerald-50/30 !border-emerald-200 focus:!ring-emerald-500/20`} />
-                </div>
+                <label className={labelClass}>Pallets Received</label>
+                <input type="number" min="0" value={formData.palletsReceived} onChange={(e) => setFormData({...formData, palletsReceived: e.target.value})} disabled={isSubmitting} className={inputClass} />
               </div>
             </div>
+            
+            {/* Receiving Calculator Result */}
+            {receivingChargeStatus === 'loading' ? (
+              <div className="flex justify-center p-4">
+                <Loader2 size={24} className="animate-spin text-brand-gold" />
+              </div>
+            ) : (
+              <div className="bg-[#0f172a] rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 border border-[#1e293b] shadow-inner mt-4">
+                <div className="flex items-center gap-3">
+                  <Calculator size={20} className="text-brand-gold" />
+                  <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Calculated Job Total</span>
+                </div>
+                <span className="text-3xl font-black text-emerald-400 tracking-tight">
+                  ${simulationTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            )}
           </div>
 
         </form>

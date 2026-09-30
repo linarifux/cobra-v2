@@ -1,7 +1,7 @@
 import express from 'express';
 import {
   createReceivingCharge,
-  getAllReceivingCharges,
+  getReceivingChargesByCustomer,
   getReceivingCharge,
   updateReceivingCharge,
   deleteReceivingCharge
@@ -15,8 +15,12 @@ router.use(restrictTo('admin', 'super_admin')); // Restrict financial configurat
 
 router
   .route('/')
-  .get(getAllReceivingCharges)
   .post(createReceivingCharge);
+
+// NEW: Strict customer-targeted endpoint
+router
+  .route('/customer/:customerId')
+  .get(getReceivingChargesByCustomer);
 
 router
   .route('/:id')

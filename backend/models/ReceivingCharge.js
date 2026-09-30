@@ -14,7 +14,7 @@ const receivingChargeSchema = new mongoose.Schema(
       required: true,
       default: 15.00 
     },
-    // Weight Overages[cite: 2]
+    // Weight Overages
     baseWeightAllowance: {
       type: Number,
       required: true,
@@ -25,13 +25,18 @@ const receivingChargeSchema = new mongoose.Schema(
       required: true,
       default: 0.15 
     },
-    // Pallet Fees[cite: 2]
+    // Pallet Configuration
+    weightOfPallet: {
+      type: Number,
+      required: true,
+      default: 40 // Default weight of a single pallet in pounds
+    },
     palletProcessingFeeRate: {
       type: Number,
       required: true,
       default: 8.40 // Fee for processing pallets arriving from the client
     },
-    providedPalletFeeRate: {
+    suppliedPalletFeeRate: {
       type: Number,
       required: true,
       default: 12.00 // Fee for pallets MI-KRO provides to the client

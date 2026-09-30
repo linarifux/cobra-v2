@@ -3,19 +3,19 @@ import api from '../../utils/api';
 
 // --- Thunks ---
 
-export const fetchReceivingCharges = createAsyncThunk(
-  'receivingCharges/fetchAll',
-  async (customerId = null, { rejectWithValue }) => {
+export const fetchReceivingChargesByCustomer = createAsyncThunk(
+  'receivingCharges/fetchByCustomer',
+  async (customerId, { rejectWithValue }) => {
     try {
-      const endpoint = customerId ? `/receiving-charges?customer=${customerId}` : '/receiving-charges';
-      const response = await api.get(endpoint);
+      if (!customerId) throw new Error("Customer ID is required to fetch receiving charges.");
+      
+      const response = await api.get(`/receiving-charges/customer/${customerId}`);
       return response.data.data.charges;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || 'Failed to fetch receiving charges');
     }
   }
 );
-
 
 export const createReceivingCharge = createAsyncThunk(
   'receivingCharges/create',
@@ -71,14 +71,14 @@ const receivingChargeSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchReceivingCharges.pending, (state) => {
+      .addCase(fetchReceivingChargesByCustomer.pending, (state) => {
         state.status = 'loading';
       })
-      .addCase(fetchReceivingCharges.fulfilled, (state, action) => {
+      .addCase(fetchReceivingChargesByCustomer.fulfilled, (state, action) => {
         state.status = 'succeeded';
         state.items = action.payload;
       })
-      .addCase(fetchReceivingCharges.rejected, (state, action) => {
+      .addCase(fetchReceivingChargesByCustomer.rejected, (state, action) => {
         state.status = 'failed';
         state.error = action.payload;
       })

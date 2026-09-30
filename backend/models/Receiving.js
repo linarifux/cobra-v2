@@ -79,7 +79,7 @@ const receivingSchema = new mongoose.Schema(
       required: [true, 'Received quantity is required'],
       min: [0, 'Quantity cannot be negative']
     },
-    pallets: { type: Number, default: 0, min: 0 },
+    suppliedPallets: { type: Number, default: 0, min: 0 },
     numberOfCartons: { type: Number, default: 0, min: 0 },
 
     cartonBreakdown: [cartonBreakdownSchema],
@@ -89,8 +89,8 @@ const receivingSchema = new mongoose.Schema(
     unitsPerCarton: { type: Number, default: 0, min: 0 },
     
     totalWeight: { type: Number, default: 0, min: 0 },
-    palletProcessingFee: { type: Number, default: 0, min: 0 },
-    charge: { type: Number, default: 0, min: 0 }
+    totalPalletsReceived: { type: Number, default: 0, min: 0 }
+
   },
   {
     timestamps: true,

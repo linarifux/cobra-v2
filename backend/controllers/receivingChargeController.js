@@ -44,24 +44,25 @@ export const createReceivingCharge = catchAsync(async (req, res, next) => {
     return next(new AppError('A receiving configuration already exists for this customer. Please update the existing one.', 400));
   }
 
-  
-
   const charge = await ReceivingCharge.create(req.body);
   await charge.populate('customer', 'customerName');
 
   res.status(201).json({ status: 'success', data: { charge } });
 });
 
-// @desc    Get all receiving charge configurations
-// @route   GET /api/v1/receiving-charges
-export const getAllReceivingCharges = catchAsync(async (req, res, next) => {
-  const filter = req.query.customer ? { customer: req.query.customer } : {};
-  const charges = await ReceivingCharge.find(filter).populate('customer', 'customerName');
+// @desc    Get receiving charge configuration for a specific customer
+// @route   GET /api/v1/receiving-charges/customer/:customerId
+export const getReceivingChargesByCustomer = catchAsync(async (req, res, next) => {
+  if (!req.params.customerId) {
+    return next(new AppError('Please provide a customer ID', 400));
+  }
+
+  const charges = await ReceivingCharge.find({ customer: req.params.customerId }).populate('customer', 'customerName');
 
   res.status(200).json({ status: 'success', results: charges.length, data: { charges } });
 });
 
-// @desc    Get a single receiving charge configuration
+// @desc    Get a single receiving charge configuration by its ID
 // @route   GET /api/v1/receiving-charges/:id
 export const getReceivingCharge = catchAsync(async (req, res, next) => {
   const charge = await ReceivingCharge.findById(req.params.id).populate('customer', 'customerName');

@@ -12,6 +12,7 @@ import { fetchCategories } from '../store/slices/categorySlice';
 
 import { useConfirm } from '../providers/ConfirmProvider';
 
+
 // Sub-components
 import ReceivingHeader from '../components/receiving/ReceivingHeader';
 import ReceivingFilterBoard from '../components/receiving/ReceivingFilterBoard';
