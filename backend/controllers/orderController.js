@@ -228,6 +228,7 @@ export const createOrder = catchAsync(async (req, res, next) => {
       } else {
         // Standard Confirmation
         await sendOrderConfirmationEmail(fallbackEmail, order);
+        await sendOrderConfirmationEmail('orders@mi-kro.com', order);
       }
     } catch (emailError) {
       console.error(`Failed to send email for order ${order.orderNumber}:`, emailError);

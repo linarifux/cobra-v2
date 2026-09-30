@@ -151,7 +151,7 @@ export default function ProcessingTab({ customerData }) {
     const ppfRate = getRate('palletProcessingFeeRate');
     const palletRate = getRate('suppliedPalletFeeRate');
 
-    // Calculate dynamic payload weight including standard pallet weight deductions
+    // Calculate dynamic payload weight including standard pallet weight additions
     const totalPallets = simPPF + simPallet;
     const combinedWeight = simWeight + (totalPallets * palletWeight);
 
@@ -365,8 +365,16 @@ export default function ProcessingTab({ customerData }) {
                   </div>
 
                   {/* Result Bar */}
-                  <div className="bg-[#0f172a] rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 border border-[#1e293b] shadow-inner">
-                    <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Calculated Total Cost</span>
+                  <div className="bg-[#0f172a] rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 border border-[#1e293b] shadow-inner mt-4">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-3">
+                        <Calculator size={20} className="text-brand-gold" />
+                        <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Calculated Job Total</span>
+                      </div>
+                      <span className="text-[10px] text-slate-500 font-bold ml-8">
+                        Total Billable Wgt: {simWeight + ((simPPF + simPallet) * (Number(receivingCharges.find(c => c.id === 'weightOfPallet')?.value) || 0))} lbs
+                      </span>
+                    </div>
                     <span className="text-3xl font-black text-emerald-400 tracking-tight">
                       ${simulationTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>

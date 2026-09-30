@@ -200,34 +200,27 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
     return vendors.filter(v => v.isActive && v.vendorName.toLowerCase().includes(vendorSearch.toLowerCase()));
   }, [vendors, vendorSearch]);
 
-  // --- Dynamic Calculations Based on Real Pricing Model ---
-  const activePricingConfig = useMemo(() => {
-    if (customerReceivingCharges && customerReceivingCharges.length > 0) {
-      return customerReceivingCharges[0];
-    }
-    return null;
-  }, [customerReceivingCharges]);
-
+  // --- Dynamic Calculations ---
   const calculatedTotalWeight = useMemo(() => {
-    // Determine the pallet weight. If config isn't loaded yet, default to 40.
-    const palletWeight = activePricingConfig?.weightOfPallet ?? 40; 
+    const config = customerReceivingCharges.length > 0 ? customerReceivingCharges[0] : {};
+    const palletWeight = config.weightOfPallet ?? 40; 
 
     const cartonsWeight = formData.cartonBreakdown.reduce((sum, row) => sum + ((Number(row.cartons) || 0) * (Number(row.weightPerCarton) || 0)), 0);
     const palletsWeight = ((Number(formData.suppliedPallets) || 0) + (Number(formData.palletsReceived) || 0)) * palletWeight;
     
     return cartonsWeight + palletsWeight;
-  }, [formData.cartonBreakdown, formData.suppliedPallets, formData.palletsReceived, activePricingConfig]);
+  }, [formData.cartonBreakdown, formData.suppliedPallets, formData.palletsReceived, customerReceivingCharges]);
 
   const simulationTotal = useMemo(() => {
-    if (!activePricingConfig) return 0; // Return 0 if the config hasn't loaded to prevent flash of generic prices
+    const config = customerReceivingCharges.length > 0 ? customerReceivingCharges[0] : {};
+    
+    const baseRate = config.baseRatePerLineItem ?? 15.00;
+    const allowance = config.baseWeightAllowance ?? 100;
+    const overageRate = config.overageRatePerPound ?? 0.15;
+    const ppfRate = config.palletProcessingFeeRate ?? 8.40;
+    const providedRate = config.providedPalletFeeRate ?? 12.00;
 
-    const baseRate = activePricingConfig.baseRatePerLineItem ?? 0;
-    const allowance = activePricingConfig.baseWeightAllowance ?? 0;
-    const overageRate = activePricingConfig.overageRatePerPound ?? 0;
-    const ppfRate = activePricingConfig.palletProcessingFeeRate ?? 0;
-    const providedRate = activePricingConfig.providedPalletFeeRate ?? 0;
-
-    const simLineItems = 1; // Standard 1 line item per receiving receipt
+    const simLineItems = 1; 
     const simWeight = calculatedTotalWeight;
     const simPPF = Number(formData.palletsReceived) || 0;
     const simPallet = Number(formData.suppliedPallets) || 0;
@@ -238,7 +231,7 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
     const palletTotal = providedRate * simPallet;
 
     return baseTotal + overageTotal + ppfTotal + palletTotal;
-  }, [activePricingConfig, calculatedTotalWeight, formData.palletsReceived, formData.suppliedPallets]);
+  }, [customerReceivingCharges, calculatedTotalWeight, formData.palletsReceived, formData.suppliedPallets]);
 
   // Handlers
   const handleCustomerChange = (e) => setFormData({ ...formData, customer: e.target.value, division: '', inventoryItem: '', description: '', description2: ''});
@@ -329,6 +322,7 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
     payload.totalWeight = calculatedTotalWeight;
     payload.suppliedPallets = Number(formData.suppliedPallets) || 0;
     payload.palletsReceived = Number(formData.palletsReceived) || 0;
+    payload.totalCharge = Number(simulationTotal) || 0; // Save the dynamically calculated total to the DB
 
     payload.cartonBreakdown = formData.cartonBreakdown.map(r => ({
       cartons: Number(r.cartons) || 0, unitsPerCarton: Number(r.unitsPerCarton) || 0, weightPerCarton: Number(r.weightPerCarton) || 0
@@ -774,7 +768,7 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
                 <input type="number" min="0" value={formData.suppliedPallets} onChange={(e) => setFormData({...formData, suppliedPallets: e.target.value})} disabled={isSubmitting} className={inputClass} />
               </div>
               <div>
-                <label className={labelClass}>Pallets Received</label>
+                <label className={labelClass}>Pallets Received (PPF)</label>
                 <input type="number" min="0" value={formData.palletsReceived} onChange={(e) => setFormData({...formData, palletsReceived: e.target.value})} disabled={isSubmitting} className={inputClass} />
               </div>
             </div>

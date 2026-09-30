@@ -89,7 +89,10 @@ const receivingSchema = new mongoose.Schema(
     unitsPerCarton: { type: Number, default: 0, min: 0 },
     
     totalWeight: { type: Number, default: 0, min: 0 },
-    totalPalletsReceived: { type: Number, default: 0, min: 0 }
+    totalPalletsReceived: { type: Number, default: 0, min: 0 },
+
+    
+    totalCharge: { type: Number, default: 0}
 
   },
   {
