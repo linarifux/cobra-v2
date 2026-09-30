@@ -73,27 +73,34 @@ export default function Billing() {
     let orderProcessingCartons = 0;
     let orderProcessingRush = 0;
     let orderProcessingIntl = 0;
-    let totalProcessingUnits = 0;
+    let orderShippingCosts = 0;
+    let totalProcessedOrdersCount = filteredOrders.length;
     let totalCartonsUsed = 0;
     
     let intlShipmentsCount = 0;
     let rushShipmentsCount = 0;
+    let shipmentsWithCostCount = 0;
 
     filteredOrders.forEach(o => {
+      // Process Processing Fees
       const fees = o.processingFees || {};
       orderProcessingBase += (Number(fees.baseFee) || 0) + (Number(fees.lineItemSurcharge) || 0) + (Number(fees.weightSurcharge) || 0) + (Number(fees.pieceSurcharge) || 0);
       orderProcessingCartons += (Number(fees.cartonSurcharge) || 0) + (Number(fees.packageSurcharge) || 0);
       orderProcessingRush += (Number(fees.rushFee) || 0);
       orderProcessingIntl += (Number(fees.internationalFee) || 0);
       
-      totalProcessingUnits += o.items?.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0) || 0;
+      // Process Shipping Costs
+      const shippingCost = Number(o.shippingDetails?.shippingCost) || 0;
+      orderShippingCosts += shippingCost;
+
       totalCartonsUsed += (Number(o.shippingDetails?.cartoons) || 0) + (Number(o.shippingDetails?.totalBoxes) || 0);
 
       if (o.isRushOrder) rushShipmentsCount++;
       if (o.isInternational) intlShipmentsCount++;
+      if (shippingCost > 0) shipmentsWithCostCount++;
     });
 
-    const grandProcessingTotal = orderProcessingBase + orderProcessingCartons + orderProcessingRush + orderProcessingIntl;
+    const grandProcessingTotal = orderProcessingBase + orderProcessingCartons + orderProcessingRush + orderProcessingIntl + orderShippingCosts;
 
     let receivingTotal = 0;
     let receivingPallets = 0;
@@ -113,10 +120,12 @@ export default function Billing() {
       orderProcessingCartons,
       orderProcessingRush,
       orderProcessingIntl,
-      totalProcessingUnits,
+      orderShippingCosts,
+      totalProcessedOrdersCount,
       totalCartonsUsed,
       intlShipmentsCount,
       rushShipmentsCount,
+      shipmentsWithCostCount,
       receivingTotal,
       receivingPallets,
       receivingCartons,
@@ -154,10 +163,11 @@ export default function Billing() {
       
       // Table Data mapped strictly to Sample_Billing_Recap.pdf
       const tableData = [
-        ["Order Processing:", billingSummary.totalProcessingUnits.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingBase)],
-        ["Cartons / Packages:", billingSummary.totalCartonsUsed.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingCartons)],
+        ["Order Processing:", billingSummary.totalProcessedOrdersCount.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingBase)],
+        ["Cartons:", billingSummary.totalCartonsUsed.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingCartons)],
         ["International Shipments - Other:", billingSummary.intlShipmentsCount.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingIntl)],
         ["Rush Orders:", billingSummary.rushShipmentsCount.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingRush)],
+        ["Shipping Costs:", billingSummary.shipmentsWithCostCount.toLocaleString(), "-", formatCurrency(billingSummary.orderShippingCosts)],
         ["Receiving:", `${billingSummary.receivingCartons.toLocaleString()} Cartons, ${billingSummary.receivingPallets.toLocaleString()} Pallets`, "-", formatCurrency(billingSummary.receivingTotal)],
       ];
 
@@ -320,11 +330,11 @@ export default function Billing() {
                 <tbody className="text-sm font-bold text-slate-700">
                   <tr className="border-b border-slate-100 hover:bg-slate-50/50">
                     <td className="py-4 px-4 text-slate-900">Order Processing:</td>
-                    <td className="py-4 px-4">{billingSummary.totalProcessingUnits.toLocaleString()}</td>
+                    <td className="py-4 px-4">{billingSummary.totalProcessedOrdersCount.toLocaleString()}</td>
                     <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingBase)}</td>
                   </tr>
                   <tr className="border-b border-slate-100 hover:bg-slate-50/50">
-                    <td className="py-4 px-4 text-slate-900">Cartons / Packages:</td>
+                    <td className="py-4 px-4 text-slate-900">Cartons:</td>
                     <td className="py-4 px-4">{billingSummary.totalCartonsUsed.toLocaleString()}</td>
                     <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingCartons)}</td>
                   </tr>
@@ -337,6 +347,11 @@ export default function Billing() {
                     <td className="py-4 px-4 text-slate-900">Rush Orders:</td>
                     <td className="py-4 px-4">{billingSummary.rushShipmentsCount.toLocaleString()}</td>
                     <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingRush)}</td>
+                  </tr>
+                  <tr className="border-b border-slate-100 hover:bg-slate-50/50">
+                    <td className="py-4 px-4 text-slate-900">Shipping Costs:</td>
+                    <td className="py-4 px-4">{billingSummary.shipmentsWithCostCount.toLocaleString()}</td>
+                    <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderShippingCosts)}</td>
                   </tr>
                   <tr className="border-b border-slate-100 hover:bg-slate-50/50">
                     <td className="py-4 px-4 text-slate-900">Receiving:</td>
