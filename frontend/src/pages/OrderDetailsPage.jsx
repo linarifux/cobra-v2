@@ -149,6 +149,7 @@ export default function OrderDetailsPage() {
   }, [currentOrder?.customer, dispatch]);
 
   const processingFeesPreview = useMemo(() => {
+    console.log(customerCharges, "customerCharges in processingFeesPreview");
     const config = customerCharges.length > 0 ? customerCharges[0] : {};
     
     const cfgBaseUpTo10 = config.baseFeeUpTo10lbs !== undefined ? Number(config.baseFeeUpTo10lbs) : 0;

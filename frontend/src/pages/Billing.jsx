@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Loader2, FileText, Download, AlertTriangle, Users, Calendar, Calculator, FileSpreadsheet } from 'lucide-react';
+import { Loader2, FileText, Download, AlertTriangle, Users, Calendar, Calculator, FileSpreadsheet, Eye, ArrowLeft, Package, Box } from 'lucide-react';
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -29,6 +29,12 @@ export default function Billing() {
     return new Date().toISOString().split('T')[0]; // Default to today
   });
   const [isExporting, setIsExporting] = useState(false);
+  const [showDetails, setShowDetails] = useState(false); // Toggle for Detailed View
+
+  // Reset details view when filters change
+  useEffect(() => {
+    setShowDetails(false);
+  }, [exportCustomer, exportStartDate, exportEndDate]);
 
   // --- STRICT FETCH DATA ON MOUNT ---
   useEffect(() => {
@@ -41,6 +47,7 @@ export default function Billing() {
 
   // --- HELPERS ---
   const formatCurrency = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+  const formatDate = (dateStr) => new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
   const isDateInRange = (dateStr, startDate, endDate) => {
     if (!dateStr) return false;
@@ -82,14 +89,12 @@ export default function Billing() {
     let shipmentsWithCostCount = 0;
 
     filteredOrders.forEach(o => {
-      // Process Processing Fees
       const fees = o.processingFees || {};
       orderProcessingBase += (Number(fees.baseFee) || 0) + (Number(fees.lineItemSurcharge) || 0) + (Number(fees.weightSurcharge) || 0) + (Number(fees.pieceSurcharge) || 0);
       orderProcessingCartons += (Number(fees.cartonSurcharge) || 0) + (Number(fees.packageSurcharge) || 0);
       orderProcessingRush += (Number(fees.rushFee) || 0);
       orderProcessingIntl += (Number(fees.internationalFee) || 0);
       
-      // Process Shipping Costs
       const shippingCost = Number(o.shippingDetails?.shippingCost) || 0;
       orderShippingCosts += shippingCost;
 
@@ -116,11 +121,14 @@ export default function Billing() {
 
     return {
       hasData: filteredOrders.length > 0 || filteredReceiving.length > 0,
+      filteredOrders,
+      filteredReceiving,
       orderProcessingBase,
       orderProcessingCartons,
       orderProcessingRush,
       orderProcessingIntl,
       orderShippingCosts,
+      grandProcessingTotal, // Exported for column total
       totalProcessedOrdersCount,
       totalCartonsUsed,
       intlShipmentsCount,
@@ -161,10 +169,10 @@ export default function Billing() {
       doc.setFont('helvetica', 'bold');
       doc.text(`Activity Recap - ${customerName} Monthly Inventory`, 14, 35);
       
-      // Table Data mapped strictly to Sample_Billing_Recap.pdf
+      // Table Data
       const tableData = [
         ["Order Processing:", billingSummary.totalProcessedOrdersCount.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingBase)],
-        ["Cartons:", billingSummary.totalCartonsUsed.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingCartons)],
+        ["Cartons / Packages:", billingSummary.totalCartonsUsed.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingCartons)],
         ["International Shipments - Other:", billingSummary.intlShipmentsCount.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingIntl)],
         ["Rush Orders:", billingSummary.rushShipmentsCount.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingRush)],
         ["Shipping Costs:", billingSummary.shipmentsWithCostCount.toLocaleString(), "-", formatCurrency(billingSummary.orderShippingCosts)],
@@ -244,7 +252,6 @@ export default function Billing() {
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-10">
-          {/* Customer Selection */}
           <div className="space-y-3 md:col-span-1">
             <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
               <Users size={14} /> Select Client Account
@@ -263,7 +270,6 @@ export default function Billing() {
             </div>
           </div>
 
-          {/* Timeframe Selection: Start Date */}
           <div className="space-y-3">
             <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
               <Calendar size={14} /> Start Date
@@ -276,7 +282,6 @@ export default function Billing() {
             />
           </div>
 
-          {/* Timeframe Selection: End Date */}
           <div className="space-y-3">
             <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
               <Calendar size={14} /> End Date
@@ -309,68 +314,209 @@ export default function Billing() {
         </div>
       </div>
 
-      {/* Live Billing Summary (On-Screen Rendering) */}
+      {/* Live Billing Summary or Detailed Ledger (On-Screen Rendering) */}
       {exportCustomer ? (
         billingSummary?.hasData ? (
-          <div className="bg-white/60 backdrop-blur-xl border border-white/80 p-8 rounded-3xl shadow-sm animate-slide-in-up">
-            <div className="flex items-center gap-3 mb-6 border-b border-slate-200 pb-4">
-              <FileSpreadsheet className="text-brand-gold" size={24} />
-              <h3 className="text-lg font-black text-slate-900 tracking-tight">Invoice Preview Recap</h3>
+          <div className="bg-white/60 backdrop-blur-xl border border-white/80 p-6 sm:p-8 rounded-3xl shadow-sm animate-slide-in-up transition-all duration-500">
+            
+            {/* Context Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-slate-200 pb-4">
+              <div className="flex items-center gap-3">
+                <FileSpreadsheet className="text-brand-gold" size={24} />
+                <h3 className="text-lg font-black text-slate-900 tracking-tight">
+                  {showDetails ? 'Detailed Invoice Ledger' : 'Invoice Preview Recap'}
+                </h3>
+              </div>
+              <button 
+                onClick={() => setShowDetails(!showDetails)}
+                className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 shadow-sm transition-all hover:border-brand-gold/50"
+              >
+                {showDetails ? (
+                  <><ArrowLeft size={14} /> Back to Summary</>
+                ) : (
+                  <><Eye size={14} className="text-brand-gold" /> View Detailed Ledger</>
+                )}
+              </button>
             </div>
             
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b-2 border-slate-300">
-                    <th className="py-3 px-4 text-xs font-black uppercase tracking-widest text-slate-500 w-1/2">Activity</th>
-                    <th className="py-3 px-4 text-xs font-black uppercase tracking-widest text-slate-500 w-1/4">Quantity</th>
-                    <th className="py-3 px-4 text-xs font-black uppercase tracking-widest text-slate-500 w-1/4 text-right">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="text-sm font-bold text-slate-700">
-                  <tr className="border-b border-slate-100 hover:bg-slate-50/50">
-                    <td className="py-4 px-4 text-slate-900">Order Processing:</td>
-                    <td className="py-4 px-4">{billingSummary.totalProcessedOrdersCount.toLocaleString()}</td>
-                    <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingBase)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-100 hover:bg-slate-50/50">
-                    <td className="py-4 px-4 text-slate-900">Cartons:</td>
-                    <td className="py-4 px-4">{billingSummary.totalCartonsUsed.toLocaleString()}</td>
-                    <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingCartons)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-100 hover:bg-slate-50/50">
-                    <td className="py-4 px-4 text-slate-900">International Shipments - Other:</td>
-                    <td className="py-4 px-4">{billingSummary.intlShipmentsCount.toLocaleString()}</td>
-                    <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingIntl)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-100 hover:bg-slate-50/50">
-                    <td className="py-4 px-4 text-slate-900">Rush Orders:</td>
-                    <td className="py-4 px-4">{billingSummary.rushShipmentsCount.toLocaleString()}</td>
-                    <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingRush)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-100 hover:bg-slate-50/50">
-                    <td className="py-4 px-4 text-slate-900">Shipping Costs:</td>
-                    <td className="py-4 px-4">{billingSummary.shipmentsWithCostCount.toLocaleString()}</td>
-                    <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderShippingCosts)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-100 hover:bg-slate-50/50">
-                    <td className="py-4 px-4 text-slate-900">Receiving:</td>
-                    <td className="py-4 px-4 text-xs text-slate-500">
-                      {billingSummary.receivingCartons.toLocaleString()} Cartons, {billingSummary.receivingPallets.toLocaleString()} Pallets
-                    </td>
-                    <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.receivingTotal)}</td>
-                  </tr>
-                  
-                </tbody>
-              </table>
-            </div>
+            {/* View Switching Logic */}
+            {!showDetails ? (
+              /* --- 1. SUMMARY VIEW --- */
+              <div className="animate-fade-in">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b-2 border-slate-300">
+                        <th className="py-3 px-4 text-xs font-black uppercase tracking-widest text-slate-500 w-1/2">Activity</th>
+                        <th className="py-3 px-4 text-xs font-black uppercase tracking-widest text-slate-500 w-1/4">Quantity</th>
+                        <th className="py-3 px-4 text-xs font-black uppercase tracking-widest text-slate-500 w-1/4 text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-sm font-bold text-slate-700">
+                      <tr className="border-b border-slate-100 hover:bg-slate-50/50">
+                        <td className="py-4 px-4 text-slate-900">Order Processing:</td>
+                        <td className="py-4 px-4">{billingSummary.totalProcessedOrdersCount.toLocaleString()}</td>
+                        <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingBase)}</td>
+                      </tr>
+                      <tr className="border-b border-slate-100 hover:bg-slate-50/50">
+                        <td className="py-4 px-4 text-slate-900">Cartons / Packages:</td>
+                        <td className="py-4 px-4">{billingSummary.totalCartonsUsed.toLocaleString()}</td>
+                        <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingCartons)}</td>
+                      </tr>
+                      <tr className="border-b border-slate-100 hover:bg-slate-50/50">
+                        <td className="py-4 px-4 text-slate-900">International Shipments - Other:</td>
+                        <td className="py-4 px-4">{billingSummary.intlShipmentsCount.toLocaleString()}</td>
+                        <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingIntl)}</td>
+                      </tr>
+                      <tr className="border-b border-slate-100 hover:bg-slate-50/50">
+                        <td className="py-4 px-4 text-slate-900">Rush Orders:</td>
+                        <td className="py-4 px-4">{billingSummary.rushShipmentsCount.toLocaleString()}</td>
+                        <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingRush)}</td>
+                      </tr>
+                      <tr className="border-b border-slate-100 hover:bg-slate-50/50">
+                        <td className="py-4 px-4 text-slate-900">Shipping Costs:</td>
+                        <td className="py-4 px-4">{billingSummary.shipmentsWithCostCount.toLocaleString()}</td>
+                        <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderShippingCosts)}</td>
+                      </tr>
+                      <tr className="border-b border-slate-100 hover:bg-slate-50/50">
+                        <td className="py-4 px-4 text-slate-900">Receiving:</td>
+                        <td className="py-4 px-4 text-xs text-slate-500">
+                          {billingSummary.receivingCartons.toLocaleString()} Cartons, {billingSummary.receivingPallets.toLocaleString()} Pallets
+                        </td>
+                        <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.receivingTotal)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
 
-            <div className="flex justify-end pt-6 mt-2">
-              <div className="bg-slate-900 text-white rounded-2xl px-6 py-4 flex items-center gap-6 shadow-xl">
-                <span className="text-xs font-black uppercase tracking-widest text-slate-400">Calculated Total</span>
-                <span className="text-2xl font-black text-brand-gold">{formatCurrency(billingSummary.grandTotal)}</span>
+                <div className="flex justify-end pt-6 mt-2">
+                  <div className="bg-slate-900 text-white rounded-2xl px-6 py-4 flex items-center gap-6 shadow-xl">
+                    <span className="text-xs font-black uppercase tracking-widest text-slate-400">Calculated Total</span>
+                    <span className="text-2xl font-black text-brand-gold">{formatCurrency(billingSummary.grandTotal)}</span>
+                  </div>
+                </div>
               </div>
-            </div>
+            ) : (
+              /* --- 2. DETAILED VIEW --- */
+              <div className="animate-fade-in space-y-10">
+                
+                {/* Orders Breakdown */}
+                <div>
+                  <h4 className="text-sm font-black text-slate-900 mb-4 flex items-center gap-2">
+                    <Package size={16} className="text-blue-500" />
+                    Order Processing Breakdown
+                  </h4>
+                  {billingSummary.filteredOrders.length > 0 ? (
+                    <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                      <table className="w-full text-left border-collapse whitespace-nowrap">
+                        <thead className="bg-slate-50">
+                          <tr className="border-b border-slate-200">
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Order #</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Date</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Base</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Carton</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Rush</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Intl</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Shipping</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-800 text-right bg-slate-100">Row Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="text-xs font-bold text-slate-700">
+                          {billingSummary.filteredOrders.map(o => {
+                            const fees = o.processingFees || {};
+                            const base = (Number(fees.baseFee)||0) + (Number(fees.lineItemSurcharge)||0) + (Number(fees.weightSurcharge)||0) + (Number(fees.pieceSurcharge)||0);
+                            const cartons = (Number(fees.cartonSurcharge)||0) + (Number(fees.packageSurcharge)||0);
+                            const rush = Number(fees.rushFee)||0;
+                            const intl = Number(fees.internationalFee)||0;
+                            const shipping = Number(o.shippingDetails?.shippingCost)||0;
+                            const total = base + cartons + rush + intl + shipping;
+
+                            return (
+                              <tr key={o._id} className="border-b border-slate-100 hover:bg-slate-50">
+                                <td className="py-3 px-4 font-mono text-blue-600">{o.orderNumber}</td>
+                                <td className="py-3 px-4 text-slate-500">{formatDate(o.createdAt)}</td>
+                                <td className="py-3 px-4 text-right">{formatCurrency(base)}</td>
+                                <td className="py-3 px-4 text-right">{formatCurrency(cartons)}</td>
+                                <td className="py-3 px-4 text-right">{formatCurrency(rush)}</td>
+                                <td className="py-3 px-4 text-right">{formatCurrency(intl)}</td>
+                                <td className="py-3 px-4 text-right">{formatCurrency(shipping)}</td>
+                                <td className="py-3 px-4 text-right text-slate-900 bg-slate-50/50">{formatCurrency(total)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot className="bg-slate-100 border-t-2 border-slate-300 font-black text-slate-800 text-xs">
+                          <tr>
+                            <td colSpan="2" className="py-3 px-4 text-right uppercase tracking-widest text-[10px] text-slate-500">Totals</td>
+                            <td className="py-3 px-4 text-right">{formatCurrency(billingSummary.orderProcessingBase)}</td>
+                            <td className="py-3 px-4 text-right">{formatCurrency(billingSummary.orderProcessingCartons)}</td>
+                            <td className="py-3 px-4 text-right">{formatCurrency(billingSummary.orderProcessingRush)}</td>
+                            <td className="py-3 px-4 text-right">{formatCurrency(billingSummary.orderProcessingIntl)}</td>
+                            <td className="py-3 px-4 text-right">{formatCurrency(billingSummary.orderShippingCosts)}</td>
+                            <td className="py-3 px-4 text-right text-brand-gold">{formatCurrency(billingSummary.grandProcessingTotal)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-xs font-bold text-slate-400 italic pl-2">No orders processed in this timeframe.</p>
+                  )}
+                </div>
+
+                {/* Receiving Breakdown */}
+                <div>
+                  <h4 className="text-sm font-black text-slate-900 mb-4 flex items-center gap-2">
+                    <Box size={16} className="text-emerald-500" />
+                    Receiving Breakdown
+                  </h4>
+                  {billingSummary.filteredReceiving.length > 0 ? (
+                    <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                      <table className="w-full text-left border-collapse whitespace-nowrap">
+                        <thead className="bg-slate-50">
+                          <tr className="border-b border-slate-200">
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500">RCV #</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Date</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Item Name</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Cartons</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Pallets</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-800 text-right bg-slate-100">Charge</th>
+                          </tr>
+                        </thead>
+                        <tbody className="text-xs font-bold text-slate-700">
+                          {billingSummary.filteredReceiving.map(r => {
+                            const pallets = (Number(r.palletsReceived)||0) + (Number(r.suppliedPallets)||0);
+                            const charge = Number(r.totalCharge)||0;
+                            const itemName = r.inventoryItem?.itemName || r.inventoryItem?.description || r.description || 'Unknown Item';
+
+                            return (
+                              <tr key={r._id} className="border-b border-slate-100 hover:bg-slate-50">
+                                <td className="py-3 px-4 font-mono text-emerald-600">{r.receivingId}</td>
+                                <td className="py-3 px-4 text-slate-500">{formatDate(r.dateReceived)}</td>
+                                <td className="py-3 px-4 truncate max-w-[200px]">{itemName}</td>
+                                <td className="py-3 px-4 text-center">{r.numberOfCartons || 0}</td>
+                                <td className="py-3 px-4 text-center">{pallets}</td>
+                                <td className="py-3 px-4 text-right text-slate-900 bg-slate-50/50">{formatCurrency(charge)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot className="bg-slate-100 border-t-2 border-slate-300 font-black text-slate-800 text-xs">
+                          <tr>
+                            <td colSpan="3" className="py-3 px-4 text-right uppercase tracking-widest text-[10px] text-slate-500">Totals</td>
+                            <td className="py-3 px-4 text-center">{billingSummary.receivingCartons.toLocaleString()}</td>
+                            <td className="py-3 px-4 text-center">{billingSummary.receivingPallets.toLocaleString()}</td>
+                            <td className="py-3 px-4 text-right text-brand-gold">{formatCurrency(billingSummary.receivingTotal)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-xs font-bold text-slate-400 italic pl-2">No receiving receipts in this timeframe.</p>
+                  )}
+                </div>
+
+              </div>
+            )}
           </div>
         ) : (
           <div className="bg-white/40 backdrop-blur-xl border border-white/60 p-12 rounded-3xl shadow-sm text-center animate-fade-in flex flex-col items-center">

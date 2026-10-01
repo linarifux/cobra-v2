@@ -13,6 +13,8 @@ const FeeRow = ({ label, sourceField, value, isZero }) => {
   );
 };
 
+
+
 export default function NotesAndFeesPanel({ notes, setNotes, processingFeesPreview, processingStatus }) {
   // Safely extract the live fees
   const pfp = processingFeesPreview || {};
