@@ -65,8 +65,8 @@ export default function ManifestPanel({ items, setItems, inventoryData, inventor
     if (draftedItem) {
       setItems(items.map(i => i.sku === newItem.sku ? { ...i, qty: i.qty + qtyToAdd } : i));
     } else {
-      setItems(prev => [
-        ...prev, 
+      setItems([
+        ...items, 
         { 
           ...newItem, 
           id: generateLocalId(), 
@@ -78,11 +78,12 @@ export default function ManifestPanel({ items, setItems, inventoryData, inventor
     }
     
     setNewItem({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
-    // toast.success("Item added to draft. Press 'Save Changes' to update inventory.");
+    toast.success("Item drafted. Press 'Save Changes' to push updates to the database.");
   };
 
   const handleRemoveItem = (itemToRemove) => {
     setItems(items.filter(i => i.id !== itemToRemove.id));
+    toast.success("Item removed. Press 'Save Changes' to push updates to the database.");
   };
 
   const handleQtyChange = (item, newQtyString) => {

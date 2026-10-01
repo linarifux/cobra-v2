@@ -153,7 +153,10 @@ export const createOrder = catchAsync(async (req, res, next) => {
 
   // --- CALCULATE SUBTOTAL & PROCESSING FEES ---
   req.body.subtotal = calculateSubtotal(req.body);
-  req.body.processingFees = await calculateProcessingFees(req.body);
+  const calculatedProcessingFees = await calculateProcessingFees(req.body);
+  
+  // EXPLICIT ASSIGNMENT: Ensure processing fees are written to the payload before DB Save
+  req.body.processingFees = calculatedProcessingFees; 
 
   // --- CALCULATE GRAND TOTAL ---
   req.body.totalAmount = calculateTotalAmount(req.body, req.body.processingFees, req.body.subtotal);
@@ -391,7 +394,11 @@ export const updateOrder = catchAsync(async (req, res, next) => {
 
   // --- RE-CALCULATE SUBTOTAL, FEES & TOTAL ON UPDATE ---
   req.body.subtotal = calculateSubtotal(mergedData);
-  req.body.processingFees = await calculateProcessingFees(mergedData);
+  const calculatedProcessingFees = await calculateProcessingFees(mergedData);
+  
+  // EXPLICIT ASSIGNMENT: Ensure processing fees are written to the payload before DB Save
+  req.body.processingFees = calculatedProcessingFees; 
+  
   req.body.totalAmount = calculateTotalAmount(mergedData, req.body.processingFees, req.body.subtotal);
 
   if (req.body.status === 'Cancelled' && order.status !== 'Cancelled') {
@@ -584,3 +591,4 @@ export const getOrdersByUserId = catchAsync(async (req, res, next) => {
     data: { orders } 
   });
 });
+

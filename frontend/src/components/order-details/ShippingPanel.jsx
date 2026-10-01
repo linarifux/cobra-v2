@@ -16,6 +16,7 @@ const generateTrackingLink = (carrier, trackingNumber) => {
   return `https://www.google.com/search?q=track+package+${trackingNumber}`;
 };
 
+
 export default function ShippingPanel({ 
   shipping, setShipping, 
   cartoonsCount, setCartoonsCount, 

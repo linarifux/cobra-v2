@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, MapPin, CreditCard,
   Trash2, Plus, MessageSquare,
-  PackageCheck, Save, Loader2, Box, Building2, User, Briefcase, Truck, ChevronDown, Search, AlertTriangle, Globe
+  PackageCheck, Save, Loader2, Box, Building2, User, Briefcase, Truck, ChevronDown, Search, AlertTriangle, Globe, Scale
 } from 'lucide-react';
 import { toast } from 'sonner';
 import NotFoundPage from '../../pages/NotFoundPage';
@@ -72,7 +72,7 @@ export default function OrderForm() {
   const [isInternational, setIsInternational] = useState(false);
 
   const [orderStatus, setOrderStatus] = useState('New');
-  const [shipping, setShipping] = useState({ carrierId: '', carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0 });
+  const [shipping, setShipping] = useState({ carrierId: '', carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0, weight: 0 }); // Added root weight field fallback
   const [address, setAddress] = useState({ name: '', companyName: '', email: '', phone: '', street: '', line2: '', city: '', state: '', zip: '', country: 'US' });
   const [items, setItems] = useState([]);
   const [notes, setNotes] = useState('');
@@ -110,6 +110,11 @@ export default function OrderForm() {
 
   // --- Calculations ---
   const subtotal = items.reduce((acc, item) => acc + (Number(item.price) * Number(item.qty)), 0);
+  
+  // Calculate total weight. Inventory weight is stored in ounces in DB, sum it then convert to lbs for UI
+  const totalWeightOunces = items.reduce((acc, item) => acc + (Number(item.weight || 0) * Number(item.qty)), 0); 
+  const totalWeightLbs = totalWeightOunces / 16; 
+  
   const shippingCost = Number(shipping.shippingCost) || 0;
   const tax = subtotal * 0.08;
   const grandTotal = subtotal + shippingCost + tax;
@@ -275,7 +280,8 @@ export default function OrderForm() {
         carrierType: currentOrder.shippingDetails?.carrierType || '',
         serviceCode: currentOrder.shippingDetails?.serviceCode || '',
         trackingNumber: currentOrder.shippingDetails?.trackingNumber || '',
-        shippingCost: currentOrder.shippingDetails?.shippingCost || 0
+        shippingCost: currentOrder.shippingDetails?.shippingCost || 0,
+        weight: (currentOrder.shippingDetails?.totalWeightOunces || 0) / 16 // Set legacy weight from payload if it exists
       });
       setAddress({
         name: currentOrder.shippingAddress?.recipientName || '',
@@ -414,7 +420,8 @@ export default function OrderForm() {
         carrierType: shipping.carrierType,
         serviceCode: shipping.serviceCode,
         trackingNumber: shipping.trackingNumber,
-        shippingCost: Number(shipping.shippingCost)
+        shippingCost: Number(shipping.shippingCost),
+        totalWeightOunces: totalWeightOunces // Ensure pure ounces pass directly to payload
       },
       items: items.map(item => ({
         sku: item.sku, name: item.name, quantity: Number(item.qty),
@@ -948,6 +955,12 @@ export default function OrderForm() {
               <CreditCard size={14} /> Invoice Preview
             </h3>
             <div className="text-sm font-medium space-y-3 relative z-10 text-slate-300">
+              
+              <div className="flex justify-between items-center mb-1">
+                 <span className="flex items-center gap-1.5"><Scale size={14} className="text-slate-400" /> Op. Weight</span> 
+                 <span className="font-mono text-white text-xs">{totalWeightLbs.toFixed(2)} LBS</span>
+              </div>
+              
               <div className="flex justify-between"><span>Subtotal</span> <span className="font-mono text-white">${subtotal.toFixed(2)}</span></div>
               <div className="flex justify-between items-center">
                 <span>Shipping Cost</span>
@@ -974,3 +987,4 @@ export default function OrderForm() {
     </div>
   );
 }
+

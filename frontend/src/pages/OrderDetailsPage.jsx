@@ -123,15 +123,20 @@ export default function OrderDetailsPage() {
   const isLabelPurchased = !!ssLabelId || !!shipping.trackingNumber;
   const isShipmentCreated = !!ssOrderId; 
 
+  // --- TOP LEVEL CALCULATIONS ---
   const subtotal = items.reduce((acc, item) => acc + (Number(item.price) * Number(item.qty)), 0);
   const shippingCost = Number(shipping.shippingCost) || 0;
   const tax = subtotal * 0.08; 
   const grandTotal = subtotal + shippingCost + tax;
 
-  // Single Source of Truth for Weights & Boxes
+  // Single Source of Truth for Weights & Boxes (Calculates dynamically from manifest items)
   const derivedItemWeightOz = items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
   const totalPackageWeightOz = packages.reduce((acc, pkg) => acc + Number(pkg.weightInOunces || 0), 0);
   const isWeightMismatched = Math.abs(derivedItemWeightOz - totalPackageWeightOz) > 1;
+  const databaseWeightOz = Number(currentOrder?.shippingDetails?.totalWeightOunces || 0);
+
+  // CRITICAL FIX: The absolute weight source to push to database & display in UI
+  const finalPayloadWeightOz = derivedItemWeightOz > 0 ? derivedItemWeightOz : totalPackageWeightOz;
 
   const orderUserId = currentOrder?.user?._id || currentOrder?.user;
   const orderCreator = useMemo(() => {
@@ -147,9 +152,22 @@ export default function OrderDetailsPage() {
         dispatch(fetchProcessingChargesByCustomer(customerId));
     }
   }, [currentOrder?.customer, dispatch]);
+  
+
+  // --- AUTO-SYNC PACKAGE WEIGHT ---
+  // If there is only 1 package, dynamically keep it synced with the total manifest weight to avoid mismatch warnings
+  useEffect(() => {
+    if (packages.length === 1 && derivedItemWeightOz > 0) {
+      setPackages(prev => {
+        if (prev[0].weightInOunces !== derivedItemWeightOz) {
+          return [{ ...prev[0], weightInOunces: derivedItemWeightOz }];
+        }
+        return prev;
+      });
+    }
+  }, [derivedItemWeightOz]);
 
   const processingFeesPreview = useMemo(() => {
-    console.log(customerCharges, "customerCharges in processingFeesPreview");
     const config = customerCharges.length > 0 ? customerCharges[0] : {};
     
     const cfgBaseUpTo10 = config.baseFeeUpTo10lbs !== undefined ? Number(config.baseFeeUpTo10lbs) : 0;
@@ -163,7 +181,8 @@ export default function OrderDetailsPage() {
     const cfgRush = config.rushSurcharge !== undefined ? Number(config.rushSurcharge) : 0;
     const cfgIntl = config.internationalSurcharge !== undefined ? Number(config.internationalSurcharge) : 0;
 
-    const weightLbs = totalPackageWeightOz / 16;
+    const weightLbs = finalPayloadWeightOz / 16;
+    
     const lineItemsCount = items.length;
     const piecesCount = items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
     const packageCount = packages.length;
@@ -191,7 +210,7 @@ export default function OrderDetailsPage() {
       pieceSurcharge, cartonSurcharge, palletFee, rushFee,
       internationalFee, totalProcessingFee
     };
-  }, [totalPackageWeightOz, items, packages.length, cartoonsCount, palletsCount, isRushOrder, address.country, customerCharges]);
+  }, [finalPayloadWeightOz, items, packages.length, cartoonsCount, palletsCount, isRushOrder, address.country, customerCharges]);
 
   useEffect(() => {
     if (isValidMongoId) dispatch(fetchOrderById(id));
@@ -306,9 +325,8 @@ export default function OrderDetailsPage() {
         }
       }
     }
-  }, [currentOrder]); 
+  }, [currentOrder, inventoryData]); 
 
-  // --- THESE WERE MISSING ---
   const addPackage = () => setPackages(prev => [...prev, { id: generateLocalId(), packageCode: 'package', weightInOunces: 16, length: 10, width: 10, height: 10 }]);
   const updatePackage = (id, field, value) => setPackages(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
   const removePackage = (id) => setPackages(prev => prev.filter(p => p.id !== id));
@@ -327,7 +345,6 @@ export default function OrderDetailsPage() {
 
     updatePackage(id, 'weightInOunces', newTotal);
   };
-  // -------------------------
 
   const handleMetricsOverride = (newTotalWeightOz, newTotalBoxes) => {
     let currentPkgs = [...packages];
@@ -672,7 +689,7 @@ export default function OrderDetailsPage() {
         cartoons: Number(cartoonsCount) || 0,
         pallets: Number(palletsCount) || 0, 
         totalBoxes: packages.length,
-        totalWeightOunces: totalPackageWeightOz,
+        totalWeightOunces: finalPayloadWeightOz,
         packages: packages.map(p => ({
           packageCode: p.packageCode || 'package',
           weightInOunces: Number(p.weightInOunces) || 16,
@@ -684,7 +701,8 @@ export default function OrderDetailsPage() {
       processingFees: processingFeesPreview, 
       items: items.map(item => ({
         sku: item.sku, name: item.name, quantity: Number(item.qty),
-        unitPrice: Number(item.price), totalPrice: Number(item.qty) * Number(item.price)
+        unitPrice: Number(item.price), totalPrice: Number(item.qty) * Number(item.price),
+        weight: Number(item.weight) // Retain weight for local derived math if needed
       }))
     };
 
@@ -735,7 +753,7 @@ export default function OrderDetailsPage() {
         cartoons: Number(cartoonsCount) || 0,
         pallets: Number(palletsCount) || 0,
         totalBoxes: packages.length,
-        totalWeightOunces: totalPackageWeightOz,
+        totalWeightOunces: finalPayloadWeightOz,
         packages: packages.map(p => ({
           packageCode: p.packageCode || 'package',
           weightInOunces: Number(p.weightInOunces) || 16,
@@ -747,7 +765,8 @@ export default function OrderDetailsPage() {
       processingFees: processingFeesPreview,
       items: items.map(item => ({
         sku: item.sku, name: item.name, quantity: Number(item.qty),
-        unitPrice: Number(item.price), totalPrice: Number(item.qty) * Number(item.price)
+        unitPrice: Number(item.price), totalPrice: Number(item.qty) * Number(item.price),
+        weight: Number(item.weight)
       }))
     };
 
@@ -805,7 +824,7 @@ export default function OrderDetailsPage() {
       cartoons: Number(modalCartoonsCount) || Number(cartoonsCount) || 0,
       pallets: Number(palletsCount) || 0,
       totalBoxes: packages.length,
-      totalWeightOunces: totalPackageWeightOz,
+      totalWeightOunces: finalPayloadWeightOz,
       processingFees: processingFeesPreview 
     };
 
@@ -840,7 +859,7 @@ export default function OrderDetailsPage() {
       cartoons: Number(cartoonsCount) || 0,
       pallets: Number(palletsCount) || 0,
       totalBoxes: packages.length,
-      weightInOunces: totalPackageWeightOz,
+      weightInOunces: finalPayloadWeightOz,
       processingFees: processingFeesPreview 
     };
 
@@ -954,12 +973,15 @@ export default function OrderDetailsPage() {
 
   if (!isValidMongoId) return <NotFoundPage />;
   if (orderLoadStatus === 'failed' || orderError) return <NotFoundPage />;
-  if (orderLoadStatus === 'loading' || !currentOrder) {
+  
+  if (orderLoadStatus === 'loading' || !currentOrder || isSaving) {
     return (
       <div className="h-full flex items-center justify-center min-h-[600px]">
         <div className="flex flex-col items-center gap-3 text-slate-400">
           <Loader2 className="animate-spin text-brand-gold" size={32} />
-          <p className="text-xs font-black uppercase tracking-widest">Loading Order Details...</p>
+          <p className="text-xs font-black uppercase tracking-widest">
+            {isSaving ? 'Processing Securely...' : 'Loading Details...'}
+          </p>
         </div>
       </div>
     );
@@ -1052,7 +1074,7 @@ export default function OrderDetailsPage() {
               palletsCount={palletsCount} 
               setPalletsCount={setPalletsCount} 
               packages={packages} 
-              totalItemWeightOz={totalPackageWeightOz} 
+              totalItemWeightOz={finalPayloadWeightOz} 
               totalBoxesCount={packages.length}
               isWeightMismatched={isWeightMismatched} 
               orderStatus={orderStatus} 
@@ -1091,9 +1113,11 @@ export default function OrderDetailsPage() {
             setShipping={setShipping} 
             tax={tax} 
             grandTotal={currentOrder?.totalAmount || grandTotal} 
+            totalItemWeightOz={finalPayloadWeightOz}
           />
         </div>
       </div>
     </div>
   );
 }
+
