@@ -76,6 +76,9 @@ export default function Billing() {
     const filteredOrders = orders.filter(o => String(o.customer?._id || o.customer) === String(exportCustomer) && isDateInRange(o.createdAt, exportStartDate, exportEndDate));
     const filteredReceiving = receivingLogs.filter(r => String(r.customer?._id || r.customer) === String(exportCustomer) && isDateInRange(r.dateReceived, exportStartDate, exportEndDate));
 
+
+    console.log(filteredReceiving)
+
     let orderProcessingBase = 0;
     let orderProcessingLineItems = 0;
     let orderProcessingWeight = 0;
@@ -517,7 +520,7 @@ export default function Billing() {
                             <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Pieces</th>
                             <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Cartons</th>
                             <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Pkgs</th>
-                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Pallets</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">PPF</th>
                             <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Rush</th>
                             <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Intl</th>
                             <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Shipping</th>
