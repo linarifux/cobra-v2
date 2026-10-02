@@ -1,12 +1,7 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Search, MapPin, Package, Loader2, Filter, X, 
-  Calendar, Building2, User, Plus, FileText, Truck,
-  Layers, Edit2, Trash2, Save, Briefcase, Printer, CheckSquare, AlertTriangle, Unlock
-} from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Download, Loader2, AlertCircle, Search, ClipboardList, Unlock, Plus, Package, Briefcase, Building2, User, Calendar, Layers, MapPin, Edit2, FileText, Trash2, CheckSquare, Printer, X, Save, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 
 // --- PDF LIBRARIES ---
@@ -16,6 +11,7 @@ import autoTable from 'jspdf-autotable';
 import PageHeader from '../components/PageHeader';
 import OrdersSidebar from '../components/order/OrdersSidebar';
 import { useConfirm } from '../providers/ConfirmProvider';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // Redux Actions
 import { fetchOrders, updateOrder, deleteOrder } from '../store/slices/orderSlice';
@@ -260,7 +256,87 @@ export default function OrdersPage() {
   };
 
   const handleBulkExport = () => {
-    toast.success('Exporting Data', { description: `Generating CSV for ${selectedOrders.length} orders...` });
+    if (filteredOrders.length === 0) {
+      return toast.warning("No orders to export.");
+    }
+
+    try {
+      // Define CSV Headers
+      const headers = [
+        "Order Number",
+        "Date",
+        "Status",
+        "Customer/Brand",
+        "Division",
+        "Shopper Email",
+        "Recipient Name",
+        "Recipient Company",
+        "Address",
+        "City",
+        "State",
+        "Zip",
+        "Country",
+        "Carrier",
+        "Service",
+        "Tracking",
+        "Item Quantity",
+        "Subtotal",
+        "Shipping Cost",
+        "Processing Fees",
+        "Total Amount"
+      ];
+
+      // Map Order Data to CSV Rows
+      const csvRows = filteredOrders.map(o => {
+        const itemQtyCount = o.items ? o.items.reduce((sum, i) => sum + (Number(i.quantity) || 0), 0) : 0;
+        
+        return [
+          o.orderNumber || '',
+          new Date(o.createdAt).toLocaleDateString('en-US'),
+          o.status || '',
+          o.customer?.customerName || '',
+          o.division?.divisionName || '',
+          o.user?.email || '',
+          o.shippingAddress?.recipientName || '',
+          o.shippingAddress?.companyName || '',
+          `"${o.shippingAddress?.line1 || ''} ${o.shippingAddress?.line2 || ''}"`, // Quotes to handle commas in addresses
+          o.shippingAddress?.city || '',
+          o.shippingAddress?.state || '',
+          o.shippingAddress?.zip || '',
+          o.shippingAddress?.country || '',
+          o.shippingDetails?.carrierType || '',
+          o.shippingDetails?.serviceCode || '',
+          o.shippingDetails?.trackingNumber || '',
+          itemQtyCount,
+          (o.subtotal || 0).toFixed(2),
+          (o.shippingDetails?.shippingCost || 0).toFixed(2),
+          (o.processingFees?.totalProcessingFee || 0).toFixed(2),
+          (o.totalAmount || 0).toFixed(2)
+        ];
+      });
+
+      // Combine Headers and Rows
+      const csvContent = [
+        headers.join(','),
+        ...csvRows.map(row => row.join(','))
+      ].join('\n');
+
+      // Create a Blob and Download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `Orders_Export_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      toast.success("Spreadsheet exported successfully.");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate CSV spreadsheet.");
+    }
   };
 
   // --- Inline Action Handlers ---
@@ -813,6 +889,9 @@ export default function OrdersPage() {
                       <th className="p-5">Customer & Origin</th>
                       <th className="p-5">Shopper & Dest.</th>
                       <th className="p-5">Assets</th>
+                      {canViewCosts && <th className="p-5 text-right">Shipping</th>}
+                      {canViewCosts && <th className="p-5 text-right">Processing</th>}
+                      {canViewCosts && <th className="p-5 text-right">Total</th>}
                       <th className="p-5">Status</th>
                       <th className="p-5 text-right pr-6">Actions</th>
                     </tr>
@@ -829,6 +908,8 @@ export default function OrdersPage() {
                           .join(', ') || 'N/A';
                         
                         const grandTotal = (order.totalAmount || 0);
+                        const shippingCost = (order.shippingDetails?.shippingCost || 0);
+                        const processingCost = (order.processingFees?.totalProcessingFee || 0);
 
                         const divRef = order.division;
                         const divisionObj = divisionsData.find(d => d._id === (divRef?._id || divRef));
@@ -876,6 +957,24 @@ export default function OrdersPage() {
                             <td className="p-5">
                               <span className="bg-slate-100 border border-slate-200 px-2 py-1 rounded text-slate-600 font-black">{order.items?.length || 0}</span>
                             </td>
+                            
+                            {/* Detailed Financial Columns for Privileged Users */}
+                            {canViewCosts && (
+                               <td className="p-5 text-right font-medium text-slate-600">
+                                  ${shippingCost.toFixed(2)}
+                               </td>
+                            )}
+                            {canViewCosts && (
+                               <td className="p-5 text-right font-medium text-slate-600">
+                                  ${processingCost.toFixed(2)}
+                               </td>
+                            )}
+                            {canViewCosts && (
+                               <td className="p-5 text-right font-extrabold text-slate-900">
+                                  ${grandTotal.toFixed(2)}
+                               </td>
+                            )}
+                            
                             <td className="p-5">
                               <span 
                                 className={`px-2.5 py-1 text-[9px] uppercase tracking-wider rounded border shadow-sm font-black flex items-center gap-1.5 w-max ${getStatusBadgeStyle(currentStatus)}`}
@@ -928,7 +1027,7 @@ export default function OrdersPage() {
                       })
                     ) : (
                       <tr>
-                        <td colSpan={8} className="py-20 text-center text-slate-400">
+                        <td colSpan={canViewCosts ? 11 : 8} className="py-20 text-center text-slate-400">
                           <Package className="mx-auto mb-3 opacity-20" size={48} />
                           <p className="text-sm font-black uppercase tracking-widest mb-1">No Orders Found</p>
                           <p className="text-xs font-bold">Try clearing your filters to see more results.</p>
