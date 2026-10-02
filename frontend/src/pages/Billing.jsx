@@ -77,8 +77,12 @@ export default function Billing() {
     const filteredReceiving = receivingLogs.filter(r => String(r.customer?._id || r.customer) === String(exportCustomer) && isDateInRange(r.dateReceived, exportStartDate, exportEndDate));
 
     let orderProcessingBase = 0;
+    let orderProcessingLineItems = 0;
+    let orderProcessingWeight = 0;
+    let orderProcessingPieces = 0;
     let orderProcessingCartons = 0;
     let orderProcessingPackages = 0;
+    let orderProcessingPallets = 0;
     let orderProcessingRush = 0;
     let orderProcessingIntl = 0;
     let orderShippingCosts = 0;
@@ -93,10 +97,15 @@ export default function Billing() {
 
     filteredOrders.forEach(o => {
       const fees = o.processingFees || {};
-      orderProcessingBase += (Number(fees.baseFee) || 0) + (Number(fees.lineItemSurcharge) || 0) + (Number(fees.weightSurcharge) || 0) + (Number(fees.pieceSurcharge) || 0);
+      
+      orderProcessingBase += (Number(fees.baseFee) || 0);
+      orderProcessingLineItems += (Number(fees.lineItemSurcharge) || 0);
+      orderProcessingWeight += (Number(fees.weightSurcharge) || 0);
+      orderProcessingPieces += (Number(fees.pieceSurcharge) || 0);
       
       orderProcessingCartons += (Number(fees.cartonSurcharge) || 0);
       orderProcessingPackages += (Number(fees.packageSurcharge) || 0);
+      orderProcessingPallets += (Number(fees.palletFee) || 0);
       
       orderProcessingRush += (Number(fees.rushFee) || 0);
       orderProcessingIntl += (Number(fees.internationalFee) || 0);
@@ -104,6 +113,7 @@ export default function Billing() {
       const shippingCost = Number(o.shippingDetails?.shippingCost) || 0;
       orderShippingCosts += shippingCost;
 
+      // Ensure counts remain distinct
       totalCartonsUsed += (Number(o.shippingDetails?.cartoons) || 0);
       totalPackagesUsed += (Number(o.shippingDetails?.totalBoxes) || 0);
 
@@ -112,7 +122,7 @@ export default function Billing() {
       if (shippingCost > 0) shipmentsWithCostCount++;
     });
 
-    const grandProcessingTotal = orderProcessingBase + orderProcessingCartons + orderProcessingPackages + orderProcessingRush + orderProcessingIntl + orderShippingCosts;
+    const grandProcessingTotal = orderProcessingBase + orderProcessingLineItems + orderProcessingWeight + orderProcessingPieces + orderProcessingCartons + orderProcessingPackages + orderProcessingPallets + orderProcessingRush + orderProcessingIntl + orderShippingCosts;
 
     let receivingTotal = 0;
     let receivingPalletsReceived = 0;
@@ -136,8 +146,12 @@ export default function Billing() {
       filteredOrders,
       filteredReceiving,
       orderProcessingBase,
+      orderProcessingLineItems,
+      orderProcessingWeight,
+      orderProcessingPieces,
       orderProcessingCartons,
       orderProcessingPackages,
+      orderProcessingPallets,
       orderProcessingRush,
       orderProcessingIntl,
       orderShippingCosts,
@@ -187,10 +201,14 @@ export default function Billing() {
       doc.text(`Activity Recap - ${customerName} Monthly Inventory`, 14, 35);
       
       const tableData = [
-        ["Order Processing:", billingSummary.totalProcessedOrdersCount.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingBase)],
+        ["Order Base Fees:", billingSummary.totalProcessedOrdersCount.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingBase)],
+        ["Line Item Surcharges:", "-", "-", formatCurrency(billingSummary.orderProcessingLineItems)],
+        ["Weight Surcharges:", "-", "-", formatCurrency(billingSummary.orderProcessingWeight)],
+        ["Piece Pick Surcharges:", "-", "-", formatCurrency(billingSummary.orderProcessingPieces)],
         ["Cartons:", billingSummary.totalCartonsUsed.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingCartons)],
         ["Packages:", billingSummary.totalPackagesUsed.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingPackages)],
-        ["International Shipments - Other:", billingSummary.intlShipmentsCount.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingIntl)],
+        ["Pallet Processing:", "-", "-", formatCurrency(billingSummary.orderProcessingPallets)],
+        ["International Shipments:", billingSummary.intlShipmentsCount.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingIntl)],
         ["Rush Orders:", billingSummary.rushShipmentsCount.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingRush)],
         ["Shipping Costs:", billingSummary.shipmentsWithCostCount.toLocaleString(), "-", formatCurrency(billingSummary.orderShippingCosts)],
         ["Receiving Orders:", billingSummary.totalReceivingOrdersCount.toLocaleString(), "-", "-"],
@@ -375,9 +393,24 @@ export default function Billing() {
                     </thead>
                     <tbody className="text-sm font-bold text-slate-700">
                       <tr className="border-b border-slate-100 hover:bg-slate-50/50">
-                        <td className="py-4 px-4 text-slate-900">Order Processing:</td>
+                        <td className="py-4 px-4 text-slate-900">Order Base Fees:</td>
                         <td className="py-4 px-4">{billingSummary.totalProcessedOrdersCount.toLocaleString()}</td>
                         <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingBase)}</td>
+                      </tr>
+                      <tr className="border-b border-slate-100 hover:bg-slate-50/50">
+                        <td className="py-4 px-4 text-slate-900">Line Item Surcharges:</td>
+                        <td className="py-4 px-4 text-slate-400">-</td>
+                        <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingLineItems)}</td>
+                      </tr>
+                      <tr className="border-b border-slate-100 hover:bg-slate-50/50">
+                        <td className="py-4 px-4 text-slate-900">Weight Surcharges:</td>
+                        <td className="py-4 px-4 text-slate-400">-</td>
+                        <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingWeight)}</td>
+                      </tr>
+                      <tr className="border-b border-slate-100 hover:bg-slate-50/50">
+                        <td className="py-4 px-4 text-slate-900">Piece Pick Surcharges:</td>
+                        <td className="py-4 px-4 text-slate-400">-</td>
+                        <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingPieces)}</td>
                       </tr>
                       <tr className="border-b border-slate-100 hover:bg-slate-50/50">
                         <td className="py-4 px-4 text-slate-900">Cartons:</td>
@@ -390,7 +423,12 @@ export default function Billing() {
                         <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingPackages)}</td>
                       </tr>
                       <tr className="border-b border-slate-100 hover:bg-slate-50/50">
-                        <td className="py-4 px-4 text-slate-900">International Shipments - Other:</td>
+                        <td className="py-4 px-4 text-slate-900">Pallet Processing:</td>
+                        <td className="py-4 px-4 text-slate-400">-</td>
+                        <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingPallets)}</td>
+                      </tr>
+                      <tr className="border-b border-slate-100 hover:bg-slate-50/50">
+                        <td className="py-4 px-4 text-slate-900">International Shipments:</td>
                         <td className="py-4 px-4">{billingSummary.intlShipmentsCount.toLocaleString()}</td>
                         <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingIntl)}</td>
                       </tr>
@@ -404,26 +442,26 @@ export default function Billing() {
                         <td className="py-4 px-4">{billingSummary.shipmentsWithCostCount.toLocaleString()}</td>
                         <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderShippingCosts)}</td>
                       </tr>
-                      <tr className="border-b border-slate-100 hover:bg-slate-50/50">
+                      <tr className="border-b border-slate-100 hover:bg-slate-50/50 bg-slate-100">
                         <td className="py-4 px-4 text-slate-900">Receiving Orders:</td>
                         <td className="py-4 px-4">{billingSummary.totalReceivingOrdersCount.toLocaleString()}</td>
                         <td className="py-4 px-4 text-right text-slate-400">-</td>
                       </tr>
-                      <tr className="border-b border-slate-100 hover:bg-slate-50/50">
+                      <tr className="border-b border-slate-100 hover:bg-slate-50/50 bg-slate-100">
                         <td className="py-4 px-4 text-slate-900">Receiving Units / Cartons:</td>
                         <td className="py-4 px-4 text-xs text-slate-500">
                           {billingSummary.receivingUnits.toLocaleString()} Units, {billingSummary.receivingCartons.toLocaleString()} Cartons
                         </td>
                         <td className="py-4 px-4 text-right text-slate-400">-</td>
                       </tr>
-                      <tr className="border-b border-slate-100 hover:bg-slate-50/50">
+                      <tr className="border-b border-slate-100 hover:bg-slate-50/50 bg-slate-100">
                         <td className="py-4 px-4 text-slate-900">Receiving Pallets:</td>
                         <td className="py-4 px-4 text-xs text-slate-500">
                           {billingSummary.receivingPalletsReceived.toLocaleString()} Rcvd, {billingSummary.receivingPalletsSupplied.toLocaleString()} Supp.
                         </td>
                         <td className="py-4 px-4 text-right text-slate-400">-</td>
                       </tr>
-                      <tr className="border-b border-slate-100 hover:bg-slate-50/50">
+                      <tr className="border-b border-slate-100 hover:bg-slate-50/50 bg-slate-100">
                         <td className="py-4 px-4 text-slate-900">Receiving Total Charges:</td>
                         <td className="py-4 px-4 text-slate-400">-</td>
                         <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.receivingTotal)}</td>
@@ -458,8 +496,12 @@ export default function Billing() {
                             <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Order #</th>
                             <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Date</th>
                             <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Base</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Line Itm</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Weight</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Pieces</th>
                             <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Cartons</th>
-                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Packages</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Pkgs</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Pallets</th>
                             <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Rush</th>
                             <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Intl</th>
                             <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Shipping</th>
@@ -469,23 +511,30 @@ export default function Billing() {
                         <tbody className="text-xs font-bold text-slate-700">
                           {billingSummary.filteredOrders.map(o => {
                             const fees = o.processingFees || {};
-                            const base = (Number(fees.baseFee)||0) + (Number(fees.lineItemSurcharge)||0) + (Number(fees.weightSurcharge)||0) + (Number(fees.pieceSurcharge)||0);
-                            
-                            const cartons = (Number(fees.cartonSurcharge)||0);
-                            const packages = (Number(fees.packageSurcharge)||0);
-                            
+                            const base = Number(fees.baseFee)||0;
+                            const line = Number(fees.lineItemSurcharge)||0;
+                            const weight = Number(fees.weightSurcharge)||0;
+                            const pieces = Number(fees.pieceSurcharge)||0;
+                            const cartons = Number(fees.cartonSurcharge)||0;
+                            const packages = Number(fees.packageSurcharge)||0;
+                            const pallets = Number(fees.palletFee)||0;
                             const rush = Number(fees.rushFee)||0;
                             const intl = Number(fees.internationalFee)||0;
                             const shipping = Number(o.shippingDetails?.shippingCost)||0;
-                            const total = base + cartons + packages + rush + intl + shipping;
+                            
+                            const total = base + line + weight + pieces + cartons + packages + pallets + rush + intl + shipping;
 
                             return (
                               <tr key={o._id} className="border-b border-slate-100 hover:bg-slate-50">
                                 <td className="py-3 px-4 font-mono text-blue-600">{o.orderNumber}</td>
                                 <td className="py-3 px-4 text-slate-500">{formatDate(o.createdAt)}</td>
                                 <td className="py-3 px-4 text-right">{formatCurrency(base)}</td>
+                                <td className="py-3 px-4 text-right">{formatCurrency(line)}</td>
+                                <td className="py-3 px-4 text-right">{formatCurrency(weight)}</td>
+                                <td className="py-3 px-4 text-right">{formatCurrency(pieces)}</td>
                                 <td className="py-3 px-4 text-right">{formatCurrency(cartons)}</td>
                                 <td className="py-3 px-4 text-right">{formatCurrency(packages)}</td>
+                                <td className="py-3 px-4 text-right">{formatCurrency(pallets)}</td>
                                 <td className="py-3 px-4 text-right">{formatCurrency(rush)}</td>
                                 <td className="py-3 px-4 text-right">{formatCurrency(intl)}</td>
                                 <td className="py-3 px-4 text-right">{formatCurrency(shipping)}</td>
@@ -498,8 +547,12 @@ export default function Billing() {
                           <tr>
                             <td colSpan="2" className="py-3 px-4 text-right uppercase tracking-widest text-[10px] text-slate-500">Totals</td>
                             <td className="py-3 px-4 text-right">{formatCurrency(billingSummary.orderProcessingBase)}</td>
+                            <td className="py-3 px-4 text-right">{formatCurrency(billingSummary.orderProcessingLineItems)}</td>
+                            <td className="py-3 px-4 text-right">{formatCurrency(billingSummary.orderProcessingWeight)}</td>
+                            <td className="py-3 px-4 text-right">{formatCurrency(billingSummary.orderProcessingPieces)}</td>
                             <td className="py-3 px-4 text-right">{formatCurrency(billingSummary.orderProcessingCartons)}</td>
                             <td className="py-3 px-4 text-right">{formatCurrency(billingSummary.orderProcessingPackages)}</td>
+                            <td className="py-3 px-4 text-right">{formatCurrency(billingSummary.orderProcessingPallets)}</td>
                             <td className="py-3 px-4 text-right">{formatCurrency(billingSummary.orderProcessingRush)}</td>
                             <td className="py-3 px-4 text-right">{formatCurrency(billingSummary.orderProcessingIntl)}</td>
                             <td className="py-3 px-4 text-right">{formatCurrency(billingSummary.orderShippingCosts)}</td>
