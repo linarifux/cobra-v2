@@ -12,6 +12,7 @@ export const fetchReceivingLogs = createAsyncThunk('receiving/fetchReceivingLogs
   } catch (error) { return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch receiving logs'); }
 });
 
+
 export const fetchReceivingById = createAsyncThunk('receiving/fetchReceivingById', async (id, { rejectWithValue }) => {
   try {
     const response = await api.get(`/receiving/${id}`);
