@@ -124,11 +124,6 @@ export default function OrderDetailsPage() {
   const isShipmentCreated = !!ssOrderId; 
 
   // --- TOP LEVEL CALCULATIONS ---
-  const subtotal = items.reduce((acc, item) => acc + (Number(item.price) * Number(item.qty)), 0);
-  const shippingCost = Number(shipping.shippingCost) || 0;
-  const tax = subtotal * 0.08; 
-  const grandTotal = subtotal + shippingCost + tax;
-
   // Single Source of Truth for Weights & Boxes (Calculates dynamically from manifest items)
   const derivedItemWeightOz = items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
   const totalPackageWeightOz = packages.reduce((acc, pkg) => acc + Number(pkg.weightInOunces || 0), 0);
@@ -154,19 +149,6 @@ export default function OrderDetailsPage() {
   }, [currentOrder?.customer, dispatch]);
   
 
-  // --- AUTO-SYNC PACKAGE WEIGHT ---
-  // If there is only 1 package, dynamically keep it synced with the total manifest weight to avoid mismatch warnings
-  useEffect(() => {
-    if (packages.length === 1 && derivedItemWeightOz > 0) {
-      setPackages(prev => {
-        if (prev[0].weightInOunces !== derivedItemWeightOz) {
-          return [{ ...prev[0], weightInOunces: derivedItemWeightOz }];
-        }
-        return prev;
-      });
-    }
-  }, [derivedItemWeightOz]);
-
   const processingFeesPreview = useMemo(() => {
     const config = customerCharges.length > 0 ? customerCharges[0] : {};
     
@@ -181,7 +163,9 @@ export default function OrderDetailsPage() {
     const cfgRush = config.rushSurcharge !== undefined ? Number(config.rushSurcharge) : 0;
     const cfgIntl = config.internationalSurcharge !== undefined ? Number(config.internationalSurcharge) : 0;
 
-    const weightLbs = finalPayloadWeightOz / 16;
+    // Use dynamic derived weight if package weight hasn't been configured or is heavily mismatched
+    const activeWeightOz = (isWeightMismatched && totalPackageWeightOz <= 16) ? derivedItemWeightOz : totalPackageWeightOz;
+    const weightLbs = activeWeightOz / 16;
     
     const lineItemsCount = items.length;
     const piecesCount = items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
@@ -210,7 +194,16 @@ export default function OrderDetailsPage() {
       pieceSurcharge, cartonSurcharge, palletFee, rushFee,
       internationalFee, totalProcessingFee
     };
-  }, [finalPayloadWeightOz, items, packages.length, cartoonsCount, palletsCount, isRushOrder, address.country, customerCharges]);
+  }, [totalPackageWeightOz, derivedItemWeightOz, isWeightMismatched, items, packages.length, cartoonsCount, palletsCount, isRushOrder, address.country, customerCharges]);
+
+  // Derive Invoice Mathematics
+  const subtotal = items.reduce((acc, item) => acc + (Number(item.price) * Number(item.qty)), 0);
+  const shippingCost = Number(shipping.shippingCost) || 0;
+  const processingFeesTotal = Number(processingFeesPreview.totalProcessingFee) || 0;
+  const tax = subtotal * 0.08; 
+  // Add processing cost securely into Grand Total
+  const grandTotal = subtotal + shippingCost + processingFeesTotal + tax;
+
 
   useEffect(() => {
     if (isValidMongoId) dispatch(fetchOrderById(id));
@@ -327,6 +320,7 @@ export default function OrderDetailsPage() {
     }
   }, [currentOrder, inventoryData]); 
 
+  // --- THESE WERE MISSING ---
   const addPackage = () => setPackages(prev => [...prev, { id: generateLocalId(), packageCode: 'package', weightInOunces: 16, length: 10, width: 10, height: 10 }]);
   const updatePackage = (id, field, value) => setPackages(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
   const removePackage = (id) => setPackages(prev => prev.filter(p => p.id !== id));
@@ -345,6 +339,7 @@ export default function OrderDetailsPage() {
 
     updatePackage(id, 'weightInOunces', newTotal);
   };
+  // -------------------------
 
   const handleMetricsOverride = (newTotalWeightOz, newTotalBoxes) => {
     let currentPkgs = [...packages];
@@ -665,6 +660,8 @@ export default function OrderDetailsPage() {
     }
     // -------------------------------------
 
+    const syncWeightOz = (isWeightMismatched && totalPackageWeightOz <= 16) ? derivedItemWeightOz : totalPackageWeightOz;
+
     const payload = {
       status: orderStatus,
       isRushOrder: isRushOrder,
@@ -689,7 +686,7 @@ export default function OrderDetailsPage() {
         cartoons: Number(cartoonsCount) || 0,
         pallets: Number(palletsCount) || 0, 
         totalBoxes: packages.length,
-        totalWeightOunces: finalPayloadWeightOz,
+        totalWeightOunces: syncWeightOz,
         packages: packages.map(p => ({
           packageCode: p.packageCode || 'package',
           weightInOunces: Number(p.weightInOunces) || 16,
@@ -1074,7 +1071,7 @@ export default function OrderDetailsPage() {
               palletsCount={palletsCount} 
               setPalletsCount={setPalletsCount} 
               packages={packages} 
-              totalItemWeightOz={finalPayloadWeightOz} 
+              totalItemWeightOz={databaseWeightOz} 
               totalBoxesCount={packages.length}
               isWeightMismatched={isWeightMismatched} 
               orderStatus={orderStatus} 
@@ -1114,10 +1111,10 @@ export default function OrderDetailsPage() {
             tax={tax} 
             grandTotal={currentOrder?.totalAmount || grandTotal} 
             totalItemWeightOz={finalPayloadWeightOz}
+            processingFeesTotal={processingFeesPreview.totalProcessingFee}
           />
         </div>
       </div>
     </div>
   );
 }
-

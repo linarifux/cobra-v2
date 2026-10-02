@@ -1,7 +1,9 @@
 import React from 'react';
-import { CreditCard } from 'lucide-react';
+import { CreditCard, Scale } from 'lucide-react';
 
-export default function InvoicePanel({ subtotal, shipping, setShipping, tax, grandTotal }) {
+export default function InvoicePanel({ subtotal, shipping, setShipping, tax, grandTotal, totalItemWeightOz, processingFeesTotal }) {
+  const displayLbs = totalItemWeightOz ? (totalItemWeightOz / 16).toFixed(2) : '0.00';
+
   return (
     <div className="bg-slate-950 text-white p-6 rounded-3xl shadow-xl border border-slate-900 relative z-10 overflow-hidden">
        <div className="absolute -right-8 -top-8 w-32 h-32 bg-brand-gold/10 rounded-full blur-2xl pointer-events-none"></div>
@@ -9,7 +11,18 @@ export default function InvoicePanel({ subtotal, shipping, setShipping, tax, gra
            <CreditCard size={14}/> Invoice Summary
        </h3>
        <div className="text-sm font-medium space-y-3 relative z-10 text-slate-300">
+         
+         {/* Live Operational Weight */}
+         <div className="flex justify-between items-center mb-1">
+             <span className="flex items-center gap-1.5"><Scale size={14} className="text-slate-400" /> Op. Weight</span> 
+             <span className="font-mono text-white text-xs">{displayLbs} LBS</span>
+         </div>
+
          <div className="flex justify-between"><span>Items Subtotal</span> <span className="font-mono text-white">${(subtotal || 0).toFixed(2)}</span></div>
+         
+         {/* Display Live Processing Fees */}
+         <div className="flex justify-between"><span>Processing Fees</span> <span className="font-mono text-white">${(processingFeesTotal || 0).toFixed(2)}</span></div>
+         
          <div className="flex justify-between items-center">
              <span>Shipping Cost</span> 
              <div className="flex items-center border border-white/20 rounded-lg overflow-hidden bg-white/5 w-24 transition-colors focus-within:border-brand-gold/50 focus-within:bg-white/10">
