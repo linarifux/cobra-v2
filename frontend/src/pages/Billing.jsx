@@ -90,6 +90,7 @@ export default function Billing() {
     let totalProcessedOrdersCount = filteredOrders.length;
     let totalCartonsUsed = 0;
     let totalPackagesUsed = 0;
+    let totalPalletsUsed = 0;
     
     let intlShipmentsCount = 0;
     let rushShipmentsCount = 0;
@@ -116,13 +117,14 @@ export default function Billing() {
       // Ensure counts remain distinct
       totalCartonsUsed += (Number(o.shippingDetails?.cartoons) || 0);
       totalPackagesUsed += (Number(o.shippingDetails?.totalBoxes) || 0);
+      totalPalletsUsed += (Number(o.shippingDetails?.pallets) || 0);
 
       if (o.isRushOrder) rushShipmentsCount++;
       if (o.isInternational) intlShipmentsCount++;
       if (shippingCost > 0) shipmentsWithCostCount++;
     });
 
-    const grandProcessingTotal = orderProcessingBase + orderProcessingLineItems + orderProcessingWeight + orderProcessingPieces + orderProcessingCartons + orderProcessingPackages + orderProcessingPallets + orderProcessingRush + orderProcessingIntl + orderShippingCosts;
+    const grandProcessingTotal = orderProcessingBase + orderProcessingLineItems + orderProcessingWeight + orderProcessingPieces + orderProcessingCartons + orderProcessingPackages + orderProcessingPallets + orderProcessingRush + orderProcessingIntl;
 
     let receivingTotal = 0;
     let receivingPalletsReceived = 0;
@@ -139,7 +141,7 @@ export default function Billing() {
       receivingUnits += (Number(r.quantity) || 0);
     });
 
-    const grandTotal = grandProcessingTotal + receivingTotal;
+    const grandTotal = grandProcessingTotal + orderShippingCosts + receivingTotal;
 
     return {
       hasData: filteredOrders.length > 0 || filteredReceiving.length > 0,
@@ -159,6 +161,7 @@ export default function Billing() {
       totalProcessedOrdersCount,
       totalCartonsUsed,
       totalPackagesUsed,
+      totalPalletsUsed,
       intlShipmentsCount,
       rushShipmentsCount,
       shipmentsWithCostCount,
@@ -207,14 +210,16 @@ export default function Billing() {
         ["Piece Pick Surcharges:", "-", "-", formatCurrency(billingSummary.orderProcessingPieces)],
         ["Cartons:", billingSummary.totalCartonsUsed.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingCartons)],
         ["Packages:", billingSummary.totalPackagesUsed.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingPackages)],
-        ["Pallet Processing:", "-", "-", formatCurrency(billingSummary.orderProcessingPallets)],
+        ["Pallet Processing:", billingSummary.totalPalletsUsed.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingPallets)],
         ["International Shipments:", billingSummary.intlShipmentsCount.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingIntl)],
         ["Rush Orders:", billingSummary.rushShipmentsCount.toLocaleString(), "-", formatCurrency(billingSummary.orderProcessingRush)],
+        ["Total Processing Fees:", "-", "-", formatCurrency(billingSummary.grandProcessingTotal)],
         ["Shipping Costs:", billingSummary.shipmentsWithCostCount.toLocaleString(), "-", formatCurrency(billingSummary.orderShippingCosts)],
         ["Receiving Orders:", billingSummary.totalReceivingOrdersCount.toLocaleString(), "-", "-"],
         ["Receiving Units:", billingSummary.receivingUnits.toLocaleString(), "-", "-"],
         ["Receiving Cartons:", billingSummary.receivingCartons.toLocaleString(), "-", "-"],
-        ["Pallets Received / Supplied:", `${billingSummary.receivingPalletsReceived.toLocaleString()} Rcvd, ${billingSummary.receivingPalletsSupplied.toLocaleString()} Supp.`, "-", "-"],
+        ["Pallets Received:", billingSummary.receivingPalletsReceived.toLocaleString(), "-", "-"],
+        ["Pallets Supplied:", billingSummary.receivingPalletsSupplied.toLocaleString(), "-", "-"],
         ["Receiving Total Charges:", "-", "-", formatCurrency(billingSummary.receivingTotal)],
       ];
 
@@ -424,7 +429,7 @@ export default function Billing() {
                       </tr>
                       <tr className="border-b border-slate-100 hover:bg-slate-50/50">
                         <td className="py-4 px-4 text-slate-900">Pallet Processing:</td>
-                        <td className="py-4 px-4 text-slate-400">-</td>
+                        <td className="py-4 px-4">{billingSummary.totalPalletsUsed.toLocaleString()}</td>
                         <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingPallets)}</td>
                       </tr>
                       <tr className="border-b border-slate-100 hover:bg-slate-50/50">
@@ -437,6 +442,11 @@ export default function Billing() {
                         <td className="py-4 px-4">{billingSummary.rushShipmentsCount.toLocaleString()}</td>
                         <td className="py-4 px-4 text-right">{formatCurrency(billingSummary.orderProcessingRush)}</td>
                       </tr>
+                      <tr className="border-b-2 border-slate-300 hover:bg-slate-50/50 bg-slate-50/80">
+                        <td className="py-4 px-4 text-slate-900 font-black">Total Processing Fees:</td>
+                        <td className="py-4 px-4 text-slate-400">-</td>
+                        <td className="py-4 px-4 text-right font-black text-brand-gold">{formatCurrency(billingSummary.grandProcessingTotal)}</td>
+                      </tr>
                       <tr className="border-b border-slate-100 hover:bg-slate-50/50">
                         <td className="py-4 px-4 text-slate-900">Shipping Costs:</td>
                         <td className="py-4 px-4">{billingSummary.shipmentsWithCostCount.toLocaleString()}</td>
@@ -448,17 +458,23 @@ export default function Billing() {
                         <td className="py-4 px-4 text-right text-slate-400">-</td>
                       </tr>
                       <tr className="border-b border-slate-100 hover:bg-slate-50/50 bg-slate-100">
-                        <td className="py-4 px-4 text-slate-900">Receiving Units / Cartons:</td>
-                        <td className="py-4 px-4 text-xs text-slate-500">
-                          {billingSummary.receivingUnits.toLocaleString()} Units, {billingSummary.receivingCartons.toLocaleString()} Cartons
-                        </td>
+                        <td className="py-4 px-4 text-slate-900">Receiving Units:</td>
+                        <td className="py-4 px-4">{billingSummary.receivingUnits.toLocaleString()}</td>
                         <td className="py-4 px-4 text-right text-slate-400">-</td>
                       </tr>
                       <tr className="border-b border-slate-100 hover:bg-slate-50/50 bg-slate-100">
-                        <td className="py-4 px-4 text-slate-900">Receiving Pallets:</td>
-                        <td className="py-4 px-4 text-xs text-slate-500">
-                          {billingSummary.receivingPalletsReceived.toLocaleString()} Rcvd, {billingSummary.receivingPalletsSupplied.toLocaleString()} Supp.
-                        </td>
+                        <td className="py-4 px-4 text-slate-900">Receiving Cartons:</td>
+                        <td className="py-4 px-4">{billingSummary.receivingCartons.toLocaleString()}</td>
+                        <td className="py-4 px-4 text-right text-slate-400">-</td>
+                      </tr>
+                      <tr className="border-b border-slate-100 hover:bg-slate-50/50 bg-slate-100">
+                        <td className="py-4 px-4 text-slate-900">Pallets Received:</td>
+                        <td className="py-4 px-4">{billingSummary.receivingPalletsReceived.toLocaleString()}</td>
+                        <td className="py-4 px-4 text-right text-slate-400">-</td>
+                      </tr>
+                      <tr className="border-b border-slate-100 hover:bg-slate-50/50 bg-slate-100">
+                        <td className="py-4 px-4 text-slate-900">Pallets Supplied:</td>
+                        <td className="py-4 px-4">{billingSummary.receivingPalletsSupplied.toLocaleString()}</td>
                         <td className="py-4 px-4 text-right text-slate-400">-</td>
                       </tr>
                       <tr className="border-b border-slate-100 hover:bg-slate-50/50 bg-slate-100">
@@ -556,7 +572,7 @@ export default function Billing() {
                             <td className="py-3 px-4 text-right">{formatCurrency(billingSummary.orderProcessingRush)}</td>
                             <td className="py-3 px-4 text-right">{formatCurrency(billingSummary.orderProcessingIntl)}</td>
                             <td className="py-3 px-4 text-right">{formatCurrency(billingSummary.orderShippingCosts)}</td>
-                            <td className="py-3 px-4 text-right text-brand-gold">{formatCurrency(billingSummary.grandProcessingTotal)}</td>
+                            <td className="py-3 px-4 text-right text-brand-gold">{formatCurrency(billingSummary.grandProcessingTotal + billingSummary.orderShippingCosts)}</td>
                           </tr>
                         </tfoot>
                       </table>
@@ -583,7 +599,8 @@ export default function Billing() {
                             <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Item Name</th>
                             <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Units</th>
                             <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Cartons</th>
-                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Pallets (Rcv/Sup)</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Pallets Rcvd</th>
+                            <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Pallets Supp</th>
                             <th className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-slate-800 text-right bg-slate-100">Charge</th>
                           </tr>
                         </thead>
@@ -601,7 +618,8 @@ export default function Billing() {
                                 <td className="py-3 px-4 truncate max-w-[200px]">{itemName}</td>
                                 <td className="py-3 px-4 text-center">{r.quantity || 0}</td>
                                 <td className="py-3 px-4 text-center">{r.numberOfCartons || 0}</td>
-                                <td className="py-3 px-4 text-center">{palletsReceived} / {palletsSupplied}</td>
+                                <td className="py-3 px-4 text-center">{palletsReceived}</td>
+                                <td className="py-3 px-4 text-center">{palletsSupplied}</td>
                                 <td className="py-3 px-4 text-right text-slate-900 bg-slate-50/50">{formatCurrency(charge)}</td>
                               </tr>
                             );
@@ -612,7 +630,8 @@ export default function Billing() {
                             <td colSpan="3" className="py-3 px-4 text-right uppercase tracking-widest text-[10px] text-slate-500">Totals</td>
                             <td className="py-3 px-4 text-center">{billingSummary.receivingUnits.toLocaleString()}</td>
                             <td className="py-3 px-4 text-center">{billingSummary.receivingCartons.toLocaleString()}</td>
-                            <td className="py-3 px-4 text-center">{billingSummary.receivingPalletsReceived.toLocaleString()} / {billingSummary.receivingPalletsSupplied.toLocaleString()}</td>
+                            <td className="py-3 px-4 text-center">{billingSummary.receivingPalletsReceived.toLocaleString()}</td>
+                            <td className="py-3 px-4 text-center">{billingSummary.receivingPalletsSupplied.toLocaleString()}</td>
                             <td className="py-3 px-4 text-right text-brand-gold">{formatCurrency(billingSummary.receivingTotal)}</td>
                           </tr>
                         </tfoot>
