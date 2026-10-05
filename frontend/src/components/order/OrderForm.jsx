@@ -5,19 +5,20 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, MapPin, CreditCard,
   Trash2, Plus, MessageSquare,
-  PackageCheck, Save, Loader2, Box, Building2, User, Briefcase, Truck, ChevronDown, Search, AlertTriangle, Globe, Scale
+  PackageCheck, Save, Loader2, Box, Building2, User, Briefcase, Truck, ChevronDown, Search, AlertTriangle, Globe, Scale,
+  HelpCircle, Package, FileText
 } from 'lucide-react';
 import { toast } from 'sonner';
+import zipState from 'zip-state';
 import NotFoundPage from '../../pages/NotFoundPage';
 
 // Redux Actions
 import { fetchOrderById, updateOrder, createOrder, clearCurrentOrder } from '../../store/slices/orderSlice';
-
 import { fetchCustomers } from '../../store/slices/customerSlice';
 import { fetchDivisions } from '../../store/slices/divisionSlice';
 import { fetchInventory } from '../../store/slices/inventorySlice';
 import { fetchUsers } from '../../store/slices/userSlice';
-import { fetchCarriers } from '../../store/slices/carrierSlice';
+import { fetchCarriers, fetchCarrierPackages } from '../../store/slices/carrierSlice';
 
 // --- Utilities ---
 const generateLocalId = () => `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -60,6 +61,7 @@ export default function OrderForm() {
   const { items: customersData = [], status: customersStatus } = useSelector((state) => state.customers || {});
   const { items: divisionsData = [], status: divisionsStatus } = useSelector((state) => state.divisions || {});
   const { items: carriersData = [], status: carrierStatus } = useSelector((state) => state.carriers || {});
+  const { user: currentUser } = useSelector((state) => state.auth || {});
 
   // --- Form State ---
   const [orderNumber, setOrderNumber] = useState('');
@@ -72,7 +74,7 @@ export default function OrderForm() {
   const [isInternational, setIsInternational] = useState(false);
 
   const [orderStatus, setOrderStatus] = useState('New');
-  const [shipping, setShipping] = useState({ carrierId: '', carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0, weight: 0 }); // Added root weight field fallback
+  const [shipping, setShipping] = useState({ carrierId: '', carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0, weight: 0 }); 
   const [address, setAddress] = useState({ name: '', companyName: '', email: '', phone: '', street: '', line2: '', city: '', state: '', zip: '', country: 'US' });
   const [items, setItems] = useState([]);
   const [notes, setNotes] = useState('');
@@ -88,6 +90,10 @@ export default function OrderForm() {
   const [isInventoryDropdownOpen, setIsInventoryDropdownOpen] = useState(false);
   const [inventorySearch, setInventorySearch] = useState('');
   const inventoryDropdownRef = useRef(null);
+
+  // RBAC Setup
+  const isSuperUser = ['super_admin', 'admin', 'super_user'].includes(currentUser?.role) || currentUser?.portal === 'admin';
+  const forceUserId = !isSuperUser ? (currentUser?._id || currentUser?.id) : '';
 
   // Close custom dropdowns when clicking outside
   useEffect(() => {
@@ -111,7 +117,6 @@ export default function OrderForm() {
   // --- Calculations ---
   const subtotal = items.reduce((acc, item) => acc + (Number(item.price) * Number(item.qty)), 0);
   
-  // Calculate total weight. Inventory weight is stored in ounces in DB, sum it then convert to lbs for UI
   const totalWeightOunces = items.reduce((acc, item) => acc + (Number(item.weight || 0) * Number(item.qty)), 0); 
   const totalWeightLbs = totalWeightOunces / 16; 
   
@@ -141,7 +146,6 @@ export default function OrderForm() {
     }
   }, [divisionId, dispatch]);
 
-  // Contextually filter inventory strictly by Division (and fallback to Customer if no division is selected)
   const availableInventories = useMemo(() => {
     if (!inventoryData?.length) return [];
 
@@ -159,7 +163,6 @@ export default function OrderForm() {
           isMatch = isMatch && (invDivId === String(divisionId));
         }
 
-        // If neither is selected, return nothing to prevent cross-contamination
         if (!customerId && !divisionId) return false;
 
         return isMatch;
@@ -170,8 +173,9 @@ export default function OrderForm() {
         sku: inv.sku || '',
         price: inv.unitCost || inv.price || 0,
         weight: inv.weight || 0,
-        min: Number(inv.min) || 0, // Explicit cast to Number for accurate boolean logic later
-        max: Number(inv.max) || 0  // Explicit cast to Number 
+        min: Number(inv.min) || 0,
+        max: Number(inv.max) || 0,
+        available: Number(inv.available) || 0
       }))
       .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' })); 
   }, [inventoryData, customerId, divisionId]);
@@ -192,17 +196,13 @@ export default function OrderForm() {
       const maxLimit = Number(matchedStock.max) || 0;
       const minLimit = Number(matchedStock.min) || 0;
       
-      // True if over the max limit (excluding 0)
       const exceedsMax = maxLimit > 0 && currentQty > maxLimit;
-      
-      // True if below the min limit (excluding 0)
       const belowMin = minLimit > 0 && currentQty < minLimit;
       
       return exceedsMax || belowMin;
     });
   }, [items, availableInventories]);
 
-  // Dynamically flatten carriers into selectable options
   const shippingOptions = useMemo(() => {
     if (!Array.isArray(carriersData)) return [];
 
@@ -271,7 +271,6 @@ export default function OrderForm() {
       setIsRushOrder(currentOrder.isRushOrder || false);
       setIsInternational(currentOrder.isInternational || false);
 
-      // Calculate effective status to keep visually in sync with quantity constraints
       const effectiveStatus = currentOrder.qtyLimitExceeds && currentOrder.status === 'New' ? 'Pending' : (currentOrder.status || 'New');
       setOrderStatus(effectiveStatus);
       
@@ -281,11 +280,11 @@ export default function OrderForm() {
         serviceCode: currentOrder.shippingDetails?.serviceCode || '',
         trackingNumber: currentOrder.shippingDetails?.trackingNumber || '',
         shippingCost: currentOrder.shippingDetails?.shippingCost || 0,
-        weight: (currentOrder.shippingDetails?.totalWeightOunces || 0) / 16 // Set legacy weight from payload if it exists
+        weight: (currentOrder.shippingDetails?.totalWeightOunces || 0) / 16 
       });
       setAddress({
         name: currentOrder.shippingAddress?.recipientName || '',
-        companyName: currentOrder.shippingAddress?.companyName || '', // ADDED COMPANY NAME
+        companyName: currentOrder.shippingAddress?.companyName || '', 
         email: currentOrder.shippingAddress?.email || '',
         phone: currentOrder.shippingAddress?.phone || '',
         street: currentOrder.shippingAddress?.line1 || '',
@@ -329,23 +328,19 @@ export default function OrderForm() {
     setShipping({ ...shipping, carrierId: '', carrierType: '', serviceCode: '' });
   };
 
-  // --- Shopper Auto-Population logic ---
   const handleUserChange = (e) => {
     const selectedUserId = e.target.value;
     setUserId(selectedUserId);
     
     if (selectedUserId) {
       const selectedUser = contextualUsers.find(u => String(u._id) === String(selectedUserId));
-      
-      // Auto-populate charge code
       setChargeCode(selectedUser?.chargeCode || '');
 
-      // Auto-populate Shipping Address from user's primary profile address
       if (selectedUser) {
         setAddress(prev => ({
           ...prev,
           name: selectedUser.name || selectedUser.firstName || '',
-          companyName: selectedUser.companyName || '', // ADDED COMPANY NAME MAPPING IF IT EXISTS IN USER MODEL
+          companyName: selectedUser.companyName || '', 
           email: selectedUser.email || '',
           phone: selectedUser.phone || '',
           street: selectedUser.userAddress?.street1 || '',
@@ -356,7 +351,6 @@ export default function OrderForm() {
           country: selectedUser.userAddress?.country || 'US'
         }));
       }
-
     } else {
       setChargeCode('');
     }
@@ -364,10 +358,30 @@ export default function OrderForm() {
 
   const handleAddItem = () => {
     if (!newItem.name || newItem.price === undefined) return toast.error("Please select an item to add.");
-    setItems([
-      ...items,
-      { ...newItem, id: generateLocalId(), qty: Number(newItem.qty), price: Number(newItem.price), weight: Number(newItem.weight || 0) }
-    ]);
+
+    const requestedQty = Number(newItem.qty) || 1;
+    const matchedStockItem = inventoryData.find(inv => inv.sku === newItem.sku);
+    
+    if (matchedStockItem) {
+      const availableStock = Number(matchedStockItem.available) || 0;
+      const draftedItem = items.find(i => i.sku === newItem.sku);
+      const draftedQty = draftedItem ? Number(draftedItem.qty) : 0;
+      
+      if (requestedQty + draftedQty > availableStock) {
+        return toast.error("You are trying to order more than the quantity in stock, please change the quantity.");
+      }
+    }
+
+    const existingItem = items.find(i => i.sku === newItem.sku);
+    if (existingItem) {
+      setItems(items.map(i => i.sku === newItem.sku ? { ...i, qty: Number(i.qty) + requestedQty } : i));
+    } else {
+      setItems([
+        ...items,
+        { ...newItem, id: generateLocalId(), qty: requestedQty, price: Number(newItem.price), weight: Number(newItem.weight || 0) }
+      ]);
+    }
+    
     setNewItem({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
   };
 
@@ -379,7 +393,6 @@ export default function OrderForm() {
       return toast.warning("Please fill out all required shipping address fields.");
     }
 
-    // STRICT 2-CHARACTER STATE VALIDATION
     if (address.state.trim().length !== 2 && !isInternational) {
       return toast.error("State must be exactly a 2-character code (e.g., NY, CA). Please use the dropdown selector.");
     }
@@ -404,13 +417,13 @@ export default function OrderForm() {
       notes: notes,
       shippingAddress: {
         recipientName: address.name, 
-        companyName: address.companyName, // INCLUDED COMPANY NAME IN DB PAYLOAD
+        companyName: address.companyName, 
         email: address.email, 
         phone: address.phone,
         line1: address.street, 
         line2: address.line2, 
         city: address.city,
-        state: address.state.toUpperCase().trim(), // Force uppercase for DB
+        state: address.state.toUpperCase().trim(), 
         zip: address.zip, 
         country: address.country
       },
@@ -421,7 +434,7 @@ export default function OrderForm() {
         serviceCode: shipping.serviceCode,
         trackingNumber: shipping.trackingNumber,
         shippingCost: Number(shipping.shippingCost),
-        totalWeightOunces: totalWeightOunces // Ensure pure ounces pass directly to payload
+        totalWeightOunces: totalWeightOunces 
       },
       items: items.map(item => ({
         sku: item.sku, name: item.name, quantity: Number(item.qty),
@@ -741,6 +754,30 @@ export default function OrderForm() {
               </div>
 
               <div className="col-span-1 flex gap-3 relative z-50">
+                <div className="w-1/2">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Zip *</label>
+                  <input 
+                    className="w-full bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all" 
+                    value={address.zip} 
+                    onChange={(e) => {
+                      const newZip = e.target.value;
+                      setAddress(prev => {
+                        const nextState = { ...prev, zip: newZip };
+                        if (typeof newZip === 'string') {
+                          const cleanZip = newZip.trim().slice(0, 5);
+                          if (cleanZip.length === 5) {
+                            const mappedState = zipState(cleanZip);
+                            if (mappedState) {
+                              nextState.state = mappedState;
+                            }
+                          }
+                        }
+                        return nextState;
+                      });
+                    }} 
+                    placeholder="Zip Code" 
+                  />
+                </div>
 
                 {/* CUSTOM SEARCHABLE STATE DROPDOWN */}
                 <div className="w-1/2 relative" ref={stateDropdownRef}>
@@ -761,7 +798,7 @@ export default function OrderForm() {
                         initial={{ opacity: 0, y: -5 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -5 }}
-                        className="absolute z-[100] w-full md:w-48 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
+                        className="absolute z-[100] w-full md:w-48 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden right-0"
                       >
                         <div className="p-2 border-b border-slate-100 flex items-center gap-2">
                           <Search size={14} className="text-slate-400 shrink-0" />
@@ -796,11 +833,6 @@ export default function OrderForm() {
                       </motion.div>
                     )}
                   </AnimatePresence>
-                </div>
-
-                <div className="w-1/2">
-                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Zip *</label>
-                  <input className="w-full bg-white p-2.5 rounded-lg text-xs font-medium border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all" value={address.zip} onChange={(e) => setAddress({ ...address, zip: e.target.value })} placeholder="Zip Code" />
                 </div>
               </div>
             </div>
@@ -851,6 +883,14 @@ export default function OrderForm() {
                       value={item.qty}
                       onChange={(e) => {
                         const newQty = parseInt(e.target.value) || 1;
+                        const matchedStockItem = inventoryData.find(inv => inv.sku === item.sku);
+                        if (matchedStockItem) {
+                          const availableStock = Number(matchedStockItem.available) || 0;
+                          if (newQty > availableStock) {
+                            toast.error("You are trying to order more than the quantity in stock, please change the quantity.");
+                            return;
+                          }
+                        }
                         setItems(items.map(i => i.id === item.id ? { ...i, qty: newQty } : i));
                       }}
                     />
@@ -987,4 +1027,3 @@ export default function OrderForm() {
     </div>
   );
 }
-
