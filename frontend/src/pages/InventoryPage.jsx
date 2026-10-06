@@ -104,7 +104,6 @@ export default function InventoryPage() {
   const handleOpenAdd = () => {
     setItemToEdit(null);
     setShowFormPanel(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleOpenEdit = (id) => {
@@ -112,7 +111,6 @@ export default function InventoryPage() {
     if (item) {
       setItemToEdit(item);
       setShowFormPanel(true);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
@@ -250,41 +248,49 @@ export default function InventoryPage() {
   }
 
   return (
-    <div className="h-full max-w-[1500px] mx-auto p-6 space-y-6 animate-in fade-in duration-500 pb-20">
+    <div className="w-full relative h-[calc(100vh-6rem)] max-w-[1500px] mx-auto p-4 sm:p-6 flex flex-col gap-4 sm:gap-6 overflow-hidden">
       
-      <InventoryHeader onAddClick={handleOpenAdd} />
+      <div className="flex-shrink-0 animate-in fade-in duration-500">
+        <InventoryHeader onAddClick={handleOpenAdd} />
+      </div>
 
       {showFormPanel && (
-        <InventoryFormPanel 
-          itemToEdit={itemToEdit}
-          apiCustomers={apiCustomers}
-          apiDivisions={apiDivisions}
-          apiCategories={apiCategories}
-          apiLocations={apiLocations}
-          apiTypePieces={apiTypePieces} 
-          onSubmit={handleFormSubmit}
-          onClose={() => setShowFormPanel(false)}
-        />
+        <div className="flex-shrink-0">
+          <InventoryFormPanel 
+            itemToEdit={itemToEdit}
+            apiCustomers={apiCustomers}
+            apiDivisions={apiDivisions}
+            apiCategories={apiCategories}
+            apiLocations={apiLocations}
+            apiTypePieces={apiTypePieces} 
+            onSubmit={handleFormSubmit}
+            onClose={() => setShowFormPanel(false)}
+          />
+        </div>
       )}
 
-      <InventoryFilterBar 
-        search={search} setSearch={setSearch}
-        customerFilter={customerFilter} setCustomerFilter={setCustomerFilter}
-        divisionFilter={divisionFilter} setDivisionFilter={setDivisionFilter}
-        categoryFilter={categoryFilter} setCategoryFilter={setCategoryFilter}
-        onlyAvailable={onlyAvailable} setOnlyAvailable={setOnlyAvailable}
-        apiCustomers={apiCustomers}
-        apiDivisions={apiDivisions} 
-        apiCategories={apiCategories}
-        onClearFilters={handleClearFilters}
-      />
+      <div className="flex-shrink-0 animate-in fade-in duration-500 delay-100">
+        <InventoryFilterBar 
+          search={search} setSearch={setSearch}
+          customerFilter={customerFilter} setCustomerFilter={setCustomerFilter}
+          divisionFilter={divisionFilter} setDivisionFilter={setDivisionFilter}
+          categoryFilter={categoryFilter} setCategoryFilter={setCategoryFilter}
+          onlyAvailable={onlyAvailable} setOnlyAvailable={setOnlyAvailable}
+          apiCustomers={apiCustomers}
+          apiDivisions={apiDivisions} 
+          apiCategories={apiCategories}
+          onClearFilters={handleClearFilters}
+        />
+      </div>
 
-      <InventoryTable 
-        filteredInventory={filteredInventory}
-        apiInventory={apiInventory}
-        onEditClick={handleOpenEdit}
-        onDeleteClick={handleDeleteItem}
-      />
+      <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-24 sm:pb-20 animate-in fade-in duration-500 delay-200">
+        <InventoryTable 
+          filteredInventory={filteredInventory}
+          apiInventory={apiInventory}
+          onEditClick={handleOpenEdit}
+          onDeleteClick={handleDeleteItem}
+        />
+      </div>
 
     </div>
   );

@@ -124,20 +124,26 @@ export default function WarehouseLocations() {
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500 max-w-[1500px] mx-auto p-6 pb-20">
+    <div className="flex flex-col h-[calc(100vh-6rem)] space-y-6 animate-in fade-in duration-500 max-w-[1500px] mx-auto p-6 overflow-hidden">
       
-      <LocationHeader openAddModal={openAddModal} />
+      <div className="flex-shrink-0">
+        <LocationHeader openAddModal={openAddModal} />
+      </div>
       
-      <LocationFilterBoard 
-        searchTerm={searchTerm} setSearchTerm={setSearchTerm} 
-        typeFilter={typeFilter} setTypeFilter={setTypeFilter} 
-      />
+      <div className="flex-shrink-0">
+        <LocationFilterBoard 
+          searchTerm={searchTerm} setSearchTerm={setSearchTerm} 
+          typeFilter={typeFilter} setTypeFilter={setTypeFilter} 
+        />
+      </div>
       
-      <LocationGrid 
-        filteredLocations={filteredLocations} 
-        openEditModal={openEditModal} 
-        handleDelete={handleDelete} 
-      />
+      <div className="flex-1 overflow-y-auto custom-scrollbar pb-20 pr-2">
+        <LocationGrid 
+          filteredLocations={filteredLocations} 
+          openEditModal={openEditModal} 
+          handleDelete={handleDelete} 
+        />
+      </div>
       
       <LocationModal 
         isOpen={isModalOpen} 

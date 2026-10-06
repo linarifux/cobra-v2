@@ -739,10 +739,10 @@ export default function OrdersPage() {
   };
 
   return (
-    <div className="relative h-full p-6 space-y-6 animate-fade-in max-w-[1600px] mx-auto pb-32">
+    <div className="relative h-[calc(100vh-6rem)] p-6 space-y-6 animate-fade-in max-w-[1600px] mx-auto pb-32 flex flex-col overflow-hidden">
       
       {/* Header Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 flex-shrink-0">
         <PageHeader title="Fulfillment Queue" subtitle="Real-time dispatch and logistics overview." />
         <button 
           onClick={() => navigate('/orders/new')}
@@ -752,17 +752,19 @@ export default function OrdersPage() {
         </button>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-6">
+      <div className="flex flex-col md:flex-row gap-6 flex-1 min-h-0">
         {/* --- NEW SIDEBAR --- */}
-        <OrdersSidebar
-          activeStatus={filters.status}
-          onStatusChange={(newStatus) => setFilters({ ...filters, status: newStatus })}
-          statusCounts={statusCounts}
-        />
+        <div className="flex-shrink-0">
+          <OrdersSidebar
+            activeStatus={filters.status}
+            onStatusChange={(newStatus) => setFilters({ ...filters, status: newStatus })}
+            statusCounts={statusCounts}
+          />
+        </div>
 
         {/* --- MAIN CONTENT --- */}
         <div className="flex-1 flex flex-col min-w-0 space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-shrink-0">
             {[
               { label: 'Total Orders', val: ordersData.length, color: 'text-slate-900' },
               { label: 'Awaiting Action', val: ordersData.filter(o => ['New', 'Pending'].includes(o.status || 'New')).length, color: 'text-rose-600' },
@@ -776,7 +778,7 @@ export default function OrdersPage() {
             ))}
           </div>
 
-          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl space-y-4 shadow-sm">
+          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl space-y-4 shadow-sm flex-shrink-0">
             
             <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
               <div className="relative flex-1 w-full max-w-2xl">
@@ -861,21 +863,21 @@ export default function OrdersPage() {
             </div>
           </div>
 
-          {/* State Handling */}
-          {ordersStatus === 'loading' && ordersData.length === 0 ? (
-            <div className="flex justify-center items-center py-20 text-slate-400">
-              <Loader2 className="animate-spin text-brand-gold" size={32} />
-            </div>
-          ) : ordersStatus === 'failed' ? (
-            <div className="bg-red-50 text-red-600 p-6 rounded-3xl text-center text-sm font-bold border border-red-200 shadow-sm">
-              Failed to load orders: {ordersError}
-            </div>
-          ) : (
-            <div className="bg-white/60 backdrop-blur-2xl border border-white/80 rounded-[2rem] overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
-              <div className="overflow-x-auto w-full">
+          {/* State Handling & Scrollable Table Container */}
+          <div className="flex-1 flex flex-col min-h-0 bg-white/60 backdrop-blur-2xl border border-white/80 rounded-[2rem] overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
+            {ordersStatus === 'loading' && ordersData.length === 0 ? (
+              <div className="flex justify-center items-center h-full text-slate-400">
+                <Loader2 className="animate-spin text-brand-gold" size={32} />
+              </div>
+            ) : ordersStatus === 'failed' ? (
+              <div className="m-5 bg-red-50 text-red-600 p-6 rounded-3xl text-center text-sm font-bold border border-red-200 shadow-sm">
+                Failed to load orders: {ordersError}
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto custom-scrollbar">
                 <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
-                  <thead>
-                    <tr className="bg-slate-50/50 border-b border-slate-200/80 text-[10px] uppercase font-black text-slate-400 tracking-widest">
+                  <thead className="sticky top-0 bg-slate-50/90 backdrop-blur-xl z-10 shadow-[0_1px_2px_rgba(0,0,0,0.05)] border-b border-slate-200/60">
+                    <tr className="text-[10px] uppercase font-black text-slate-400 tracking-widest">
                       <th className="p-5 w-12">
                         <input 
                           type="checkbox" 
@@ -1037,8 +1039,8 @@ export default function OrdersPage() {
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
