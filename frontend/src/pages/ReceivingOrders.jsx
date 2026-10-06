@@ -12,7 +12,6 @@ import { fetchCategories } from '../store/slices/categorySlice';
 
 import { useConfirm } from '../providers/ConfirmProvider';
 
-
 // Sub-components
 import ReceivingHeader from '../components/receiving/ReceivingHeader';
 import ReceivingFilterBoard from '../components/receiving/ReceivingFilterBoard';
@@ -188,33 +187,39 @@ export default function ReceivingOrders() {
   }
 
   return (
-    <div className="w-full relative max-w-[1500px] mx-auto animate-slide-in-right space-y-4 sm:space-y-6 px-4 sm:px-6 lg:px-8 py-4 sm:py-6 pb-24 sm:pb-20">
+    <div className="w-full relative h-[calc(100vh-6rem)] max-w-[1500px] mx-auto animate-slide-in-right px-4 sm:px-6 lg:px-8 py-4 sm:py-6 flex flex-col gap-4 sm:gap-6 overflow-hidden">
       
-      <ReceivingHeader 
-        exportToCSV={exportToCSV} 
-        openNewModal={openNewModal} 
-      />
+      <div className="flex-shrink-0">
+        <ReceivingHeader 
+          exportToCSV={exportToCSV} 
+          openNewModal={openNewModal} 
+        />
+      </div>
       
-      <ReceivingFilterBoard 
-        searchTerm={searchTerm} setSearchTerm={setSearchTerm} 
-        fromDate={fromDate} setFromDate={setFromDate} 
-        toDate={toDate} setToDate={setToDate} 
-        
-        customerFilter={customerFilter} setCustomerFilter={setCustomerFilter} customersList={customers}
-        divisionFilter={divisionFilter} setDivisionFilter={setDivisionFilter} divisionsList={availableDivisions}
-        itemFilter={itemFilter} setItemFilter={setItemFilter} inventoryList={availableInventory}
-        
-        clearFilters={() => { 
-          setSearchTerm(''); setFromDate(''); setToDate(''); 
-          setCustomerFilter('All'); setDivisionFilter('All'); setItemFilter('All');
-        }} 
-      />
+      <div className="flex-shrink-0">
+        <ReceivingFilterBoard 
+          searchTerm={searchTerm} setSearchTerm={setSearchTerm} 
+          fromDate={fromDate} setFromDate={setFromDate} 
+          toDate={toDate} setToDate={setToDate} 
+          
+          customerFilter={customerFilter} setCustomerFilter={setCustomerFilter} customersList={customers}
+          divisionFilter={divisionFilter} setDivisionFilter={setDivisionFilter} divisionsList={availableDivisions}
+          itemFilter={itemFilter} setItemFilter={setItemFilter} inventoryList={availableInventory}
+          
+          clearFilters={() => { 
+            setSearchTerm(''); setFromDate(''); setToDate(''); 
+            setCustomerFilter('All'); setDivisionFilter('All'); setItemFilter('All');
+          }} 
+        />
+      </div>
 
-      <ReceivingTable 
-        filteredData={filteredData} 
-        openEditModal={openEditModal} 
-        handleDelete={handleDelete} 
-      />
+      <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-24 sm:pb-20">
+        <ReceivingTable 
+          filteredData={filteredData} 
+          openEditModal={openEditModal} 
+          handleDelete={handleDelete} 
+        />
+      </div>
 
       <ReceivingModal 
         isOpen={isModalOpen} 
