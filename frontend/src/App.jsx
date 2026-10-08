@@ -39,6 +39,9 @@ import { ConfirmProvider } from './providers/ConfirmProvider';
 import TestCarrier from './pages/TestCarrier';
 import VendorCarriersPage from './pages/VendorCarriersPage';
 import Billing from './pages/Billing';
+import NetSuiteExplorer from './pages/NetSuiteExplorer';
+import NetSuiteSaleDetail from './pages/NetSuiteSaleDetail';
+import NetSuiteCustomerDetail from './pages/NetSuiteCustomerDetail';
 
 /**
  * ProtectedRoute Wrapper
@@ -128,6 +131,11 @@ export default function App() {
               <Route path="/shipping" element={<div className="p-6">ShipStation Integration Module</div>} />
               <Route path="/staff" element={<AdminUsersPage />} />
               <Route path="/settings" element={<AccountSettingsPage />} />
+
+              <Route path="/netsuite" element={<NetSuiteExplorer />} />
+
+              <Route path="/netsuite/salesOrder/:id" element={<NetSuiteSaleDetail />} />
+              <Route path="/netsuite/customer/:id" element={<NetSuiteCustomerDetail />} />
 
               {/* Catch-all 404 for undefined routes INSIDE the dashboard */}
               <Route path="*" element={<NotFoundPage />} />

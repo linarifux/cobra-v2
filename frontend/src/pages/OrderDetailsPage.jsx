@@ -116,6 +116,7 @@ export default function OrderDetailsPage() {
     { id: generateLocalId(), packageCode: 'package', weightInOunces: 16, length: 10, width: 10, height: 10 }
   ]);
 
+  
   const ssData = currentOrder?.shipstationDetails || currentOrder?.shipstationOrder || currentOrder?.shipstation || null;
   const ssOrderId = ssData?.orderId || currentOrder?.shipstationOrderId || null;
   const ssLabelId = ssData?.labelId || null;
@@ -319,8 +320,8 @@ export default function OrderDetailsPage() {
       }
     }
   }, [currentOrder, inventoryData]); 
+  
 
-  // --- THESE WERE MISSING ---
   const addPackage = () => setPackages(prev => [...prev, { id: generateLocalId(), packageCode: 'package', weightInOunces: 16, length: 10, width: 10, height: 10 }]);
   const updatePackage = (id, field, value) => setPackages(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
   const removePackage = (id) => setPackages(prev => prev.filter(p => p.id !== id));
@@ -339,7 +340,6 @@ export default function OrderDetailsPage() {
 
     updatePackage(id, 'weightInOunces', newTotal);
   };
-  // -------------------------
 
   const handleMetricsOverride = (newTotalWeightOz, newTotalBoxes) => {
     let currentPkgs = [...packages];
@@ -660,7 +660,12 @@ export default function OrderDetailsPage() {
     }
     // -------------------------------------
 
-    const syncWeightOz = (isWeightMismatched && totalPackageWeightOz <= 16) ? derivedItemWeightOz : totalPackageWeightOz;
+    // Auto-balance local packages array if there is only 1 package and we are dictating the weight from the manifest items
+    let payloadPackages = [...packages];
+    if (payloadPackages.length === 1 && derivedItemWeightOz > 0) {
+        payloadPackages[0].weightInOunces = derivedItemWeightOz;
+        setPackages(payloadPackages); // Keep UI in sync
+    }
 
     const payload = {
       status: orderStatus,
@@ -685,9 +690,9 @@ export default function OrderDetailsPage() {
         trackingNumber: shipping.trackingNumber, shippingCost: Number(shipping.shippingCost),
         cartoons: Number(cartoonsCount) || 0,
         pallets: Number(palletsCount) || 0, 
-        totalBoxes: packages.length,
-        totalWeightOunces: syncWeightOz,
-        packages: packages.map(p => ({
+        totalBoxes: payloadPackages.length,
+        totalWeightOunces: finalPayloadWeightOz,
+        packages: payloadPackages.map(p => ({
           packageCode: p.packageCode || 'package',
           weightInOunces: Number(p.weightInOunces) || 16,
           length: Number(p.length) || 10,

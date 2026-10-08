@@ -20,7 +20,9 @@ import uploadReducer from './slices/uploadSlice';
 import cartReducer from './slices/cartSlice';
 import rateReducer from './slices/rateSlice'; 
 import processingChargeReducer from './slices/processingChargeSlice';
-import receivingChargeReducer from './slices/receivingChargeSlice'; // Import the receiving charge slice
+import receivingChargeReducer from './slices/receivingChargeSlice'; 
+
+import netSuiteReducer from './slices/netSuiteSlice';
 
 // Vendors
 import vendorReducer from './slices/vendorSlice';
@@ -49,6 +51,7 @@ export const store = configureStore({
     receivingCharges: receivingChargeReducer, // Registered receiving charge reducer
     // 3. Vendors
     vendors: vendorReducer,
+    netsuite: netSuiteReducer,
 
     // 4. Vendor Carriers
     vendorCarriers: vendorCarrierReducer
