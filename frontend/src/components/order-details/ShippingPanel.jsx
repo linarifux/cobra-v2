@@ -25,7 +25,8 @@ export default function ShippingPanel({
   totalBoxesCount,
   isWeightMismatched, orderStatus,
   carriersData = [],
-  handleMetricsOverride, shipmentId
+  handleDirectSaveMetrics, // <-- Receive the new direct save prop
+  shipmentId
 }) {
   const dispatch = useDispatch();
   // Using the Live Rates state to render the UI
@@ -35,13 +36,15 @@ export default function ShippingPanel({
   const [isMetricsModalOpen, setIsMetricsModalOpen] = useState(false);
   const [isRatesModalOpen, setIsRatesModalOpen] = useState(false);
   
-  // NEW: Local loading state to bridge the gap between sequential API calls
+  // NEW: Local loading states
   const [isFetchingRates, setIsFetchingRates] = useState(false);
+  const [isSavingMetrics, setIsSavingMetrics] = useState(false);
 
   // Directly map from single-source-of-truth packages array
   const displayBoxes = totalBoxesCount !== undefined ? totalBoxesCount : packages?.length || 0;
   const displayLbs = Math.floor((totalItemWeightOz || 0) / 16);
-  const displayOz = +((totalItemWeightOz || 0) % 16).toFixed(1);
+  // Ensure displayOz is a whole number as requested
+  const displayOz = Math.round((totalItemWeightOz || 0) % 16);
 
   // Modal temporary state
   const [modalLbs, setModalLbs] = useState(0);
@@ -71,12 +74,20 @@ export default function ShippingPanel({
     setIsMetricsModalOpen(true);
   };
   
-  const handleSaveMetrics = () => {
-    const newTotalOz = (Number(modalLbs) * 16) + Number(modalOz);
-    handleMetricsOverride(newTotalOz, Number(modalBoxes));
-    setCartoonsCount(modalCartons);
-    setPalletsCount(modalPallets);
-    setIsMetricsModalOpen(false);
+  const handleSaveMetrics = async () => {
+    setIsSavingMetrics(true);
+    try {
+      const newTotalOz = (Number(modalLbs) * 16) + Number(modalOz);
+      
+      // Pass everything up to the main page to immediately trigger a DB update
+      await handleDirectSaveMetrics(newTotalOz, Number(modalBoxes), Number(modalCartons), Number(modalPallets));
+      
+      setIsMetricsModalOpen(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSavingMetrics(false);
+    }
   };
 
   const handleBrowseRates = async () => {
@@ -260,7 +271,9 @@ export default function ShippingPanel({
               animate={{ opacity: 1 }} 
               exit={{ opacity: 0 }} 
               className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" 
-              onClick={() => setIsMetricsModalOpen(false)} 
+              onClick={() => {
+                if (!isSavingMetrics) setIsMetricsModalOpen(false);
+              }} 
             />
             
             <motion.div 
@@ -281,7 +294,8 @@ export default function ShippingPanel({
                 </div>
                 <button 
                   onClick={() => setIsMetricsModalOpen(false)} 
-                  className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition-colors"
+                  disabled={isSavingMetrics}
+                  className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition-colors disabled:opacity-50"
                 >
                   <X size={16} />
                 </button>
@@ -293,7 +307,8 @@ export default function ShippingPanel({
                   <input 
                     type="number" 
                     min="0" 
-                    className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold text-slate-900 focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition-all" 
+                    disabled={isSavingMetrics}
+                    className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold text-slate-900 focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition-all disabled:opacity-50" 
                     value={modalLbs} 
                     onChange={(e) => setModalLbs(e.target.value)} 
                   />
@@ -304,11 +319,19 @@ export default function ShippingPanel({
                   <input 
                     type="number" 
                     min="0" 
-                    max="15.99" 
-                    step="0.1" 
-                    className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold text-slate-900 focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition-all" 
+                    max="15" 
+                    step="1" 
+                    disabled={isSavingMetrics}
+                    className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold text-slate-900 focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition-all disabled:opacity-50" 
                     value={modalOz} 
-                    onChange={(e) => setModalOz(e.target.value)} 
+                    onChange={(e) => {
+                      // Prevent decimals and numbers > 15
+                      let val = parseInt(e.target.value, 10);
+                      if (isNaN(val)) val = 0;
+                      if (val > 15) val = 15;
+                      if (val < 0) val = 0;
+                      setModalOz(val);
+                    }} 
                   />
                 </div>
                 
@@ -317,7 +340,8 @@ export default function ShippingPanel({
                   <input 
                     type="number" 
                     min="1" 
-                    className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold text-slate-900 focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition-all" 
+                    disabled={isSavingMetrics}
+                    className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold text-slate-900 focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition-all disabled:opacity-50" 
                     value={modalBoxes} 
                     onChange={(e) => setModalBoxes(e.target.value)} 
                   />
@@ -328,7 +352,8 @@ export default function ShippingPanel({
                   <input 
                     type="number" 
                     min="0" 
-                    className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold text-slate-900 focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition-all" 
+                    disabled={isSavingMetrics}
+                    className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold text-slate-900 focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition-all disabled:opacity-50" 
                     value={modalCartons} 
                     onChange={(e) => setModalCartons(e.target.value)} 
                   />
@@ -339,7 +364,8 @@ export default function ShippingPanel({
                   <input 
                     type="number" 
                     min="0" 
-                    className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold text-slate-900 focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition-all" 
+                    disabled={isSavingMetrics}
+                    className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold text-slate-900 focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition-all disabled:opacity-50" 
                     value={modalPallets} 
                     onChange={(e) => setModalPallets(e.target.value)} 
                   />
@@ -349,17 +375,20 @@ export default function ShippingPanel({
               <div className="pt-2 flex gap-3">
                 <button 
                   type="button" 
+                  disabled={isSavingMetrics}
                   onClick={() => setIsMetricsModalOpen(false)} 
-                  className="flex-1 px-4 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-black uppercase tracking-wider transition-colors"
+                  className="flex-1 px-4 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button 
                   type="button" 
+                  disabled={isSavingMetrics}
                   onClick={handleSaveMetrics} 
-                  className="flex-[2] flex justify-center items-center gap-2 px-4 py-3.5 bg-slate-900 hover:bg-slate-800 text-brand-gold rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-slate-900/20 transition-all active:scale-95"
+                  className="flex-[2] flex justify-center items-center gap-2 px-4 py-3.5 bg-slate-900 hover:bg-slate-800 text-brand-gold rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-slate-900/20 transition-all active:scale-95 disabled:opacity-70 disabled:active:scale-100"
                 >
-                  Save Metrics
+                  {isSavingMetrics ? <Loader2 size={16} className="animate-spin text-brand-gold" /> : null}
+                  {isSavingMetrics ? 'Saving...' : 'Save Metrics'}
                 </button>
               </div>
             </motion.div>

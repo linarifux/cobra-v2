@@ -197,15 +197,6 @@ export default function OrderDetailsPage() {
     };
   }, [totalPackageWeightOz, derivedItemWeightOz, isWeightMismatched, items, packages.length, cartoonsCount, palletsCount, isRushOrder, address.country, customerCharges]);
 
-  // Derive Invoice Mathematics
-  const subtotal = items.reduce((acc, item) => acc + (Number(item.price) * Number(item.qty)), 0);
-  const shippingCost = Number(shipping.shippingCost) || 0;
-  const processingFeesTotal = Number(processingFeesPreview.totalProcessingFee) || 0;
-  const tax = subtotal * 0.08; 
-  // Add processing cost securely into Grand Total
-  const grandTotal = subtotal + shippingCost + processingFeesTotal + tax;
-
-
   useEffect(() => {
     if (isValidMongoId) dispatch(fetchOrderById(id));
     return () => { dispatch(clearCurrentOrder()); };
@@ -341,7 +332,10 @@ export default function OrderDetailsPage() {
     updatePackage(id, 'weightInOunces', newTotal);
   };
 
-  const handleMetricsOverride = (newTotalWeightOz, newTotalBoxes) => {
+  // --- REPLACES handleMetricsOverride ---
+  // Fires instantly when the "Save Metrics" button is pressed inside the ShippingPanel modal
+  const handleDirectSaveMetrics = async (newTotalWeightOz, newTotalBoxes, newCartons, newPallets) => {
+    // 1. Calculate the new packages array local state instantly for the UI
     let currentPkgs = [...packages];
     
     if (newTotalBoxes !== currentPkgs.length) {
@@ -362,7 +356,39 @@ export default function OrderDetailsPage() {
       weightInOunces: Number(weightPerBox.toFixed(2))
     }));
     
+    // Optimistic UI Update
     setPackages(currentPkgs);
+    setCartoonsCount(newCartons);
+    setPalletsCount(newPallets);
+
+    // 2. Build secure payload and dispatch directly to the Database
+    const payload = {
+      shippingDetails: {
+        ...currentOrder.shippingDetails,
+        cartoons: Number(newCartons) || 0,
+        pallets: Number(newPallets) || 0,
+        totalBoxes: currentPkgs.length,
+        totalWeightOunces: newTotalWeightOz,
+        packages: currentPkgs.map(p => ({
+          packageCode: p.packageCode || 'package',
+          weightInOunces: Number(p.weightInOunces) || 16,
+          length: Number(p.length) || 10,
+          width: Number(p.width) || 10,
+          height: Number(p.height) || 10
+        }))
+      }
+    };
+
+    try {
+      // Direct push to DB
+      await dispatch(updateOrder({ id: currentOrder._id, updateData: payload })).unwrap();
+      toast.success('Shipment metrics safely saved to database.');
+      
+      // Pull fresh data to guarantee UI is perfectly synced with the backend
+      dispatch(fetchOrderById(currentOrder._id));
+    } catch (error) {
+      toast.error(`Failed to save metrics: ${error}`);
+    }
   };
 
   const handlePrintDocsAndPick = async () => {
@@ -1082,7 +1108,7 @@ export default function OrderDetailsPage() {
               orderStatus={orderStatus} 
               carriersData={carriersData}
               shipmentId={currentOrder?.shipstationDetails?.orderId || ''}
-              handleMetricsOverride={handleMetricsOverride}
+              handleDirectSaveMetrics={handleDirectSaveMetrics}
             />
           </div>
 
@@ -1110,13 +1136,9 @@ export default function OrderDetailsPage() {
           />
 
           <InvoicePanel 
-            subtotal={currentOrder?.subtotal || subtotal} 
+            currentOrder={currentOrder}
             shipping={shipping} 
             setShipping={setShipping} 
-            tax={tax} 
-            grandTotal={currentOrder?.totalAmount || grandTotal} 
-            totalItemWeightOz={finalPayloadWeightOz}
-            processingFeesTotal={processingFeesPreview.totalProcessingFee}
           />
         </div>
       </div>
