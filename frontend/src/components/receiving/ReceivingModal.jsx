@@ -139,8 +139,9 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
           cartonBreakdown: breakdown,
           quantity: record.quantity || 0,
           numberOfCartons: record.numberOfCartons || breakdown.reduce((sum, r) => sum + (Number(r.cartons)||0), 0),
-          suppliedPallets: record.suppliedPallets || '',
-          palletsReceived: record.palletsReceived || ''
+          // FIX: Use Nullish Coalescing (??) instead of (||) so numeric 0 is not erased
+          suppliedPallets: record.suppliedPallets ?? '',
+          palletsReceived: record.palletsReceived ?? ''
         });
 
         setVendorSearch(initVendorStr);
@@ -318,11 +319,11 @@ export default function ReceivingModal({ isOpen, onClose, record }) {
     payload.quantity = Number(formData.quantity) || 0;
     payload.numberOfCartons = Number(formData.numberOfCartons) || 0;
     
-    // Inject strictly mapped calculation properties
+    // Inject strictly mapped calculation properties (Correctly Maps palletsReceived)
     payload.totalWeight = calculatedTotalWeight;
     payload.suppliedPallets = Number(formData.suppliedPallets) || 0;
-    payload.palletsReceived = Number(formData.palletsReceived) || 0;
-    payload.totalCharge = Number(simulationTotal) || 0; // Save the dynamically calculated total to the DB
+    payload.palletsReceived = Number(formData.palletsReceived) || 0; 
+    payload.totalCharge = Number(simulationTotal) || 0; 
 
     payload.cartonBreakdown = formData.cartonBreakdown.map(r => ({
       cartons: Number(r.cartons) || 0, unitsPerCarton: Number(r.unitsPerCarton) || 0, weightPerCarton: Number(r.weightPerCarton) || 0

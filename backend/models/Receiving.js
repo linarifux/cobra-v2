@@ -80,9 +80,11 @@ const receivingSchema = new mongoose.Schema(
       min: [0, 'Quantity cannot be negative']
     },
     suppliedPallets: { type: Number, default: 0, min: 0 },
+    palletsReceived: { type: Number, default: 0, min: 0 },
     numberOfCartons: { type: Number, default: 0, min: 0 },
 
     cartonBreakdown: [cartonBreakdownSchema],
+
 
     // Legacy Fallbacks
     cartonsPerSkid: { type: Number, default: 0, min: 0 },
@@ -91,6 +93,7 @@ const receivingSchema = new mongoose.Schema(
     totalWeight: { type: Number, default: 0, min: 0 },
     totalPalletsReceived: { type: Number, default: 0, min: 0 },
 
+    
     
     totalCharge: { type: Number, default: 0}
 
