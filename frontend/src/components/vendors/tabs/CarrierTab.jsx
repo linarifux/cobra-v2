@@ -2,13 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { 
   Truck, Loader2, Settings2, Search, 
-  ToggleRight, ToggleLeft, X, Save, Link as LinkIcon
+  ToggleRight, ToggleLeft, X, Save, Link as LinkIcon, PackageOpen
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import api from '../../../utils/api'; // Ensure this points to your Axios instance
-import { fetchCarriers, addCarrier, updateCarrierConfig } from '../../../store/slices/carrierSlice';
+import { fetchCarriers, addCarrier, updateCarrierConfig, fetchFreightProviders } from '../../../store/slices/carrierSlice';
 
 // Dynamic branding helper based on ShipStation carrier codes
 const getPlatformBranding = (code) => {
@@ -17,14 +17,15 @@ const getPlatformBranding = (code) => {
   if (c.includes('ups')) return { color: '#d97706', bg: '#fffbeb', border: '#fde68a' }; // Amber
   if (c.includes('usps') || c.includes('stamps')) return { color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' }; // Blue
   if (c.includes('dhl')) return { color: '#dc2626', bg: '#fef2f2', border: '#fecaca' }; // Red
+  if (c.includes('speedship') || c.includes('worldwide')) return { color: '#0ea5e9', bg: '#e0f2fe', border: '#bae6fd' }; // Light Blue for Freight
   return { color: '#059669', bg: '#ecfdf5', border: '#a7f3d0' }; // Emerald default
 };
 
 export default function CarrierTab({ division }) {
   const dispatch = useDispatch();
   
-  // Local Configured Carriers from Redux
-  const { items: allCarriers = [], status: carrierStatus } = useSelector(state => state.carriers || {});
+  // Local Configured Carriers & Freight Providers from Redux
+  const { items: allCarriers = [], status: carrierStatus, freightProviders = [], freightStatus } = useSelector(state => state.carriers || {});
   
   // Live ShipStation Carriers
   const [ssCarriers, setSsCarriers] = useState([]);
@@ -47,7 +48,7 @@ export default function CarrierTab({ division }) {
     }
   }, [dispatch, division?._id]);
 
-  // 2. Fetch Live ShipStation Carriers
+  // 2. Fetch Live ShipStation Carriers & Freight Providers
   useEffect(() => {
     const getShipStationData = async () => {
       try {
@@ -59,8 +60,10 @@ export default function CarrierTab({ division }) {
         setIsFetchingSS(false);
       }
     };
+    
     getShipStationData();
-  }, []);
+    dispatch(fetchFreightProviders());
+  }, [dispatch]);
 
   // Filter ONLY local carrier configs belonging to this specific Division
   const divisionCarriers = useMemo(() => {
@@ -163,7 +166,7 @@ export default function CarrierTab({ division }) {
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
+    <div className="space-y-8 animate-in fade-in duration-300">
       
       {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-200/60 pb-6">
@@ -251,6 +254,58 @@ export default function CarrierTab({ division }) {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* --- NEW SECTION: FREIGHT PROVIDERS --- */}
+      {freightProviders.length > 0 && (
+        <div className="mt-10 pt-6 border-t border-slate-200/60">
+          <div className="flex items-center gap-2 mb-6">
+            <PackageOpen className="text-slate-400" size={20} />
+            <h3 className="text-lg font-black text-slate-900 tracking-tight">Active Freight & LTL Providers</h3>
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {freightProviders.map(provider => {
+              const branding = getPlatformBranding(provider.freight_provider_code);
+              return (
+                <div 
+                  key={provider.freight_provider_account_id} 
+                  className="bg-white rounded-2xl p-6 shadow-sm relative overflow-hidden group border border-slate-200"
+                >
+                  {/* Top Accent Line */}
+                  <div 
+                    className="absolute top-0 left-0 w-full h-1" 
+                    style={{ backgroundColor: branding.color }} 
+                  />
+                  
+                  <div className="flex items-center gap-4 mb-2">
+                    <div 
+                      className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
+                      style={{ backgroundColor: branding.bg, color: branding.color }}
+                    >
+                      <Truck size={24} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-black text-slate-900 text-base leading-tight truncate" title={provider.nickname || provider.freight_provider_code}>
+                        {provider.nickname || provider.freight_provider_code}
+                      </h4>
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest inline-block mt-0.5">
+                        {provider.freight_provider_code}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 bg-slate-50/50 p-3 rounded-xl border border-slate-100 flex justify-between items-center text-xs">
+                    <span className="text-slate-500 font-bold">Account ID</span>
+                    <span className="font-black text-slate-700 truncate max-w-[120px]" title={provider.freight_provider_account_id}>
+                      {provider.freight_provider_account_id}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

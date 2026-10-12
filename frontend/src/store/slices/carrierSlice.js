@@ -20,6 +20,7 @@ export const fetchCarriers = createAsyncThunk(
   }
 );
 
+
 // 2. Add/Configure a New Carrier
 export const addCarrier = createAsyncThunk(
   'carriers/addCarrier',
@@ -62,7 +63,7 @@ export const removeCarrierProfile = createAsyncThunk(
   }
 );
 
-// 5. NEW: Fetch Package Types by ShipStation Carrier ID
+// 5. Fetch Package Types by ShipStation Carrier ID
 export const fetchCarrierPackages = createAsyncThunk(
   'carriers/fetchCarrierPackages',
   async (shipStationId, { rejectWithValue }) => {
@@ -75,14 +76,29 @@ export const fetchCarrierPackages = createAsyncThunk(
   }
 );
 
+// 6. NEW: Fetch Freight Providers
+export const fetchFreightProviders = createAsyncThunk(
+  'carriers/fetchFreightProviders',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await api.get(`/shipstation/freight-providers`);
+      return response.data.data.providers || response.data.data || [];
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch freight providers');
+    }
+  }
+);
+
 // --- Slice Definition ---
 const carrierSlice = createSlice({
   name: 'carriers',
   initialState: {
     items: [],
-    packageTypes: [], // Store the fetched package types here
-    status: 'idle', // 'idle' | 'loading' | 'succeeded' | 'failed'
+    packageTypes: [], 
+    freightProviders: [], // NEW
+    status: 'idle', 
     packageStatus: 'idle',
+    freightStatus: 'idle', // NEW
     error: null
   },
   reducers: {
@@ -90,8 +106,10 @@ const carrierSlice = createSlice({
     clearCarriers: (state) => {
       state.items = [];
       state.packageTypes = [];
+      state.freightProviders = [];
       state.status = 'idle';
       state.packageStatus = 'idle';
+      state.freightStatus = 'idle';
       state.error = null;
     }
   },
@@ -129,7 +147,7 @@ const carrierSlice = createSlice({
         state.items = state.items.filter(c => String(c._id) !== String(action.payload));
       })
 
-      // --- Fetch Carrier Packages (NEW) ---
+      // --- Fetch Carrier Packages ---
       .addCase(fetchCarrierPackages.pending, (state) => {
         state.packageStatus = 'loading';
       })
@@ -139,9 +157,22 @@ const carrierSlice = createSlice({
       })
       .addCase(fetchCarrierPackages.rejected, (state) => {
         state.packageStatus = 'failed';
+      })
+
+      // --- NEW: Fetch Freight Providers ---
+      .addCase(fetchFreightProviders.pending, (state) => {
+        state.freightStatus = 'loading';
+      })
+      .addCase(fetchFreightProviders.fulfilled, (state, action) => {
+        state.freightStatus = 'succeeded';
+        state.freightProviders = action.payload;
+      })
+      .addCase(fetchFreightProviders.rejected, (state) => {
+        state.freightStatus = 'failed';
       });
   }
 });
 
 export const { clearCarriers } = carrierSlice.actions;
 export default carrierSlice.reducer;
+

@@ -72,10 +72,6 @@ export const getRates = async (ratePayload) => {
   }
 };
 
-
-
-
-// --- FIX: Strictly structured payload for querying rates on an existing Shipment ID (v2 endpoint) ---
 export const getRatesWithShipmentId = async (shipmentId, rateOptions = {}) => {
   try {
     const payload = {
@@ -83,7 +79,6 @@ export const getRatesWithShipmentId = async (shipmentId, rateOptions = {}) => {
       rate_options: rateOptions
     };
     
-    // Explicitly targeting the /v2/rates endpoint as specified by the ShipStation example
     const response = await shipStationAPI.post('/rates', payload);
     return response.data;
   } catch (error) {
@@ -91,7 +86,6 @@ export const getRatesWithShipmentId = async (shipmentId, rateOptions = {}) => {
   }
 };
 
-// --- FIX: Fetch Rate Shoppers explicitly using v2 endpoint ---
 export const getRateShoppers = async (params = {}) => {
   try {
     const queryParams = {
@@ -100,12 +94,22 @@ export const getRateShoppers = async (params = {}) => {
       ...params
     };
     
-    // Updated to use the /v2 endpoint based on your curl example
     const response = await shipStationAPI.get('rate_shoppers', { params: queryParams });
-
     return response.data;
   } catch (error) {
     handleApiError(error, 'getRateShoppers');
+  }
+};
+
+
+// --- NEW: Fetch Freight Providers (LTL / Freight API) ---
+export const getFreightProviders = async () => {
+  try {
+    // Explicitly using the v2 freight endpoint
+    const response = await shipStationAPI.get('/freight/provider_accounts');
+    return response.data;
+  } catch (error) {
+    handleApiError(error, 'getFreightProviders');
   }
 };
 

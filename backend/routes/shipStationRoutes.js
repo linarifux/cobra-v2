@@ -11,20 +11,25 @@ import {
     cancelOrderShipment,
     fetchCarrierPackages,
     fetchRatesWithShipmentId,
-    fetchRateShoppers // <--- ADDED IMPORT
+    fetchRateShoppers,
+    fetchFreightProviders
 } from '../controllers/shipStationController.js';
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
+
 // All ShipStation routes require authentication
-router.use(protect);
+// router.use(protect);
 
 // Get all warehouses, carriers & rate shoppers
 router.route('/warehouses').get(fetchWarehouses);
 router.route('/carriers').get(fetchCarriers);
 router.route('/carriers/:carrierId/packages').get(fetchCarrierPackages);
 router.route('/rate-shoppers').get(fetchRateShoppers); 
+
+
+router.route('/freight-providers').get(fetchFreightProviders);
 
 // --- Rate Fetching ---
 // POST route to accept live frontend data

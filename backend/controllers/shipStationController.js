@@ -11,7 +11,10 @@ import {
   createLabelForShipment, fetchLabelBufferAsBase64,
   addTagToShipment,
   getRateShoppers,
-  getRatesWithShipmentId
+  getRatesWithShipmentId,
+  getFreightProviders
+
+
 } from '../services/shipStationService.js';
 
 // Fallback to 08036 if not set in .env
@@ -695,5 +698,24 @@ export const cancelOrderShipment = catchAsync(async (req, res, next) => {
     res.status(200).json({ status: 'success', message: 'Shipment successfully cancelled.', data: { order } });
   } catch (error) {
     return next(new AppError(`ShipStation Cancel Shipment Error: ${error.message}`, 502));
+  }
+});
+
+
+// --- NEW: Fetch Freight Provider Accounts ---
+export const fetchFreightProviders = catchAsync(async (req, res, next) => {
+  try {
+    const response = await getFreightProviders();
+    
+    // Safely extract the array matching your screenshot payload
+    const providers = response?.freight_provider_accounts || [];
+    
+    res.status(200).json({ 
+      status: 'success', 
+      results: providers.length, 
+      data: { providers } 
+    });
+  } catch (error) { 
+    return next(new AppError(`ShipStation Error: ${error.message}`, 502)); 
   }
 });
