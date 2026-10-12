@@ -8,6 +8,7 @@ const orderItemSchema = new mongoose.Schema({
   totalPrice: { type: Number, required: true }
 }, { _id: false });
 
+
 const orderSchema = new mongoose.Schema(
   {
     orderNumber: {
@@ -114,6 +115,7 @@ const orderSchema = new mongoose.Schema(
       cartoons: { type: Number, default: 0 },
       pallets: { type: Number, default: 0 }, // Added to track pallet processing fee trigger
       totalBoxes: { type: Number, default: 0 },
+      manuallyAdjustedWeightOunces: { type: Number, default: 0 },
       totalWeightOunces: { type: Number, default: 0 },
       packages: [{
         packageCode: { type: String },

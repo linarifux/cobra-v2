@@ -16,7 +16,6 @@ const generateTrackingLink = (carrier, trackingNumber) => {
   return `https://www.google.com/search?q=track+package+${trackingNumber}`;
 };
 
-
 export default function ShippingPanel({ 
   shipping, setShipping, 
   cartoonsCount, setCartoonsCount, 
@@ -25,35 +24,30 @@ export default function ShippingPanel({
   totalBoxesCount,
   isWeightMismatched, orderStatus,
   carriersData = [],
-  handleDirectSaveMetrics, // <-- Receive the new direct save prop
+  handleDirectSaveMetrics, 
+  manuallyAdjustedWeightOunces, // <-- Tracks DB adjustments
   shipmentId
 }) {
   const dispatch = useDispatch();
-  // Using the Live Rates state to render the UI
   const { shipmentRates = [], shipmentRatesStatus } = useSelector(state => state.rates || {});
 
   const [editingLogistics, setEditingLogistics] = useState(false);
   const [isMetricsModalOpen, setIsMetricsModalOpen] = useState(false);
   const [isRatesModalOpen, setIsRatesModalOpen] = useState(false);
   
-  // NEW: Local loading states
   const [isFetchingRates, setIsFetchingRates] = useState(false);
   const [isSavingMetrics, setIsSavingMetrics] = useState(false);
 
-  // Directly map from single-source-of-truth packages array
   const displayBoxes = totalBoxesCount !== undefined ? totalBoxesCount : packages?.length || 0;
   const displayLbs = Math.floor((totalItemWeightOz || 0) / 16);
-  // Ensure displayOz is a whole number as requested
   const displayOz = Math.round((totalItemWeightOz || 0) % 16);
 
-  // Modal temporary state
   const [modalLbs, setModalLbs] = useState(0);
   const [modalOz, setModalOz] = useState(0);
   const [modalBoxes, setModalBoxes] = useState(0);
   const [modalCartons, setModalCartons] = useState(0);
   const [modalPallets, setModalPallets] = useState(0);
 
-  // Lock body scroll when modals are open
   useEffect(() => {
     if (isMetricsModalOpen || isRatesModalOpen) {
       document.body.style.overflow = 'hidden';
@@ -78,10 +72,7 @@ export default function ShippingPanel({
     setIsSavingMetrics(true);
     try {
       const newTotalOz = (Number(modalLbs) * 16) + Number(modalOz);
-      
-      // Pass everything up to the main page to immediately trigger a DB update
       await handleDirectSaveMetrics(newTotalOz, Number(modalBoxes), Number(modalCartons), Number(modalPallets));
-      
       setIsMetricsModalOpen(false);
     } catch (err) {
       console.error(err);
@@ -97,14 +88,12 @@ export default function ShippingPanel({
     }
     
     setIsRatesModalOpen(true);
-    setIsFetchingRates(true); // Initiate bridging loader
+    setIsFetchingRates(true); 
     
     try {
-      // 1. Fetch Rate Shoppers to grab the curated carrier IDs dynamically
       const shoppers = await dispatch(fetchRateShoppers()).unwrap();
       const extractedCarrierIds = [...new Set(shoppers.flatMap(s => s.services?.map(svc => svc.carrier_id) || []))].filter(Boolean);
 
-      // 2. Fetch the live rates with those explicitly collected IDs (awaiting it prevents premature resolution)
       await dispatch(fetchRatesWithShipmentId({ 
         shipmentId, 
         rateOptions: { carrier_ids: extractedCarrierIds } 
@@ -113,7 +102,7 @@ export default function ShippingPanel({
       console.error("Rate fetching failed:", err);
       toast.error('Rate Fetch Error', { description: 'Failed to retrieve live rates.' });
     } finally {
-      setIsFetchingRates(false); // Resolve bridging loader safely
+      setIsFetchingRates(false); 
     }
   };
 
@@ -121,7 +110,6 @@ export default function ShippingPanel({
     let matchedCarrierId = shipping.carrierId;
     let matchedCarrierType = shipping.carrierType;
 
-    // Map the selected service code back to the parent carrier configured locally
     const parentCarrier = carriersData.find(c => 
       (c.enabledServices || []).some(s => s.serviceCode === serviceCode)
     );
@@ -142,9 +130,27 @@ export default function ShippingPanel({
     dispatch(clearShipmentRates());
   };
 
+  // Helper to visually display manual weight adjustments
+  const renderAdjustmentBadge = () => {
+    if (!manuallyAdjustedWeightOunces) return null;
+    const isPositive = manuallyAdjustedWeightOunces > 0;
+    const absOz = Math.abs(manuallyAdjustedWeightOunces);
+    const lbs = Math.floor(absOz / 16);
+    const oz = Math.round(absOz % 16);
+    
+    let text = isPositive ? '+' : '-';
+    if (lbs > 0) text += `${lbs}lb `;
+    text += `${oz}oz adj.`;
+
+    return (
+      <p className={`text-[9px] font-bold mt-1 uppercase tracking-widest ${isPositive ? 'text-amber-500' : 'text-blue-500'}`}>
+        {text}
+      </p>
+    );
+  };
+
   return (
     <>
-      {/* SHIPPING METHOD PANEL */}
       <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl flex flex-col justify-between min-h-[130px] transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
          <div className="flex justify-between items-center mb-3">
           <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5"><Truck size={14}/> Shipping Method</h3>
@@ -167,7 +173,6 @@ export default function ShippingPanel({
                    {carriersData.map(carrier => {
                      const cType = carrier.carrierType || '';
                      const cId = carrier._id || '';
-                     
                      const activeServices = (carrier.enabledServices || []).filter(s => s.isActive);
                      if (activeServices.length === 0) return null;
 
@@ -179,7 +184,6 @@ export default function ShippingPanel({
                    })}
                  </select>
 
-                 {/* NEW: Manual Tracking Number Input */}
                  <input 
                    type="text"
                    placeholder="Manual Tracking Number"
@@ -227,7 +231,6 @@ export default function ShippingPanel({
          )}
       </div>
 
-      {/* SHIPMENT METRICS PANEL */}
       <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl flex flex-col justify-between min-h-[130px] transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
          <div className="flex justify-between items-center mb-3">
            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
@@ -241,11 +244,12 @@ export default function ShippingPanel({
          
          <div className="text-xs font-bold text-slate-900 mt-auto grid grid-cols-5 gap-2 divide-x divide-slate-200/60 items-end pb-1">
              <div className="col-span-2">
-               <p className="text-base sm:text-lg font-black text-slate-800 tracking-tight">
-                 {displayLbs} <span className="text-[9px] font-bold text-slate-400 mr-1">lb</span>
-                 {displayOz} <span className="text-[9px] font-bold text-slate-400">oz</span>
+               <p className="text-base sm:text-lg font-black text-slate-800 tracking-tight flex items-baseline">
+                 {displayLbs} <span className="text-[9px] font-bold text-slate-400 mr-1 ml-0.5">lb</span>
+                 {displayOz} <span className="text-[9px] font-bold text-slate-400 ml-0.5">oz</span>
                </p>
                <p className="text-slate-400 text-[8px] font-bold mt-0.5 uppercase tracking-wider">Total Wgt</p>
+               {renderAdjustmentBadge()}
              </div>
              <div className="pl-2 sm:pl-2 flex flex-col justify-end">
                <p className="text-lg sm:text-xl font-black text-slate-800 tracking-tight truncate">{displayBoxes}</p>
@@ -262,7 +266,6 @@ export default function ShippingPanel({
           </div>
       </div>
 
-      {/* METRICS EDIT MODAL */}
       <AnimatePresence>
         {isMetricsModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -288,9 +291,17 @@ export default function ShippingPanel({
                   <h2 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
                     <Weight size={20} className="text-brand-gold" /> Edit Metrics
                   </h2>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">
-                    Update logistics data manually
-                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      Update logistics data manually
+                    </p>
+                    {/* IN-MODAL ADJUSTMENT BADGE */}
+                    {manuallyAdjustedWeightOunces !== 0 && (
+                      <span className={`text-[8px] px-1.5 py-0.5 rounded font-black uppercase tracking-widest ${manuallyAdjustedWeightOunces > 0 ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'}`}>
+                        {manuallyAdjustedWeightOunces > 0 ? '+' : '-'} {Math.floor(Math.abs(manuallyAdjustedWeightOunces) / 16)}lb {Math.round(Math.abs(manuallyAdjustedWeightOunces) % 16)}oz adj.
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <button 
                   onClick={() => setIsMetricsModalOpen(false)} 
@@ -324,8 +335,13 @@ export default function ShippingPanel({
                     disabled={isSavingMetrics}
                     className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold text-slate-900 focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition-all disabled:opacity-50" 
                     value={modalOz} 
+                    onKeyDown={(e) => {
+                      // Prevent decimals and signs
+                      if (e.key === '.' || e.key === 'e' || e.key === 'E' || e.key === '+' || e.key === '-') {
+                        e.preventDefault();
+                      }
+                    }}
                     onChange={(e) => {
-                      // Prevent decimals and numbers > 15
                       let val = parseInt(e.target.value, 10);
                       if (isNaN(val)) val = 0;
                       if (val > 15) val = 15;
@@ -396,7 +412,6 @@ export default function ShippingPanel({
         )}
       </AnimatePresence>
 
-      {/* LIVE RATES MODAL */}
       <AnimatePresence>
         {isRatesModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -442,7 +457,6 @@ export default function ShippingPanel({
               </div>
 
               <div className="overflow-y-auto pr-2 custom-scrollbar flex-1 min-h-[300px]">
-                {/* Unified loader check: true while EITHER rate shoppers or live rates are still resolving */}
                 {isFetchingRates || shipmentRatesStatus === 'loading' ? (
                   <div className="flex flex-col items-center justify-center h-full space-y-3 py-10">
                     <Loader2 className="animate-spin text-brand-gold" size={32} />

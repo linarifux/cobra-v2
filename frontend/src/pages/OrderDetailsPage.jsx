@@ -125,14 +125,13 @@ export default function OrderDetailsPage() {
   const isShipmentCreated = !!ssOrderId; 
 
   // --- TOP LEVEL CALCULATIONS ---
-  // Single Source of Truth for Weights & Boxes (Calculates dynamically from manifest items)
   const derivedItemWeightOz = items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
   const totalPackageWeightOz = packages.reduce((acc, pkg) => acc + Number(pkg.weightInOunces || 0), 0);
   const isWeightMismatched = Math.abs(derivedItemWeightOz - totalPackageWeightOz) > 1;
-  const databaseWeightOz = Number(currentOrder?.shippingDetails?.totalWeightOunces || 0);
 
-  // CRITICAL FIX: The absolute weight source to push to database & display in UI
-  const finalPayloadWeightOz = derivedItemWeightOz > 0 ? derivedItemWeightOz : totalPackageWeightOz;
+  // Manual Adjustment Processing
+  const manualAdjustmentOz = Number(currentOrder?.shippingDetails?.manuallyAdjustedWeightOunces || 0);
+  const finalPayloadWeightOz = derivedItemWeightOz > 0 ? (derivedItemWeightOz + manualAdjustmentOz) : totalPackageWeightOz;
 
   const orderUserId = currentOrder?.user?._id || currentOrder?.user;
   const orderCreator = useMemo(() => {
@@ -164,7 +163,6 @@ export default function OrderDetailsPage() {
     const cfgRush = config.rushSurcharge !== undefined ? Number(config.rushSurcharge) : 0;
     const cfgIntl = config.internationalSurcharge !== undefined ? Number(config.internationalSurcharge) : 0;
 
-    // Use dynamic derived weight if package weight hasn't been configured or is heavily mismatched
     const activeWeightOz = (isWeightMismatched && totalPackageWeightOz <= 16) ? derivedItemWeightOz : totalPackageWeightOz;
     const weightLbs = activeWeightOz / 16;
     
@@ -332,10 +330,12 @@ export default function OrderDetailsPage() {
     updatePackage(id, 'weightInOunces', newTotal);
   };
 
-  // --- REPLACES handleMetricsOverride ---
   // Fires instantly when the "Save Metrics" button is pressed inside the ShippingPanel modal
   const handleDirectSaveMetrics = async (newTotalWeightOz, newTotalBoxes, newCartons, newPallets) => {
-    // 1. Calculate the new packages array local state instantly for the UI
+    // Determine the manual offset against the current derived items
+    const newManualAdjustment = derivedItemWeightOz > 0 ? (newTotalWeightOz - derivedItemWeightOz) : 0;
+    
+    // Calculate the new packages array local state instantly for the UI
     let currentPkgs = [...packages];
     
     if (newTotalBoxes !== currentPkgs.length) {
@@ -361,7 +361,7 @@ export default function OrderDetailsPage() {
     setCartoonsCount(newCartons);
     setPalletsCount(newPallets);
 
-    // 2. Build secure payload and dispatch directly to the Database
+    // Build secure payload and dispatch directly to the Database
     const payload = {
       shippingDetails: {
         ...currentOrder.shippingDetails,
@@ -369,6 +369,7 @@ export default function OrderDetailsPage() {
         pallets: Number(newPallets) || 0,
         totalBoxes: currentPkgs.length,
         totalWeightOunces: newTotalWeightOz,
+        manuallyAdjustedWeightOunces: newManualAdjustment, // Saves the exact +/- offset
         packages: currentPkgs.map(p => ({
           packageCode: p.packageCode || 'package',
           weightInOunces: Number(p.weightInOunces) || 16,
@@ -628,12 +629,10 @@ export default function OrderDetailsPage() {
       return toast.error("State must be exactly a 2-character code (e.g., NY, CA). Please use the dropdown selector.");
     }
 
-    // --- DEFERRED INVENTORY SYNC LOGIC ---
     try {
       const originalItems = currentOrder.items || [];
       const inventoryUpdates = [];
 
-      // 1. Check for newly added items or items with increased/decreased quantity
       for (const currentItem of items) {
         const originalItem = originalItems.find(o => o.sku === currentItem.sku);
         const originalQty = originalItem ? Number(originalItem.quantity) : 0;
@@ -643,7 +642,7 @@ export default function OrderDetailsPage() {
           const matchedStockItem = inventoryData.find(inv => inv.sku === currentItem.sku);
           if (matchedStockItem) {
             const currentStock = Number(matchedStockItem.available) || 0;
-            const diff = newQty - originalQty; // Positive = user ordered more, Negative = user ordered less
+            const diff = newQty - originalQty; 
             const newStockLevel = currentStock - diff;
 
             inventoryUpdates.push(
@@ -656,7 +655,6 @@ export default function OrderDetailsPage() {
         }
       }
 
-      // 2. Check for completely removed items (Restore Stock)
       for (const originalItem of originalItems) {
         const stillExists = items.find(i => i.sku === originalItem.sku);
         if (!stillExists) {
@@ -684,13 +682,14 @@ export default function OrderDetailsPage() {
       setIsSaving(false);
       return;
     }
-    // -------------------------------------
 
-    // Auto-balance local packages array if there is only 1 package and we are dictating the weight from the manifest items
     let payloadPackages = [...packages];
-    if (payloadPackages.length === 1 && derivedItemWeightOz > 0) {
+    if (payloadPackages.length === 1 && derivedItemWeightOz > 0 && manualAdjustmentOz === 0) {
         payloadPackages[0].weightInOunces = derivedItemWeightOz;
-        setPackages(payloadPackages); // Keep UI in sync
+        setPackages(payloadPackages);
+    } else if (payloadPackages.length === 1 && derivedItemWeightOz > 0 && manualAdjustmentOz !== 0) {
+        payloadPackages[0].weightInOunces = finalPayloadWeightOz;
+        setPackages(payloadPackages);
     }
 
     const payload = {
@@ -718,6 +717,7 @@ export default function OrderDetailsPage() {
         pallets: Number(palletsCount) || 0, 
         totalBoxes: payloadPackages.length,
         totalWeightOunces: finalPayloadWeightOz,
+        manuallyAdjustedWeightOunces: manualAdjustmentOz, // Preserve the DB state
         packages: payloadPackages.map(p => ({
           packageCode: p.packageCode || 'package',
           weightInOunces: Number(p.weightInOunces) || 16,
@@ -730,7 +730,7 @@ export default function OrderDetailsPage() {
       items: items.map(item => ({
         sku: item.sku, name: item.name, quantity: Number(item.qty),
         unitPrice: Number(item.price), totalPrice: Number(item.qty) * Number(item.price),
-        weight: Number(item.weight) // Retain weight for local derived math if needed
+        weight: Number(item.weight) 
       }))
     };
 
@@ -782,6 +782,7 @@ export default function OrderDetailsPage() {
         pallets: Number(palletsCount) || 0,
         totalBoxes: packages.length,
         totalWeightOunces: finalPayloadWeightOz,
+        manuallyAdjustedWeightOunces: manualAdjustmentOz,
         packages: packages.map(p => ({
           packageCode: p.packageCode || 'package',
           weightInOunces: Number(p.weightInOunces) || 16,
@@ -1102,13 +1103,14 @@ export default function OrderDetailsPage() {
               palletsCount={palletsCount} 
               setPalletsCount={setPalletsCount} 
               packages={packages} 
-              totalItemWeightOz={databaseWeightOz} 
+              totalItemWeightOz={finalPayloadWeightOz} 
               totalBoxesCount={packages.length}
               isWeightMismatched={isWeightMismatched} 
               orderStatus={orderStatus} 
               carriersData={carriersData}
               shipmentId={currentOrder?.shipstationDetails?.orderId || ''}
               handleDirectSaveMetrics={handleDirectSaveMetrics}
+              manuallyAdjustedWeightOunces={manualAdjustmentOz}
             />
           </div>
 

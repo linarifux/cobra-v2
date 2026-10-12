@@ -536,7 +536,7 @@ export default function OrdersPage() {
         doc.setFontSize(14);
         doc.setTextColor(0, 0, 0);
         doc.setFont('helvetica', 'bold');
-        doc.text(`${customerName.toUpperCase()} - ${divisionName}`, 14, 20);
+        doc.text(`${customerName.toUpperCase()}\n${divisionName}`, 14, 20);
 
         // Top Right: Order Information block (Right-aligned keys, Left-aligned values)
         const rightColKeyX = 160;
@@ -727,7 +727,7 @@ export default function OrdersPage() {
     return () => { document.body.style.overflow = 'unset'; };
   }, [isEditModalOpen, isPrintModalOpen]);
 
-  const selectClass = "w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white/50 text-xs font-bold outline-none cursor-pointer focus:border-brand-gold/50 focus:ring-2 focus:ring-brand-gold/20 transition-all appearance-none";
+  const selectClass = "w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-white/50 text-xs font-bold outline-none cursor-pointer focus:border-brand-gold/50 focus:ring-2 focus:ring-brand-gold/20 transition-all appearance-none";
 
   const getStatusBadgeStyle = (status) => {
     if (['Shipped', 'Delivered', 'Billed'].includes(status)) return 'bg-emerald-50 text-emerald-600 border-emerald-200';
@@ -739,22 +739,23 @@ export default function OrdersPage() {
   };
 
   return (
-    <div className="relative h-[calc(100vh-6rem)] p-6 space-y-6 animate-fade-in max-w-[1600px] mx-auto pb-32 flex flex-col overflow-hidden">
+    // Adjusting height calculation safely to clear external navbars and letting it naturally fill the flex container
+    <div className="relative p-4 sm:p-5 flex flex-col gap-4 animate-fade-in max-w-[1600px] mx-auto h-[calc(100vh-5rem)] min-h-[600px] overflow-hidden">
       
       {/* Header Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 flex-shrink-0">
-        <PageHeader title="Fulfillment Queue" subtitle="Real-time dispatch and logistics overview." />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 pb-1">
+        <span></span>
         <button 
           onClick={() => navigate('/orders/new')}
-          className="flex items-center justify-center gap-2 bg-slate-900 text-brand-gold px-6 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl active:scale-95 shrink-0"
+          className="flex items-center justify-center gap-2 bg-slate-900 text-brand-gold px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg active:scale-95 shrink-0"
         >
           <Plus size={16} /> New Order
         </button>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-6 flex-1 min-h-0">
-        {/* --- NEW SIDEBAR --- */}
-        <div className="flex-shrink-0">
+      <div className="flex flex-col md:flex-row gap-5 flex-1 min-h-0 overflow-hidden">
+        {/* --- SIDEBAR --- */}
+        <div className="shrink-0 overflow-y-auto custom-scrollbar md:w-64 pb-10">
           <OrdersSidebar
             activeStatus={filters.status}
             onStatusChange={(newStatus) => setFilters({ ...filters, status: newStatus })}
@@ -763,28 +764,28 @@ export default function OrdersPage() {
         </div>
 
         {/* --- MAIN CONTENT --- */}
-        <div className="flex-1 flex flex-col min-w-0 space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-shrink-0">
+        <div className="flex-1 flex flex-col min-w-0 gap-4 overflow-hidden">
+          
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
             {[
               { label: 'Total Orders', val: ordersData.length, color: 'text-slate-900' },
               { label: 'Awaiting Action', val: ordersData.filter(o => ['New', 'Pending'].includes(o.status || 'New')).length, color: 'text-rose-600' },
               { label: 'Picked / Ready', val: ordersData.filter(o => o.status === 'Picked').length, color: 'text-indigo-600' },
               { label: 'Shipped / Billed', val: ordersData.filter(o => ['Shipped', 'Delivered', 'Billed'].includes(o.status)).length, color: 'text-emerald-600' },
             ].map((stat, i) => (
-              <div key={i} className="bg-white/50 border border-white/60 p-4 rounded-2xl backdrop-blur-md shadow-sm transition-all hover:bg-white/70">
+              <div key={i} className="bg-white/50 border border-white/60 p-3 rounded-2xl backdrop-blur-md shadow-sm transition-all hover:bg-white/70">
                 <p className="text-[10px] uppercase font-black text-slate-400">{stat.label}</p>
-                <p className={`text-2xl font-black ${stat.color}`}>{stat.val}</p>
+                <p className={`text-xl font-black ${stat.color}`}>{stat.val}</p>
               </div>
             ))}
           </div>
 
-          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-5 rounded-3xl space-y-4 shadow-sm flex-shrink-0">
-            
-            <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+          <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-3 sm:p-4 rounded-3xl flex flex-col gap-3 shadow-sm shrink-0">
+            <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
               <div className="relative flex-1 w-full max-w-2xl">
-                <Search className="absolute left-4 top-3 text-slate-400" size={16} />
+                <Search className="absolute left-4 top-2.5 text-slate-400" size={14} />
                 <input 
-                  className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white/70 text-sm font-bold outline-none focus:ring-2 focus:ring-brand-gold/50 transition-all shadow-sm"
+                  className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 bg-white/70 text-sm font-bold outline-none focus:ring-2 focus:ring-brand-gold/50 transition-all shadow-sm"
                   placeholder="Search by Brand, Shopper, Order #, or Type..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -794,18 +795,16 @@ export default function OrdersPage() {
               {activeFilterCount > 0 && (
                 <button 
                   onClick={clearAllFilters}
-                  className="flex items-center gap-2 px-4 py-2.5 text-[11px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-900 hover:bg-white/60 rounded-xl transition-all border border-transparent hover:border-slate-200"
+                  className="flex items-center gap-2 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-900 hover:bg-white/60 rounded-xl transition-all border border-transparent hover:border-slate-200 shrink-0"
                 >
-                  <X size={14} /> Clear {activeFilterCount} Filters
+                  <X size={12} /> Clear {activeFilterCount} Filters
                 </button>
               )}
             </div>
 
-            {/* Note: Status is removed from this horizontal row as it's now in the sidebar */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 border-t border-slate-200/60 pt-4">
-              
+            <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-2 border-t border-slate-200/60 pt-3">
               <div className="relative">
-                <Package className="absolute left-3 top-2.5 text-brand-gold" size={14} />
+                <Package className="absolute left-3 top-2.5 text-brand-gold" size={12} />
                 <select className={selectClass} value={filters.orderType} onChange={(e) => setFilters({...filters, orderType: e.target.value})}>
                   <option value="All">All Types</option>
                   <option value="WEBORD">WEBORD</option>
@@ -816,7 +815,7 @@ export default function OrdersPage() {
               </div>
 
               <div className="relative">
-                <Briefcase className="absolute left-3 top-2.5 text-brand-gold" size={14} />
+                <Briefcase className="absolute left-3 top-2.5 text-brand-gold" size={12} />
                 <select className={selectClass} value={filters.customer} onChange={handleCustomerChange}>
                   <option value="All">All Brands</option>
                   {customersData.map(c => <option key={c._id} value={c._id}>{c.customerName}</option>)}
@@ -824,7 +823,7 @@ export default function OrdersPage() {
               </div>
 
               <div className="relative">
-                <Building2 className="absolute left-3 top-2.5 text-brand-gold" size={14} />
+                <Building2 className="absolute left-3 top-2.5 text-brand-gold" size={12} />
                 <select className={selectClass} value={filters.division} onChange={handleDivisionChange}>
                   <option value="All">All Divisions</option>
                   {availableDivisions.map(d => <option key={d._id} value={d._id}>{d.divisionName}</option>)}
@@ -832,7 +831,7 @@ export default function OrdersPage() {
               </div>
 
               <div className="relative">
-                <User className="absolute left-3 top-2.5 text-brand-gold" size={14} />
+                <User className="absolute left-3 top-2.5 text-brand-gold" size={12} />
                 <select className={selectClass} value={filters.user} onChange={(e) => setFilters({...filters, user: e.target.value})}>
                   <option value="All">All Shoppers</option>
                   {uniqueShoppers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -840,7 +839,7 @@ export default function OrdersPage() {
               </div>
 
               <div className="relative">
-                <Calendar className="absolute left-3 top-2.5 text-brand-gold" size={14} />
+                <Calendar className="absolute left-3 top-2.5 text-brand-gold" size={12} />
                 <input 
                   type="date" 
                   className={selectClass} 
@@ -851,7 +850,7 @@ export default function OrdersPage() {
               </div>
 
               <div className="relative">
-                <Calendar className="absolute left-3 top-2.5 text-brand-gold" size={14} />
+                <Calendar className="absolute left-3 top-2.5 text-brand-gold" size={12} />
                 <input 
                   type="date" 
                   className={selectClass} 
@@ -863,10 +862,10 @@ export default function OrdersPage() {
             </div>
           </div>
 
-          {/* State Handling & Scrollable Table Container */}
-          <div className="flex-1 flex flex-col min-h-0 bg-white/60 backdrop-blur-2xl border border-white/80 rounded-[2rem] overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
+          {/* TABLE CONTAINER - Forced to Expand */}
+          <div className="flex-1 min-h-0 flex flex-col bg-white/60 backdrop-blur-2xl border border-white/80 rounded-[2rem] overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.04)] relative">
             {ordersStatus === 'loading' && ordersData.length === 0 ? (
-              <div className="flex justify-center items-center h-full text-slate-400">
+              <div className="flex justify-center items-center h-full text-slate-400 absolute inset-0 bg-white/40 backdrop-blur-sm z-50">
                 <Loader2 className="animate-spin text-brand-gold" size={32} />
               </div>
             ) : ordersStatus === 'failed' ? (
@@ -874,11 +873,11 @@ export default function OrdersPage() {
                 Failed to load orders: {ordersError}
               </div>
             ) : (
-              <div className="flex-1 overflow-y-auto custom-scrollbar">
-                <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
+              <div className="flex-1 overflow-y-auto custom-scrollbar pb-10">
+                <table className="w-full text-left border-collapse text-xs whitespace-nowrap min-w-[1000px]">
                   <thead className="sticky top-0 bg-slate-50/90 backdrop-blur-xl z-10 shadow-[0_1px_2px_rgba(0,0,0,0.05)] border-b border-slate-200/60">
                     <tr className="text-[10px] uppercase font-black text-slate-400 tracking-widest">
-                      <th className="p-5 w-12">
+                      <th className="p-4 w-12 text-center">
                         <input 
                           type="checkbox" 
                           className="rounded border-slate-300 text-brand-gold focus:ring-brand-gold cursor-pointer"
@@ -886,16 +885,16 @@ export default function OrdersPage() {
                           onChange={handleSelectAll} 
                         />
                       </th>
-                      <th className="p-5">Order Reference</th>
-                      <th className="p-5">Date Logged</th>
-                      <th className="p-5">Customer & Origin</th>
-                      <th className="p-5">Shopper & Dest.</th>
-                      <th className="p-5">Assets</th>
-                      {canViewCosts && <th className="p-5 text-right">Shipping</th>}
-                      {canViewCosts && <th className="p-5 text-right">Processing</th>}
-                      {canViewCosts && <th className="p-5 text-right">Total</th>}
-                      <th className="p-5">Status</th>
-                      <th className="p-5 text-right pr-6">Actions</th>
+                      <th className="p-4">Order Reference</th>
+                      <th className="p-4">Date Logged</th>
+                      <th className="p-4">Customer & Origin</th>
+                      <th className="p-4">Shopper & Dest.</th>
+                      <th className="p-4">Assets</th>
+                      {canViewCosts && <th className="p-4 text-right">Shipping</th>}
+                      {canViewCosts && <th className="p-4 text-right">Processing</th>}
+                      {canViewCosts && <th className="p-4 text-right">Total</th>}
+                      <th className="p-4">Status</th>
+                      <th className="p-4 text-right pr-6">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100/80">
@@ -919,12 +918,11 @@ export default function OrdersPage() {
 
                         const shopperName = order.user?.name || order.user?.firstName || order.shippingAddress?.recipientName || 'Unknown Shopper';
                         
-                        // Exact database status string
                         const currentStatus = order.status || 'New';
 
                         return (
                           <tr key={order._id} className="hover:bg-white/80 transition-colors group cursor-pointer" onClick={() => navigate(`/orders/${order._id}`)}>
-                            <td className="p-5" onClick={e => e.stopPropagation()}>
+                            <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
                               <input 
                                 type="checkbox" 
                                 className="rounded border-slate-300 text-brand-gold focus:ring-brand-gold cursor-pointer"
@@ -932,7 +930,7 @@ export default function OrdersPage() {
                                 onChange={() => toggleSelect(order._id)} 
                               />
                             </td>
-                            <td className="p-5">
+                            <td className="p-4">
                               <div className="font-black text-slate-800 text-sm group-hover:text-brand-gold transition-colors flex items-center gap-2">
                                 {order.orderNumber}
                                 <span className="text-[8px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase tracking-widest border border-slate-200">
@@ -943,41 +941,28 @@ export default function OrdersPage() {
                                 {canViewCosts ? `$${grandTotal.toFixed(2)}` : '***'}
                               </div>
                             </td>
-                            <td className="p-5 text-slate-500 font-bold">{displayDate}</td>
-                            <td className="p-5">
+                            <td className="p-4 text-slate-500 font-bold">{displayDate}</td>
+                            <td className="p-4">
                               <div className="font-black text-slate-700">{order.customer?.customerName || 'Unknown Brand'}</div>
                               <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 flex items-center gap-1">
                                  <Layers size={10}/> {displayDivision}
                               </div>
                             </td>
-                            <td className="p-5">
+                            <td className="p-4">
                               <div className="font-black text-slate-700">{shopperName}</div>
                               <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 flex items-center gap-1">
                                  <MapPin size={10} className="text-brand-gold"/> {location}
                               </div>
                             </td>
-                            <td className="p-5">
+                            <td className="p-4">
                               <span className="bg-slate-100 border border-slate-200 px-2 py-1 rounded text-slate-600 font-black">{order.items?.length || 0}</span>
                             </td>
                             
-                            {/* Detailed Financial Columns for Privileged Users */}
-                            {canViewCosts && (
-                               <td className="p-5 text-right font-medium text-slate-600">
-                                  ${shippingCost.toFixed(2)}
-                               </td>
-                            )}
-                            {canViewCosts && (
-                               <td className="p-5 text-right font-medium text-slate-600">
-                                  ${processingCost.toFixed(2)}
-                               </td>
-                            )}
-                            {canViewCosts && (
-                               <td className="p-5 text-right font-extrabold text-slate-900">
-                                  ${grandTotal.toFixed(2)}
-                               </td>
-                            )}
+                            {canViewCosts && <td className="p-4 text-right font-medium text-slate-600">${shippingCost.toFixed(2)}</td>}
+                            {canViewCosts && <td className="p-4 text-right font-medium text-slate-600">${processingCost.toFixed(2)}</td>}
+                            {canViewCosts && <td className="p-4 text-right font-extrabold text-slate-900">${grandTotal.toFixed(2)}</td>}
                             
-                            <td className="p-5">
+                            <td className="p-4">
                               <span 
                                 className={`px-2.5 py-1 text-[9px] uppercase tracking-wider rounded border shadow-sm font-black flex items-center gap-1.5 w-max ${getStatusBadgeStyle(currentStatus)}`}
                                 title={order.qtyLimitExceeds ? "Quantity limit exceeded flag is active." : ""}
@@ -986,7 +971,7 @@ export default function OrdersPage() {
                                 {order.qtyLimitExceeds && <AlertTriangle size={10} className="shrink-0 text-amber-500" />}
                               </span>
                             </td>
-                            <td className="p-5 text-right pr-6" onClick={(e) => e.stopPropagation()}>
+                            <td className="p-4 text-right pr-6" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                 {(currentStatus === 'Pending' || order.qtyLimitExceeds) && canReleaseOrder && (
                                   <button
@@ -1029,10 +1014,10 @@ export default function OrdersPage() {
                       })
                     ) : (
                       <tr>
-                        <td colSpan={canViewCosts ? 11 : 8} className="py-20 text-center text-slate-400">
-                          <Package className="mx-auto mb-3 opacity-20" size={48} />
-                          <p className="text-sm font-black uppercase tracking-widest mb-1">No Orders Found</p>
-                          <p className="text-xs font-bold">Try clearing your filters to see more results.</p>
+                        <td colSpan={canViewCosts ? 11 : 8} className="py-24 text-center text-slate-400 border-none">
+                          <Package className="mx-auto mb-4 text-slate-300" size={56} strokeWidth={1} />
+                          <p className="text-sm font-black uppercase tracking-widest mb-1 text-slate-500">No Orders Found</p>
+                          <p className="text-xs font-bold text-slate-400">Try adjusting your filters or search query.</p>
                         </td>
                       </tr>
                     )}
