@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -19,6 +19,9 @@ import { fetchDivisions } from '../../store/slices/divisionSlice';
 import { fetchInventory } from '../../store/slices/inventorySlice';
 import { fetchUsers } from '../../store/slices/userSlice';
 import { fetchCarriers, fetchCarrierPackages } from '../../store/slices/carrierSlice';
+
+// NEW: Freight Provider Slice
+import { fetchConfiguredFreightProviders } from '../../store/slices/freightProviderSlice';
 
 // --- Utilities ---
 const generateLocalId = () => `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -61,6 +64,9 @@ export default function OrderForm() {
   const { items: customersData = [], status: customersStatus } = useSelector((state) => state.customers || {});
   const { items: divisionsData = [], status: divisionsStatus } = useSelector((state) => state.divisions || {});
   const { items: carriersData = [], status: carrierStatus } = useSelector((state) => state.carriers || {});
+  
+  // Freight Providers
+  const { items: freightProvidersData = [], status: freightProvidersStatus } = useSelector((state) => state.freightProviders || {});
   const { user: currentUser } = useSelector((state) => state.auth || {});
 
   // --- Form State ---
@@ -139,10 +145,11 @@ export default function OrderForm() {
     };
   }, [id, isEditMode, isValidMongoId, inventoryStatus, usersStatus, customersStatus, divisionsStatus, dispatch]);
 
-  // --- Fetch Division Carriers ---
+  // --- Fetch Division Carriers & Freight Providers ---
   useEffect(() => {
     if (divisionId) {
       dispatch(fetchCarriers(divisionId));
+      dispatch(fetchConfiguredFreightProviders(divisionId)); // <-- Fetch active LTL accounts
     }
   }, [divisionId, dispatch]);
 
@@ -203,26 +210,44 @@ export default function OrderForm() {
     });
   }, [items, availableInventories]);
 
+  // --- Compile Shipping Options from BOTH Standard Carriers & Freight Providers ---
   const shippingOptions = useMemo(() => {
-    if (!Array.isArray(carriersData)) return [];
-
     const options = [];
-    carriersData.forEach(carrier => {
-      if (carrier.isActive !== false && carrier.enabledServices) {
-        carrier.enabledServices.forEach(service => {
-          if (service.isActive !== false) {
-            options.push({
-              carrierId: carrier._id,
-              carrierType: carrier.carrierType,
-              serviceCode: service.serviceCode,
-              label: `${carrier.carrierType} - ${service.serviceName || service.serviceCode}`
-            });
-          }
-        });
-      }
-    });
+    
+    // Standard Parcel Carriers
+    if (Array.isArray(carriersData)) {
+      carriersData.forEach(carrier => {
+        if (carrier.isActive !== false && carrier.enabledServices) {
+          carrier.enabledServices.forEach(service => {
+            if (service.isActive !== false) {
+              options.push({
+                carrierId: carrier._id,
+                carrierType: carrier.carrierType,
+                serviceCode: service.serviceCode,
+                label: `${carrier.carrierType?.toUpperCase()} - ${service.serviceName || service.serviceCode}`
+              });
+            }
+          });
+        }
+      });
+    }
+
+    // LTL Freight Providers
+    if (Array.isArray(freightProvidersData)) {
+      freightProvidersData.forEach(fp => {
+        if (fp.isActive !== false) {
+          options.push({
+            carrierId: fp._id,
+            carrierType: fp.providerCode,
+            serviceCode: 'FREIGHT_LTL', // Using a generic tag to denote LTL routing
+            label: `LTL FREIGHT: ${fp.accountName} (${fp.providerCode})`
+          });
+        }
+      });
+    }
+
     return options;
-  }, [carriersData]);
+  }, [carriersData, freightProvidersData]);
 
   const contextualDivisions = useMemo(() => {
     if (!customerId) return divisionsData;
@@ -667,7 +692,7 @@ export default function OrderForm() {
                 <div className="col-span-2">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 flex justify-between">
                     <span className="flex items-center gap-1.5"><Truck size={12} /> Shipping Service</span>
-                    {carrierStatus === 'loading' && <Loader2 size={12} className="animate-spin text-brand-gold" />}
+                    {(carrierStatus === 'loading' || freightProvidersStatus === 'loading') && <Loader2 size={12} className="animate-spin text-brand-gold" />}
                   </label>
                   <select
                     className="w-full bg-white p-3 rounded-xl text-xs font-bold border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all cursor-pointer"
@@ -676,7 +701,7 @@ export default function OrderForm() {
                       const [cId, cType, sCode] = e.target.value.split('|');
                       setShipping({ ...shipping, carrierId: cId || '', carrierType: cType || '', serviceCode: sCode || '' });
                     }}
-                    disabled={!divisionId || carrierStatus === 'loading'}
+                    disabled={!divisionId || carrierStatus === 'loading' || freightProvidersStatus === 'loading'}
                   >
                     <option value="" disabled>
                       {!divisionId ? 'Select a division first...' : 'Select carrier service...'}

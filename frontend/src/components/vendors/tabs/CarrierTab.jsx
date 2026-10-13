@@ -8,7 +8,15 @@ import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import api from '../../../utils/api'; // Ensure this points to your Axios instance
-import { fetchCarriers, addCarrier, updateCarrierConfig, fetchFreightProviders } from '../../../store/slices/carrierSlice';
+import { fetchCarriers, addCarrier, updateCarrierConfig } from '../../../store/slices/carrierSlice';
+
+// --- NEW FREIGHT SLICE IMPORTS ---
+import { 
+  fetchConfiguredFreightProviders, 
+  fetchLiveFreightProviders, 
+  addFreightProvider, 
+  updateFreightProvider 
+} from '../../../store/slices/freightProviderSlice';
 
 // Dynamic branding helper based on ShipStation carrier codes
 const getPlatformBranding = (code) => {
@@ -24,10 +32,13 @@ const getPlatformBranding = (code) => {
 export default function CarrierTab({ division }) {
   const dispatch = useDispatch();
   
-  // Local Configured Carriers & Freight Providers from Redux
-  const { items: allCarriers = [], status: carrierStatus, freightProviders = [], freightStatus } = useSelector(state => state.carriers || {});
+  // Local Configured Standard Carriers from Redux
+  const { items: allCarriers = [], status: carrierStatus } = useSelector(state => state.carriers || {});
   
-  // Live ShipStation Carriers
+  // Freight Providers state from the newly created slice
+  const { items: configuredFreightProviders = [], liveProviders: liveFreightProviders = [], liveStatus: freightLiveStatus } = useSelector(state => state.freightProviders || {});
+  
+  // Live ShipStation Standard Carriers
   const [ssCarriers, setSsCarriers] = useState([]);
   const [isFetchingSS, setIsFetchingSS] = useState(true);
 
@@ -45,10 +56,11 @@ export default function CarrierTab({ division }) {
   useEffect(() => {
     if (division?._id) {
       dispatch(fetchCarriers(division._id));
+      dispatch(fetchConfiguredFreightProviders(division._id)); // Fetch configured LTLs for this division
     }
   }, [dispatch, division?._id]);
 
-  // 2. Fetch Live ShipStation Carriers & Freight Providers
+  // 2. Fetch Live ShipStation Data
   useEffect(() => {
     const getShipStationData = async () => {
       try {
@@ -62,7 +74,7 @@ export default function CarrierTab({ division }) {
     };
     
     getShipStationData();
-    dispatch(fetchFreightProviders());
+    dispatch(fetchLiveFreightProviders()); // Fetch live LTL accounts from ShipStation API
   }, [dispatch]);
 
   // Filter ONLY local carrier configs belonging to this specific Division
@@ -70,13 +82,11 @@ export default function CarrierTab({ division }) {
     return allCarriers.filter(c => String(c.division?._id || c.division) === String(division?._id));
   }, [allCarriers, division]);
 
-  // --- Handlers ---
+  // --- Handlers for Standard Carriers ---
   const openIntegrationPanel = (platform) => {
-    // Check if we already have a configuration saved in the DB for this exact carrier
     const existingDoc = divisionCarriers.find(c => c.carrierType === platform.code);
     setSelectedPlatform(platform);
     
-    // Dynamically build the services list based on ShipStation's live response
     const ssServices = platform.services || [];
     
     const reconciledServices = ssServices.map(ssSvc => {
@@ -122,7 +132,6 @@ export default function CarrierTab({ division }) {
 
     setIsSubmitting(true);
     
-    // Exact schema payload mapping
     const payload = {
       division: division._id,
       carrierType: selectedPlatform.code,
@@ -156,7 +165,37 @@ export default function CarrierTab({ division }) {
     }
   };
 
-  if (carrierStatus === 'loading' || isFetchingSS) {
+  // --- Freight Specific Handler ---
+  const handleFreightToggle = async (provider, existingConfig) => {
+    setIsSubmitting(true);
+    try {
+      if (existingConfig) {
+        // Toggle the isActive boolean in the DB
+        await dispatch(updateFreightProvider({ 
+          id: existingConfig._id, 
+          updatedData: { isActive: !existingConfig.isActive } 
+        })).unwrap();
+        toast.success(`Freight integration ${!existingConfig.isActive ? 'enabled' : 'disabled'}.`);
+      } else {
+        // Create new active configuration in the DB
+        const payload = {
+          division: division._id,
+          providerCode: provider.freight_provider_code,
+          shipStationAccountId: provider.freight_provider_account_id,
+          accountName: provider.nickname || provider.freight_provider_code,
+          isActive: true
+        };
+        await dispatch(addFreightProvider(payload)).unwrap();
+        toast.success('Freight integration configured successfully!');
+      }
+    } catch (err) {
+      toast.error('Failed to toggle freight integration.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (carrierStatus === 'loading' || isFetchingSS || freightLiveStatus === 'loading') {
     return (
       <div className="flex flex-col justify-center items-center py-20 gap-4 text-slate-400">
         <Loader2 className="animate-spin text-brand-gold" size={32} />
@@ -258,7 +297,7 @@ export default function CarrierTab({ division }) {
       )}
 
       {/* --- NEW SECTION: FREIGHT PROVIDERS --- */}
-      {freightProviders.length > 0 && (
+      {liveFreightProviders.length > 0 && (
         <div className="mt-10 pt-6 border-t border-slate-200/60">
           <div className="flex items-center gap-2 mb-6">
             <PackageOpen className="text-slate-400" size={20} />
@@ -266,17 +305,20 @@ export default function CarrierTab({ division }) {
           </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {freightProviders.map(provider => {
+            {liveFreightProviders.map(provider => {
               const branding = getPlatformBranding(provider.freight_provider_code);
+              const config = configuredFreightProviders.find(c => c.shipStationAccountId === provider.freight_provider_account_id);
+
               return (
                 <div 
                   key={provider.freight_provider_account_id} 
-                  className="bg-white rounded-2xl p-6 shadow-sm relative overflow-hidden group border border-slate-200"
+                  className="bg-white rounded-2xl p-6 shadow-sm relative overflow-hidden group border transition-all"
+                  style={{ borderColor: config?.isActive ? branding.border : '#e2e8f0' }}
                 >
                   {/* Top Accent Line */}
                   <div 
                     className="absolute top-0 left-0 w-full h-1" 
-                    style={{ backgroundColor: branding.color }} 
+                    style={{ backgroundColor: config?.isActive ? branding.color : '#f1f5f9' }} 
                   />
                   
                   <div className="flex items-center gap-4 mb-2">
@@ -290,18 +332,30 @@ export default function CarrierTab({ division }) {
                       <h4 className="font-black text-slate-900 text-base leading-tight truncate" title={provider.nickname || provider.freight_provider_code}>
                         {provider.nickname || provider.freight_provider_code}
                       </h4>
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest inline-block mt-0.5">
-                        {provider.freight_provider_code}
-                      </span>
+                      {config ? (
+                        <span className="text-[9px] font-black uppercase tracking-widest inline-block mt-0.5 text-emerald-500">
+                          {config.isActive ? 'Active Integration' : 'Disabled'}
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest inline-block mt-0.5">Unconfigured</span>
+                      )}
                     </div>
                   </div>
 
-                  <div className="mt-4 bg-slate-50/50 p-3 rounded-xl border border-slate-100 flex justify-between items-center text-xs">
+                  <div className="mt-4 mb-5 bg-slate-50/50 p-3 rounded-xl border border-slate-100 flex justify-between items-center text-xs">
                     <span className="text-slate-500 font-bold">Account ID</span>
                     <span className="font-black text-slate-700 truncate max-w-[120px]" title={provider.freight_provider_account_id}>
                       {provider.freight_provider_account_id}
                     </span>
                   </div>
+
+                  <button 
+                    onClick={() => handleFreightToggle(provider, config)}
+                    disabled={isSubmitting}
+                    className={`w-full py-2.5 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all disabled:opacity-50 ${config?.isActive ? 'border-slate-200 text-slate-600 hover:bg-slate-900 hover:text-white hover:border-slate-900' : 'border-dashed border-slate-300 text-slate-500 hover:border-brand-gold hover:text-brand-gold hover:bg-brand-gold/5'}`}
+                  >
+                    {config?.isActive ? 'Disable Integration' : 'Enable Account'}
+                  </button>
                 </div>
               );
             })}

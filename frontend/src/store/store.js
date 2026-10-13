@@ -28,6 +28,9 @@ import netSuiteReducer from './slices/netSuiteSlice';
 import vendorReducer from './slices/vendorSlice';
 import vendorCarrierReducer from './slices/vendorCarrierSlice';
 
+
+import freightProviderReducer from './slices/freightProviderSlice';
+
 export const store = configureStore({
   reducer: {
     // 1. Security & Access
@@ -52,8 +55,11 @@ export const store = configureStore({
     // 3. Vendors
     vendors: vendorReducer,
     netsuite: netSuiteReducer,
+    // 4. Freight Providers
+    freightProviders: freightProviderReducer,
+ 
 
-    // 4. Vendor Carriers
+    // 5. Vendor Carriers
     vendorCarriers: vendorCarrierReducer
   },
 });

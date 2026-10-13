@@ -32,6 +32,8 @@ import processingChargeRoutes from './routes/processingChargeRoutes.js';
 import receivingChargeRoutes from './routes/receivingChargeRoutes.js';
 import netSuiteRoutes from './routes/netsuiteRoutes.js';
 
+import freightProviderRouter from './routes/freightProviderRoutes.js';
+
 
 
 // 1. Initialize Database Connection
@@ -98,6 +100,11 @@ app.use('/api/v1/vendor-carriers', vendorCarrierRoutes);
 app.use('/api/v1/processing-charges', processingChargeRoutes);
 app.use('/api/v1/receiving-charges', receivingChargeRoutes);
 app.use('/api/v1/netsuite', netSuiteRoutes);
+
+
+app.use('/api/v1/freight-providers', freightProviderRouter);
+
+
 // 5. Global Error Handler
 app.use(globalErrorHandler);
 

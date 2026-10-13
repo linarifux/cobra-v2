@@ -44,6 +44,7 @@ const carrierSchema = new mongoose.Schema(
       required: [true, 'Account display name is required'],
       trim: true
     },
+    
     // Read-only account number mapped from ShipStation
     accountNumber: {
       type: String,

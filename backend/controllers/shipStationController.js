@@ -249,9 +249,6 @@ export const fetchCarriers = catchAsync(async (req, res, next) => {
         code: service.service_code,
         name: service.name,
       })),
-      test: {
-        name: 'test'
-      },
       packages: carrier?.packages?.map(p => ({
         packageId: p.package_id,
         packageCode: p.package_code,
