@@ -17,6 +17,9 @@ import { fetchInventory, updateInventory } from '../store/slices/inventorySlice'
 import { fetchUsers } from '../store/slices/userSlice'; 
 import { fetchCarriers, fetchCarrierPackages } from '../store/slices/carrierSlice';
 
+// NEW: Freight Provider Slice
+import { fetchConfiguredFreightProviders } from '../store/slices/freightProviderSlice';
+
 // ProcessingCharge system
 import { fetchProcessingChargesByCustomer } from '../store/slices/processingChargeSlice';
 
@@ -78,6 +81,9 @@ export default function OrderDetailsPage() {
   const { items: usersData = [], status: usersStatus } = useSelector((state) => state.users || {}); 
   const { items: carriersData = [], packageTypes = [] } = useSelector((state) => state.carriers || {});
   
+  // Connect to the freight providers state
+  const { items: freightProvidersData = [], status: freightProvidersStatus } = useSelector((state) => state.freightProviders || {});
+
   // Connect to the processingCharges state
   const { items: customerCharges = [], status: processingStatus } = useSelector((state) => state.processingCharges || {});
 
@@ -212,6 +218,7 @@ export default function OrderDetailsPage() {
     if (currentOrder?.division) {
        const divId = currentOrder.division._id || currentOrder.division;
        dispatch(fetchCarriers(divId));
+       dispatch(fetchConfiguredFreightProviders(divId)); // <-- Fetch LTL Accounts securely
     }
   }, [currentOrder?.division, dispatch]);
 
@@ -448,8 +455,8 @@ export default function OrderDetailsPage() {
       doc.addPage();
 
       const customerName = currentOrder.customer?.customerName || 'Customer Order';
-      const divisionName = currentOrder.division?.divisionName || 'Custom Division'
-      const isCorporate = currentOrder.division?.divisionName?.toLowerCase().includes('corporate')
+      const divisionName = currentOrder.division?.divisionName || 'Custom Division';
+      const isCorporate = currentOrder.customer?.isCorporate || false; 
       const orderNo = currentOrder.orderNumber || 'N/A';
       const orderDate = currentOrder.createdAt ? new Date(currentOrder.createdAt).toLocaleDateString('en-GB', {day: '2-digit', month: 'short', year: 'numeric'}) : 'N/A';
       const shipVia = `${shipping.carrierType || ''} ${shipping.serviceCode || ''}`.trim() || 'UPS - Ground';
@@ -458,7 +465,14 @@ export default function OrderDetailsPage() {
       doc.setFontSize(14);
       doc.setTextColor(0, 0, 0);
       doc.setFont('helvetica', 'bold');
-      doc.text(!isCorporate ? `${customerName.toUpperCase()} - ${divisionName}` : `${customerName.toUpperCase()}`, 14, 20);
+      
+      if (isCorporate) {
+         doc.text(customerName.toUpperCase(), 14, 20);
+         doc.setFontSize(10);
+         doc.text(`${divisionName.toUpperCase()}`, 14, 25);
+      } else {
+         doc.text(`${customerName.toUpperCase()} - ${divisionName}`, 14, 20);
+      }
 
       const rightColKeyX = 160;
       const rightColValX = 162;
@@ -505,15 +519,19 @@ export default function OrderDetailsPage() {
       doc.setFont('helvetica', 'normal');
       
       let currentYOffset = addressBlockY;
-      if (address.companyName) {
-         doc.text(address.companyName, 130, currentYOffset);
-         currentYOffset += 5;
-         doc.text(`c/o ${address.name || 'N/A'}`, 130, currentYOffset);
-      } else {
-         doc.text(address.name || 'N/A', 130, currentYOffset);
-      }
+      const recipientName = address.name || 'N/A';
       
+      if (isCorporate) {
+         if (address.companyName) {
+             doc.text(address.companyName, 130, currentYOffset);
+             currentYOffset += 5;
+         }
+         doc.text(`${divisionName} c/o ${recipientName}`, 130, currentYOffset);
+      } else {
+         doc.text(`${divisionName} c/o ${recipientName}`, 130, currentYOffset);
+      }
       currentYOffset += 5;
+      
       doc.text(`${address.street || ''} ${address.line2 || ''}`.trim(), 130, currentYOffset);
       
       currentYOffset += 5;
@@ -1108,6 +1126,7 @@ export default function OrderDetailsPage() {
               isWeightMismatched={isWeightMismatched} 
               orderStatus={orderStatus} 
               carriersData={carriersData}
+              freightProvidersData={freightProvidersData} // <-- Pass this down
               shipmentId={currentOrder?.shipstationDetails?.orderId || ''}
               handleDirectSaveMetrics={handleDirectSaveMetrics}
               manuallyAdjustedWeightOunces={manualAdjustmentOz}
@@ -1147,3 +1166,4 @@ export default function OrderDetailsPage() {
     </div>
   );
 }
+

@@ -24,12 +24,19 @@ export default function ShippingPanel({
   totalBoxesCount,
   isWeightMismatched, orderStatus,
   carriersData = [],
+  freightProvidersData = [],
   handleDirectSaveMetrics, 
   manuallyAdjustedWeightOunces, // <-- Tracks DB adjustments
   shipmentId
 }) {
   const dispatch = useDispatch();
+  
+  // Track Live Rate Shopper Statuses
   const { shipmentRates = [], shipmentRatesStatus } = useSelector(state => state.rates || {});
+  
+  // NEW: Tap into the global Redux status to know when DB configurations are loading
+  const { status: carrierStatus } = useSelector(state => state.carriers || {});
+  const { status: freightStatus } = useSelector(state => state.freightProviders || {});
 
   const [editingLogistics, setEditingLogistics] = useState(false);
   const [isMetricsModalOpen, setIsMetricsModalOpen] = useState(false);
@@ -160,47 +167,70 @@ export default function ShippingPanel({
          </div>
          
          {editingLogistics ? (
-             <div className="space-y-3 mt-auto">
-                 <select 
-                   className="w-full bg-white p-2.5 rounded-xl text-xs font-bold text-slate-800 border border-slate-200 focus:border-brand-gold outline-none shadow-sm cursor-pointer"
-                   value={`${shipping.carrierId || ''}|${shipping.carrierType || ''}|${shipping.serviceCode || ''}`}
-                   onChange={(e) => {
-                     const [carrierId, carrierType, serviceCode] = e.target.value.split('|');
-                     setShipping({ ...shipping, carrierId, carrierType, serviceCode });
-                   }}
-                 >
-                   <option value="||">Select Carrier Service...</option>
-                   {carriersData.map(carrier => {
-                     const cType = carrier.carrierType || '';
-                     const cId = carrier._id || '';
-                     const activeServices = (carrier.enabledServices || []).filter(s => s.isActive);
-                     if (activeServices.length === 0) return null;
+             carrierStatus === 'loading' || freightStatus === 'loading' ? (
+                 <div className="flex flex-col items-center justify-center h-full mt-auto py-6 gap-2 bg-slate-50/50 border border-slate-100 rounded-xl shadow-inner">
+                     <Loader2 className="animate-spin text-brand-gold" size={24} />
+                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Syncing Methods...</span>
+                 </div>
+             ) : (
+                 <div className="space-y-3 mt-auto animate-in fade-in duration-300">
+                     <select 
+                       className="w-full bg-white p-2.5 rounded-xl text-xs font-bold text-slate-800 border border-slate-200 focus:border-brand-gold outline-none shadow-sm cursor-pointer"
+                       value={`${shipping.carrierId || ''}|${shipping.carrierType || ''}|${shipping.serviceCode || ''}`}
+                       onChange={(e) => {
+                         const [carrierId, carrierType, serviceCode] = e.target.value.split('|');
+                         setShipping({ ...shipping, carrierId, carrierType, serviceCode });
+                       }}
+                     >
+                       <option value="||">Select Carrier Service...</option>
+                       
+                       {/* Map Standard Parcel Carriers */}
+                       {carriersData.map(carrier => {
+                         const cType = carrier.carrierType || '';
+                         const cId = carrier._id || '';
+                         const activeServices = (carrier.enabledServices || []).filter(s => s.isActive);
+                         if (activeServices.length === 0) return null;
 
-                     return activeServices.map(service => (
-                       <option key={`${cId}-${service.serviceCode}`} value={`${cId}|${cType}|${service.serviceCode}`}>
-                         {cType.toUpperCase()} - {service.serviceName || service.serviceCode}
-                       </option>
-                     ));
-                   })}
-                 </select>
+                         return activeServices.map(service => (
+                           <option key={`${cId}-${service.serviceCode}`} value={`${cId}|${cType}|${service.serviceCode}`}>
+                             {cType.toUpperCase()} - {service.serviceName || service.serviceCode}
+                           </option>
+                         ));
+                       })}
 
-                 <input 
-                   type="text"
-                   placeholder="Manual Tracking Number"
-                   className="w-full bg-white p-2.5 rounded-xl text-xs font-bold text-slate-800 border border-slate-200 focus:border-brand-gold outline-none shadow-sm placeholder:text-slate-400 placeholder:font-medium"
-                   value={shipping.trackingNumber || ''}
-                   onChange={(e) => setShipping({ ...shipping, trackingNumber: e.target.value })}
-                 />
+                       {/* Map LTL Freight Providers */}
+                       {freightProvidersData.map(fp => {
+                         if (fp.isActive === false) return null;
+                         const cId = fp._id;
+                         const cType = fp.providerCode;
+                         const serviceCode = `LTL_${fp.providerCode}`; // Unique map code
+                         
+                         return (
+                           <option key={`${cId}-${serviceCode}`} value={`${cId}|${cType}|${serviceCode}`}>
+                             LTL FREIGHT: {fp.accountName} ({fp.providerCode})
+                           </option>
+                         );
+                       })}
+                     </select>
 
-                 <button 
-                    onClick={handleBrowseRates}
-                    disabled={isFetchingRates}
-                    className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white p-2.5 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-slate-800 transition-colors shadow-md active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
-                 >
-                   {isFetchingRates ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />} 
-                   {isFetchingRates ? 'Fetching...' : 'Browse Rates'}
-                 </button>
-             </div>
+                     <input 
+                       type="text"
+                       placeholder="Manual Tracking Number"
+                       className="w-full bg-white p-2.5 rounded-xl text-xs font-bold text-slate-800 border border-slate-200 focus:border-brand-gold outline-none shadow-sm placeholder:text-slate-400 placeholder:font-medium"
+                       value={shipping.trackingNumber || ''}
+                       onChange={(e) => setShipping({ ...shipping, trackingNumber: e.target.value })}
+                     />
+
+                     <button 
+                        onClick={handleBrowseRates}
+                        disabled={isFetchingRates}
+                        className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white p-2.5 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-slate-800 transition-colors shadow-md active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
+                     >
+                       {isFetchingRates ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />} 
+                       {isFetchingRates ? 'Fetching...' : 'Browse Rates'}
+                     </button>
+                 </div>
+             )
          ) : (
              <div className="text-sm font-bold text-slate-900 min-w-0 flex flex-col justify-between h-full mt-auto">
                  <div>
@@ -336,7 +366,6 @@ export default function ShippingPanel({
                     className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold text-slate-900 focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20 outline-none transition-all disabled:opacity-50" 
                     value={modalOz} 
                     onKeyDown={(e) => {
-                      // Prevent decimals and signs
                       if (e.key === '.' || e.key === 'e' || e.key === 'E' || e.key === '+' || e.key === '-') {
                         e.preventDefault();
                       }
