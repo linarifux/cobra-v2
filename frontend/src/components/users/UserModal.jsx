@@ -119,8 +119,7 @@ export default function UserModal({
                     <Lock size={16} className="absolute left-4 top-3.5 text-slate-400" />
                     <input 
                       type="password" 
-                      required={!editingUserId} 
-                      minLength={8} 
+                      required={!editingUserId}
                       value={formData.password || ''} 
                       onChange={(e) => setFormData({...formData, password: e.target.value})} 
                       className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all" 

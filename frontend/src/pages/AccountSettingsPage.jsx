@@ -175,7 +175,6 @@ export default function AccountSettingsPage() {
                       <input 
                         type="password" 
                         required
-                        minLength={8}
                         value={securityData.newPassword}
                         onChange={(e) => setSecurityData({...securityData, newPassword: e.target.value})}
                         className="w-full bg-white/60 border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm font-bold text-slate-900 focus:outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all"
@@ -189,7 +188,6 @@ export default function AccountSettingsPage() {
                       <input 
                         type="password" 
                         required
-                        minLength={8}
                         value={securityData.confirmPassword}
                         onChange={(e) => setSecurityData({...securityData, confirmPassword: e.target.value})}
                         className="w-full bg-white/60 border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm font-bold text-slate-900 focus:outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all"

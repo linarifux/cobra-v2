@@ -245,7 +245,6 @@ export default function StaffTab({ customerData, divisions = [] }) {
                   <input 
                     type="password" 
                     required={!editingId}
-                    minLength={8}
                     placeholder={editingId ? "••••••••" : "Minimum 8 characters"}
                     value={formData.password}
                     onChange={e => setFormData({...formData, password: e.target.value})}
