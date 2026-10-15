@@ -77,6 +77,13 @@ const orderSchema = new mongoose.Schema(
       default: false
     },
 
+
+    // --- NEW: Order Lifecycle Timestamps ---
+    shipmentCreatedAt: { type: Date }, // Triggered when pushed to ShipStation / Picked
+    shippedAt: { type: Date },         // Triggered when Label is generated / Shipped
+    deliveredAt: { type: Date },       // Triggered when carrier marks as delivered
+    cancelledAt: { type: Date },       // Triggered if order is cancelled
+
     shippingAddress: {
       companyName: { type: String, default: '' },
       recipientName: { type: String, required: true },
@@ -162,6 +169,23 @@ orderSchema.pre('save', function() {
       (this.processingFees.internationalFee || 0) +
       (this.processingFees.palletFee || 0);
   }
+
+  // 3. Auto-populate Lifecycle Timestamps based on Status Changes
+  if (this.isModified('status')) {
+    if (this.status === 'Picked' && !this.shipmentCreatedAt) {
+      this.shipmentCreatedAt = new Date();
+    }
+    if (this.status === 'Shipped' && !this.shippedAt) {
+      this.shippedAt = new Date();
+    }
+    if (this.status === 'Delivered' && !this.deliveredAt) {
+      this.deliveredAt = new Date();
+    }
+    if (this.status === 'Cancelled' && !this.cancelledAt) {
+      this.cancelledAt = new Date();
+    }
+  }
+
 });
 
 // INDEXING FOR PERFORMANCE

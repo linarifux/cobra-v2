@@ -37,7 +37,18 @@ import ManifestPanel from '../components/order-details/ManifestPanel';
 import InvoicePanel from '../components/order-details/InvoicePanel';
 import LabelDrawer from '../components/order-details/LabelDrawer';
 
+import LifecycleTimestampsPanel from '../components/division-detail/LifecycleTimestampsPanel';
+
 const generateLocalId = () => `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+// Helper to safely parse MongoDB ISO Dates into local datetime-local input formats
+const formatDatetimeLocal = (dateString) => {
+  if (!dateString) return '';
+  const d = new Date(dateString);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n) => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 const downloadBase64PDF = (base64Data, filename) => {
   try {
@@ -96,6 +107,12 @@ export default function OrderDetailsPage() {
   const [items, setItems] = useState([]);
   const [notes, setNotes] = useState('');
 
+  // --- Lifecycle Timestamp States ---
+  const [shipmentCreatedAt, setShipmentCreatedAt] = useState('');
+  const [shippedAt, setShippedAt] = useState('');
+  const [deliveredAt, setDeliveredAt] = useState('');
+  const [cancelledAt, setCancelledAt] = useState('');
+
   const [fulfillOpen, setFulfillOpen] = useState(false);
   const [cartoonsCount, setCartoonsCount] = useState(0);
   const [palletsCount, setPalletsCount] = useState(0); 
@@ -122,7 +139,6 @@ export default function OrderDetailsPage() {
     { id: generateLocalId(), packageCode: 'package', weightInOunces: 16, length: 10, width: 10, height: 10 }
   ]);
 
-  
   const ssData = currentOrder?.shipstationDetails || currentOrder?.shipstationOrder || currentOrder?.shipstation || null;
   const ssOrderId = ssData?.orderId || currentOrder?.shipstationOrderId || null;
   const ssLabelId = ssData?.labelId || null;
@@ -218,7 +234,7 @@ export default function OrderDetailsPage() {
     if (currentOrder?.division) {
        const divId = currentOrder.division._id || currentOrder.division;
        dispatch(fetchCarriers(divId));
-       dispatch(fetchConfiguredFreightProviders(divId)); // <-- Fetch LTL Accounts securely
+       dispatch(fetchConfiguredFreightProviders(divId)); 
     }
   }, [currentOrder?.division, dispatch]);
 
@@ -260,6 +276,12 @@ export default function OrderDetailsPage() {
       setCartoonsCount(currentOrder.shippingDetails?.cartoons || 0);
       setPalletsCount(currentOrder.shippingDetails?.pallets || 0); 
       setIsRushOrder(currentOrder.isRushOrder || false);
+
+      // --- Map Timestamps to Local UI Inputs ---
+      setShipmentCreatedAt(formatDatetimeLocal(currentOrder.shipmentCreatedAt));
+      setShippedAt(formatDatetimeLocal(currentOrder.shippedAt));
+      setDeliveredAt(formatDatetimeLocal(currentOrder.deliveredAt));
+      setCancelledAt(formatDatetimeLocal(currentOrder.cancelledAt));
 
       setShipping({ 
         carrierId: currentOrder.shippingDetails?.carrierId?._id || currentOrder.shippingDetails?.carrierId || '',
@@ -339,10 +361,8 @@ export default function OrderDetailsPage() {
 
   // Fires instantly when the "Save Metrics" button is pressed inside the ShippingPanel modal
   const handleDirectSaveMetrics = async (newTotalWeightOz, newTotalBoxes, newCartons, newPallets) => {
-    // Determine the manual offset against the current derived items
     const newManualAdjustment = derivedItemWeightOz > 0 ? (newTotalWeightOz - derivedItemWeightOz) : 0;
     
-    // Calculate the new packages array local state instantly for the UI
     let currentPkgs = [...packages];
     
     if (newTotalBoxes !== currentPkgs.length) {
@@ -363,12 +383,10 @@ export default function OrderDetailsPage() {
       weightInOunces: Number(weightPerBox.toFixed(2))
     }));
     
-    // Optimistic UI Update
     setPackages(currentPkgs);
     setCartoonsCount(newCartons);
     setPalletsCount(newPallets);
 
-    // Build secure payload and dispatch directly to the Database
     const payload = {
       shippingDetails: {
         ...currentOrder.shippingDetails,
@@ -376,7 +394,7 @@ export default function OrderDetailsPage() {
         pallets: Number(newPallets) || 0,
         totalBoxes: currentPkgs.length,
         totalWeightOunces: newTotalWeightOz,
-        manuallyAdjustedWeightOunces: newManualAdjustment, // Saves the exact +/- offset
+        manuallyAdjustedWeightOunces: newManualAdjustment, 
         packages: currentPkgs.map(p => ({
           packageCode: p.packageCode || 'package',
           weightInOunces: Number(p.weightInOunces) || 16,
@@ -388,11 +406,8 @@ export default function OrderDetailsPage() {
     };
 
     try {
-      // Direct push to DB
       await dispatch(updateOrder({ id: currentOrder._id, updateData: payload })).unwrap();
       toast.success('Shipment metrics safely saved to database.');
-      
-      // Pull fresh data to guarantee UI is perfectly synced with the backend
       dispatch(fetchOrderById(currentOrder._id));
     } catch (error) {
       toast.error(`Failed to save metrics: ${error}`);
@@ -714,6 +729,13 @@ export default function OrderDetailsPage() {
       status: orderStatus,
       isRushOrder: isRushOrder,
       ...(selectedUserId ? { user: selectedUserId } : { user: null }),
+      
+      // Inject updated lifecycle timestamps
+      shipmentCreatedAt: shipmentCreatedAt ? new Date(shipmentCreatedAt).toISOString() : null,
+      shippedAt: shippedAt ? new Date(shippedAt).toISOString() : null,
+      deliveredAt: deliveredAt ? new Date(deliveredAt).toISOString() : null,
+      cancelledAt: cancelledAt ? new Date(cancelledAt).toISOString() : null,
+
       notes: notes,
       shippingAddress: {
         recipientName: address.name, 
@@ -735,7 +757,7 @@ export default function OrderDetailsPage() {
         pallets: Number(palletsCount) || 0, 
         totalBoxes: payloadPackages.length,
         totalWeightOunces: finalPayloadWeightOz,
-        manuallyAdjustedWeightOunces: manualAdjustmentOz, // Preserve the DB state
+        manuallyAdjustedWeightOunces: manualAdjustmentOz, 
         packages: payloadPackages.map(p => ({
           packageCode: p.packageCode || 'package',
           weightInOunces: Number(p.weightInOunces) || 16,
@@ -779,6 +801,12 @@ export default function OrderDetailsPage() {
       status: 'Cancelled',
       isRushOrder: isRushOrder,
       ...(selectedUserId ? { user: selectedUserId } : { user: null }),
+      
+      cancelledAt: new Date().toISOString(), 
+      shipmentCreatedAt: shipmentCreatedAt ? new Date(shipmentCreatedAt).toISOString() : null,
+      shippedAt: shippedAt ? new Date(shippedAt).toISOString() : null,
+      deliveredAt: deliveredAt ? new Date(deliveredAt).toISOString() : null,
+
       notes: notes,
       shippingAddress: {
         recipientName: address.name, 
@@ -1126,12 +1154,25 @@ export default function OrderDetailsPage() {
               isWeightMismatched={isWeightMismatched} 
               orderStatus={orderStatus} 
               carriersData={carriersData}
-              freightProvidersData={freightProvidersData} // <-- Pass this down
+              freightProvidersData={freightProvidersData} 
               shipmentId={currentOrder?.shipstationDetails?.orderId || ''}
               handleDirectSaveMetrics={handleDirectSaveMetrics}
               manuallyAdjustedWeightOunces={manualAdjustmentOz}
             />
           </div>
+
+          <LifecycleTimestampsPanel
+            createdAt={creationDate}
+            shipmentCreatedAt={shipmentCreatedAt}
+            setShipmentCreatedAt={setShipmentCreatedAt}
+            shippedAt={shippedAt}
+            setShippedAt={setShippedAt}
+            deliveredAt={deliveredAt}
+            setDeliveredAt={setDeliveredAt}
+            cancelledAt={cancelledAt}
+            setCancelledAt={setCancelledAt}
+            isSaving={isSaving}
+          />
 
           <AddressPanel 
             address={address} 
@@ -1166,4 +1207,3 @@ export default function OrderDetailsPage() {
     </div>
   );
 }
-
