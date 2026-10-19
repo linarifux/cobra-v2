@@ -133,9 +133,11 @@ const calculateProcessingFees = async (orderData) => {
   return fees;
 };
 
+
 // @desc    Create a new order
 
 export const createOrder = catchAsync(async (req, res, next) => {
+
   if (!req.body.customer && req.params.customerId) req.body.customer = req.params.customerId;
   if (!req.body.division && req.params.divisionId) req.body.division = req.params.divisionId;
   if (!req.body.user && req.params.userId) req.body.user = req.params.userId;
@@ -148,7 +150,7 @@ export const createOrder = catchAsync(async (req, res, next) => {
   if (!customer) return next(new AppError('Customer not found.', 404));
 
   // --- AUTOMATED INTERNATIONAL DETECTION ---
-  const orderCountry = req.body.shippingAddress?.country || 'US';
+  const orderCountry = req.body.shippingAddress?.country;
   req.body.isInternational = checkIfInternational(orderCountry);
 
   // --- CALCULATE SUBTOTAL & PROCESSING FEES ---
@@ -164,8 +166,14 @@ export const createOrder = catchAsync(async (req, res, next) => {
   let order = new Order(req.body);
   order.customer = customer;
 
-  if (req.body.qtyLimitExceeds === true) {
+  if (req.body?.qtyLimitExceeds === true) {
     order.status = 'Pending';
+  }
+
+  if (req.body?.shippingDetails?.serviceCode) {
+    if (req.body.shippingDetails.serviceCode.toLowerCase() !== 'ups_ground') {
+      order.status = 'Pending';
+    }
   }
 
   // --- MONTHLY ORDER LIMIT CHECK ---
@@ -346,7 +354,7 @@ export const getOrder = catchAsync(async (req, res, next) => {
 });
 
 // @desc    Update an order
-export const updateOrder = catchAsync(async (req, res, next) => {
+export const updateOrder = catchAsync(async (req, res, next) => {  
   let order = await Order.findById(req.params.id)
     .populate('user', 'email name releasePendingOrders');
 
@@ -366,6 +374,15 @@ export const updateOrder = catchAsync(async (req, res, next) => {
       if (orderUserId !== String(req.user._id)) {
         return next(new AppError('You do not have permission to update this order', 403));
       }
+    }
+  }
+
+  // --- FORCE PENDING STATUS FOR NON-UPS-GROUND SERVICES ---
+  // We check if serviceCode is actively being updated in this request to prevent 
+  // reverting already 'Shipped' or 'Delivered' orders just because a note was added.
+  if (req.body?.status === 'New' && req.body.shippingDetails?.serviceCode) {
+    if (req.body.shippingDetails.serviceCode.toLowerCase() !== 'ups_ground') {
+      req.body.status = 'Pending';
     }
   }
 
@@ -489,6 +506,7 @@ export const updateOrder = catchAsync(async (req, res, next) => {
 
   res.status(200).json({ status: 'success', data: { order } });
 });
+
 
 // @desc    Delete an order
 export const deleteOrder = catchAsync(async (req, res, next) => {

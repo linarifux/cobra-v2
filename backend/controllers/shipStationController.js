@@ -472,6 +472,7 @@ export const createOrderShipment = catchAsync(async (req, res, next) => {
   }
 });
 
+
 export const generateOrderLabel = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
   const { packages, weightInOunces, carrierCode, serviceCode, cartoons, pallets, totalBoxes, totalWeightOunces, processingFees } = req.body;
@@ -495,14 +496,14 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
 
   // 2. USE THE EXACT SNIPPET PAYLOAD (With Carrier/Weight overrides included to ensure UI changes sync)
   const labelPayload = {
-    carrierCode: finalCarrierType,
-    serviceCode: finalServiceCode,
-    weight: {
-      value: totalWeight,
-      units: "ounces"
-    },
+    // carrierCode: finalCarrierType,
+    // serviceCode: finalServiceCode,
+    // weight: {
+    //   value: totalWeight,
+    //   units: "ounces"
+    // },
     // Restored the missing packages parameter required for ShipStation API v2 dimension extraction
-    packages: mapPackages(packages, totalWeight),
+    // packages: mapPackages(packages, totalWeight),
     validate_address: 'no_validation',
     label_layout: '4x6',
     label_format: 'pdf',

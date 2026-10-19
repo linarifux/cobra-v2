@@ -1,6 +1,7 @@
 import React from 'react';
 import { PackageCheck, X, MapPin, Loader2, CheckCircle2, Printer, Trash2 } from 'lucide-react';
 
+
 export default function LabelDrawer({
   fulfillOpen, setFulfillOpen, fulfillmentData, setFulfillmentData, 
   warehouses, isLoadingWarehouses, isLabelPurchased, isShipmentCreated, 

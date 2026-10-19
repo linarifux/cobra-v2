@@ -9,6 +9,7 @@ if (!apiKey) {
   console.warn('⚠️ WARNING: SHIPSTATION_API_KEY is missing from environment variables.');
 }
 
+
 export const shipStationAPI = axios.create({
   baseURL,
   headers: {
@@ -122,6 +123,8 @@ export const createLabel = async (labelPayload) => {
   }
 };
 
+// this is the function that creates a label for a specific shipment, using the shipmentId and the labelPayload
+// this one is currently being used
 export const createLabelForShipment = async (shipmentId, labelPayload) => {
   try {
     const response = await shipStationAPI.post(`/labels/shipment/${shipmentId}`, labelPayload);
@@ -130,6 +133,8 @@ export const createLabelForShipment = async (shipmentId, labelPayload) => {
     handleApiError(error, 'createLabelForShipment'); 
   }
 };
+
+
 
 export const createShipment = async (shipmentPayload) => {
   try {
