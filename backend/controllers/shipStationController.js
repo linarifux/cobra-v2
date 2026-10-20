@@ -1,34 +1,40 @@
-import Order from '../models/Order.js';
-import Inventory from '../models/Inventory.js';
-import Carrier from '../models/Carrier.js';
-import Shipment from '../models/Shipment.js';
-import { catchAsync } from '../utils/catchAsync.js';
-import AppError from '../utils/AppError.js';
+import Order from "../models/Order.js";
+import Inventory from "../models/Inventory.js";
+import Carrier from "../models/Carrier.js";
+import Shipment from "../models/Shipment.js";
+import { catchAsync } from "../utils/catchAsync.js";
+import AppError from "../utils/AppError.js";
 import {
-  getRates, getWarehouses, getCarriers, getCarrierPackages,
-  createLabel, createShipment, getLabelByExternalId,
-  cancelShipment, voidLabel,
-  createLabelForShipment, fetchLabelBufferAsBase64,
+  getRates,
+  getWarehouses,
+  getCarriers,
+  getCarrierPackages,
+  createLabel,
+  createShipment,
+  getLabelByExternalId,
+  cancelShipment,
+  voidLabel,
+  createLabelForShipment,
+  fetchLabelBufferAsBase64,
   addTagToShipment,
   getRateShoppers,
   getRatesWithShipmentId,
-  getFreightProviders
-
-
-} from '../services/shipStationService.js';
+  getFreightProviders,
+} from "../services/shipStationService.js";
 
 // Fallback to 08036 if not set in .env
-const originZip = process.env.SHIPSTATION_ORIGIN_ZIP?.replace(/['"]/g, '').trim() || '08036';
+const originZip =
+  process.env.SHIPSTATION_ORIGIN_ZIP?.replace(/['"]/g, "").trim() || "08036";
 
 // --- HELPER: Normalize Country to ISO-Alpha 2 ---
 const normalizeCountry = (countryStr) => {
-  if (!countryStr) return 'US';
+  if (!countryStr) return "US";
   const c = countryStr.toLowerCase().trim();
-  if (c === 'usa' || c === 'united states' || c === 'us') return 'US';
-  if (c === 'canada' || c === 'can' || c === 'ca') return 'CA';
-  if (c === 'mexico' || c === 'mex' || c === 'mx') return 'MX';
-  if (c === 'united kingdom' || c === 'uk' || c === 'gb') return 'GB';
-  if (c === 'australia' || c === 'aus' || c === 'au') return 'AU';
+  if (c === "usa" || c === "united states" || c === "us") return "US";
+  if (c === "canada" || c === "can" || c === "ca") return "CA";
+  if (c === "mexico" || c === "mex" || c === "mx") return "MX";
+  if (c === "united kingdom" || c === "uk" || c === "gb") return "GB";
+  if (c === "australia" || c === "aus" || c === "au") return "AU";
   return countryStr.substring(0, 2).toUpperCase();
 };
 
@@ -44,7 +50,7 @@ const getMIKROShipFrom = () => ({
   country_code: "US",
   phone: "6096940521",
   email: "mike@mi-krologistics.com",
-  address_residential_indicator: "no"
+  address_residential_indicator: "no",
 });
 
 // --- HELPER: Map Frontend Packages to ShipStation Format ---
@@ -55,47 +61,90 @@ const mapPackages = (packages, totalWeightInOunces = 16) => {
       package_code: pkg.packageCode || "package",
       weight: {
         value: pkg.weightInOunces > 0 ? Math.ceil(pkg.weightInOunces) : 16,
-        unit: "ounce"
+        unit: "ounce",
       },
       dimensions: {
         unit: "inch",
         length: Number(pkg.length) || 10,
         width: Number(pkg.width) || 10,
-        height: Number(pkg.height) || 10
-      }
+        height: Number(pkg.height) || 10,
+      },
     }));
   }
-  return [{
-    package_code: "package",
-    weight: { value: totalWeightInOunces > 0 ? Math.ceil(totalWeightInOunces) : 16, unit: "ounce" },
-    dimensions: { unit: "inch", length: 10, width: 10, height: 10 }
-  }];
+  return [
+    {
+      package_code: "package",
+      weight: {
+        value: totalWeightInOunces > 0 ? Math.ceil(totalWeightInOunces) : 16,
+        unit: "ounce",
+      },
+      dimensions: { unit: "inch", length: 10, width: 10, height: 10 },
+    },
+  ];
 };
 
 // =====================================================================
-// CENTRALIZED CORE LOGIC FOR CREATING SHIPMENTS 
+// CENTRALIZED CORE LOGIC FOR CREATING SHIPMENTS
 // =====================================================================
-export const executeShipmentCreation = async (order, frontendPackages = [], isResidential = false, carrierCodeOverride = null, serviceCodeOverride = null, extraDetails = {}) => {
+
+export const executeShipmentCreation = async (
+  order,
+  frontendPackages = [],
+  isResidential = false,
+  carrierCodeOverride = null,
+  serviceCodeOverride = null,
+  extraDetails = {},
+) => {
   const displayId = order.orderNumber || order._id.toString();
-  const { recipientName, line1, line2, city, state, zip, country, phone, email } = order.shippingAddress || {};
+  const {
+    recipientName,
+    line1,
+    line2,
+    city,
+    state,
+    zip,
+    country,
+    phone,
+    email,
+  } = order.shippingAddress || {};
 
-  if (!recipientName || !line1 || !city || !state || !zip) throw new Error('Incomplete destination address.');
+  if (!recipientName || !line1 || !city || !state || !zip)
+    throw new Error("Incomplete destination address.");
 
-  const finalCarrierType = carrierCodeOverride || order.shippingDetails?.carrierType;
-  const finalServiceCode = serviceCodeOverride || order.shippingDetails?.serviceCode;
+  const finalCarrierType = order.shippingDetails?.carrierType;
+  const finalServiceCode = order.shippingDetails?.serviceCode;
 
-  if (!finalCarrierType || !finalServiceCode) throw new Error('Shipping carrier and service code must be selected.');
+  if (!finalCarrierType || !finalServiceCode)
+    throw new Error("Shipping carrier and service code must be selected.");
 
   const divisionId = order.division._id || order.division;
-  const carrier = await Carrier.findOne({ carrierType: finalCarrierType, division: divisionId, isActive: true });
-  if (!carrier) throw new Error(`Carrier configuration not found for ${finalCarrierType}.`);
+  const carrier = await Carrier.findOne({
+    carrierType: finalCarrierType,
+    division: divisionId,
+    isActive: true,
+  });
+  if (!carrier)
+    throw new Error(`Carrier configuration not found for ${finalCarrierType}.`);
 
   const shipToCountry = normalizeCountry(country);
 
-  const totalWeight = order.items?.reduce((acc, item) => acc + (Number(item.weight || 0) * Number(item.quantity || 1)), 0) || 16;
-  const finalPackages = (frontendPackages && frontendPackages.length > 0) ? mapPackages(frontendPackages) : mapPackages([], totalWeight);
+  const totalWeight =
+    order.items?.reduce(
+      (acc, item) =>
+        acc + Number(item.weight || 0) * Number(item.quantity || 1),
+      0,
+    ) || 16;
+  const finalPackages =
+    frontendPackages && frontendPackages.length > 0
+      ? mapPackages(frontendPackages)
+      : mapPackages([], totalWeight);
 
-  const subtotal = order.items?.reduce((acc, item) => acc + (Number(item.unitPrice || 0) * Number(item.quantity || 1)), 0) || 0;
+  const subtotal =
+    order.items?.reduce(
+      (acc, item) =>
+        acc + Number(item.unitPrice || 0) * Number(item.quantity || 1),
+      0,
+    ) || 0;
   const shippingCost = Number(order.shippingDetails?.shippingCost || 0);
   const tax = subtotal * 0.08;
 
@@ -106,6 +155,7 @@ export const executeShipmentCreation = async (order, frontendPackages = [], isRe
         validate_address: "no_validation",
         external_shipment_id: displayId,
         carrier_id: carrier.shipStationId,
+        service_code: finalServiceCode,
         create_sales_order: true,
         is_gift: false,
         zone: 0,
@@ -114,15 +164,15 @@ export const executeShipmentCreation = async (order, frontendPackages = [], isRe
         shipment_status: "pending",
         amount_paid: {
           currency: "usd",
-          amount: Number((subtotal + shippingCost + tax).toFixed(2))
+          amount: Number((subtotal + shippingCost + tax).toFixed(2)),
         },
         shipping_paid: {
           currency: "usd",
-          amount: Number(shippingCost.toFixed(2))
+          amount: Number(shippingCost.toFixed(2)),
         },
         tax_paid: {
           currency: "usd",
-          amount: Number(tax.toFixed(2))
+          amount: Number(tax.toFixed(2)),
         },
         ship_to: {
           name: recipientName,
@@ -135,43 +185,59 @@ export const executeShipmentCreation = async (order, frontendPackages = [], isRe
           state_province: state,
           postal_code: zip,
           country_code: shipToCountry,
-          address_residential_indicator: isResidential ? "yes" : "no"
+          address_residential_indicator: isResidential ? "yes" : "no",
         },
         ship_from: getMIKROShipFrom(),
-        items: order.items?.map(item => ({
-          name: item.name ? item.name.substring(0, 200) : "Merchandise",
-          sku: item.sku || "UNKNOWN",
-          quantity: item.quantity || 1,
-          weight: { value: item.weight || 0, unit: "ounce" }
-        })) || [],
-        packages: finalPackages
-      }
-    ]
+        items:
+          order.items?.map((item) => ({
+            name: item.name ? item.name.substring(0, 200) : "Merchandise",
+            sku: item.sku || "UNKNOWN",
+            quantity: item.quantity || 1,
+            weight: { value: item.weight || 0, unit: "ounce" },
+          })) || [],
+        packages: finalPackages,
+      },
+    ],
   };
 
   const shipmentResponse = await createShipment(shipmentPayload);
 
   if (shipmentResponse?.hasErrors || shipmentResponse?.has_errors) {
-    const failedItem = shipmentResponse.shipments?.[0] || shipmentResponse.results?.[0];
-    const errorMessage = failedItem?.errors?.[0] || failedItem?.errorMessage || "ShipStation rejected the fulfillment criteria.";
+    const failedItem =
+      shipmentResponse.shipments?.[0] || shipmentResponse.results?.[0];
+    const errorMessage =
+      failedItem?.errors?.[0] ||
+      failedItem?.errorMessage ||
+      "ShipStation rejected the fulfillment criteria.";
     throw new Error(errorMessage);
   }
 
-  const processedShipment = shipmentResponse?.shipments?.[0] || shipmentResponse?.results?.[0] || shipmentResponse;
-  if (!processedShipment || (!processedShipment.shipment_id && !processedShipment.shipmentId)) {
-    throw new Error('ShipStation failed to return a valid shipment ID.');
+  const processedShipment =
+    shipmentResponse?.shipments?.[0] ||
+    shipmentResponse?.results?.[0] ||
+    shipmentResponse;
+  if (
+    !processedShipment ||
+    (!processedShipment.shipment_id && !processedShipment.shipmentId)
+  ) {
+    throw new Error("ShipStation failed to return a valid shipment ID.");
   }
 
   // ==========================================
   // SHIPSTATION INTEGRATION: Assign Division Tag
   // ==========================================
-  const divisionCode = order.division?.divisionCode || order.division?.divisionName;
+  const divisionCode =
+    order.division?.divisionCode || order.division?.divisionName;
   if (divisionCode) {
     try {
-      const shipmentIdForTag = processedShipment.shipment_id || processedShipment.shipmentId;
+      const shipmentIdForTag =
+        processedShipment.shipment_id || processedShipment.shipmentId;
       await addTagToShipment(shipmentIdForTag, divisionCode);
     } catch (tagError) {
-      console.warn(`[ShipStation Warning]: Failed to assign tag '${divisionCode}' to shipment.`, tagError.message);
+      console.warn(
+        `[ShipStation Warning]: Failed to assign tag '${divisionCode}' to shipment.`,
+        tagError.message,
+      );
     }
   }
 
@@ -179,30 +245,41 @@ export const executeShipmentCreation = async (order, frontendPackages = [], isRe
   order.shippingDetails.carrierType = finalCarrierType;
   order.shippingDetails.serviceCode = finalServiceCode;
 
-  // Update internal metrics & fees payload 
-  if (extraDetails.cartoons !== undefined) order.shippingDetails.cartoons = extraDetails.cartoons;
-  if (extraDetails.pallets !== undefined) order.shippingDetails.pallets = extraDetails.pallets;
-  if (extraDetails.totalBoxes !== undefined) order.shippingDetails.totalBoxes = extraDetails.totalBoxes;
-  if (extraDetails.totalWeightOunces !== undefined) order.shippingDetails.totalWeightOunces = extraDetails.totalWeightOunces;
+  // Update internal metrics & fees payload
+  if (extraDetails.cartoons !== undefined)
+    order.shippingDetails.cartoons = extraDetails.cartoons;
+  if (extraDetails.pallets !== undefined)
+    order.shippingDetails.pallets = extraDetails.pallets;
+  if (extraDetails.totalBoxes !== undefined)
+    order.shippingDetails.totalBoxes = extraDetails.totalBoxes;
+  if (extraDetails.totalWeightOunces !== undefined)
+    order.shippingDetails.totalWeightOunces = extraDetails.totalWeightOunces;
 
   // FIX: Sync frontend processing fees explicitly
-  if (extraDetails.processingFees) order.processingFees = extraDetails.processingFees;
+  if (extraDetails.processingFees)
+    order.processingFees = extraDetails.processingFees;
 
   if (frontendPackages && frontendPackages.length > 0) {
-    order.shippingDetails.packages = frontendPackages.map(p => ({
-      packageCode: p.packageCode || 'package',
+    order.shippingDetails.packages = frontendPackages.map((p) => ({
+      packageCode: p.packageCode || "package",
       weightInOunces: Number(p.weightInOunces) || 16,
       length: Number(p.length) || 10,
       width: Number(p.width) || 10,
-      height: Number(p.height) || 10
+      height: Number(p.height) || 10,
     }));
   }
 
   order.shipstationDetails = {
     orderId: processedShipment.shipment_id || processedShipment.shipmentId,
-    orderKey: processedShipment.external_shipment_id || processedShipment.shipmentId || '',
-    orderStatus: processedShipment.shipment_status || processedShipment.shipmentStatus || 'pending',
-    externalShipmentId: displayId
+    orderKey:
+      processedShipment.external_shipment_id ||
+      processedShipment.shipmentId ||
+      "",
+    orderStatus:
+      processedShipment.shipment_status ||
+      processedShipment.shipmentStatus ||
+      "pending",
+    externalShipmentId: displayId,
   };
   await order.save();
 
@@ -212,14 +289,22 @@ export const executeShipmentCreation = async (order, frontendPackages = [], isRe
     shipmentTracker = new Shipment({
       order: order._id,
       division: divisionId,
-      currentStatus: 'Shipment Created',
+      currentStatus: "Shipment Created",
       isShipmentCreated: true,
-      statusHistory: [{ status: 'Shipment Created', notes: 'Pushed to fulfillment dashboard.' }]
+      statusHistory: [
+        {
+          status: "Shipment Created",
+          notes: "Pushed to fulfillment dashboard.",
+        },
+      ],
     });
   } else {
     shipmentTracker.isShipmentCreated = true;
-    shipmentTracker.currentStatus = 'Shipment Created';
-    shipmentTracker.statusHistory.push({ status: 'Shipment Created', notes: 'Pushed to fulfillment dashboard.' });
+    shipmentTracker.currentStatus = "Shipment Created";
+    shipmentTracker.statusHistory.push({
+      status: "Shipment Created",
+      notes: "Pushed to fulfillment dashboard.",
+    });
   }
   await shipmentTracker.save();
 
@@ -233,40 +318,56 @@ export const executeShipmentCreation = async (order, frontendPackages = [], isRe
 export const fetchWarehouses = catchAsync(async (req, res, next) => {
   try {
     const warehouses = await getWarehouses();
-    res.status(200).json({ status: 'success', results: warehouses?.length || 0, data: { warehouses } });
-  } catch (error) { return next(new AppError(`ShipStation Error: ${error.message}`, 502)); }
+    res
+      .status(200)
+      .json({
+        status: "success",
+        results: warehouses?.length || 0,
+        data: { warehouses },
+      });
+  } catch (error) {
+    return next(new AppError(`ShipStation Error: ${error.message}`, 502));
+  }
 });
 
 export const fetchCarriers = catchAsync(async (req, res, next) => {
   try {
     const carriers = await getCarriers();
-    const filteredCarriers = await carriers?.carriers?.map(carrier => ({
+    const filteredCarriers = await carriers?.carriers?.map((carrier) => ({
       code: carrier.carrier_code,
       id: carrier.carrier_id,
       accountNumber: carrier.account_number,
       name: carrier.friendly_name,
-      services: carrier.services?.map(service => ({
+      services: carrier.services?.map((service) => ({
         code: service.service_code,
         name: service.name,
       })),
-      packages: carrier?.packages?.map(p => ({
+      packages: carrier?.packages?.map((p) => ({
         packageId: p.package_id,
         packageCode: p.package_code,
         packageName: p.name,
-        packageDimensios: p.dimensions
-      }))
+        packageDimensios: p.dimensions,
+      })),
     }));
-    res.status(200).json({ status: 'success', results: filteredCarriers?.length || 0, data: filteredCarriers });
-  } catch (error) { return next(new AppError(`ShipStation Error: ${error.message}`, 502)); }
+    res
+      .status(200)
+      .json({
+        status: "success",
+        results: filteredCarriers?.length || 0,
+        data: filteredCarriers,
+      });
+  } catch (error) {
+    return next(new AppError(`ShipStation Error: ${error.message}`, 502));
+  }
 });
 
 export const fetchCarrierPackages = catchAsync(async (req, res, next) => {
   const { carrierId } = req.params;
-  if (!carrierId) return next(new AppError('Carrier ID is required.', 400));
+  if (!carrierId) return next(new AppError("Carrier ID is required.", 400));
 
   try {
     const packages = await getCarrierPackages(carrierId);
-    res.status(200).json({ status: 'success', data: packages });
+    res.status(200).json({ status: "success", data: packages });
   } catch (error) {
     return next(new AppError(`ShipStation Error: ${error.message}`, 502));
   }
@@ -277,37 +378,43 @@ export const fetchRateShoppers = catchAsync(async (req, res, next) => {
   try {
     const response = await getRateShoppers(req.query);
     const rateShoppers = response?.rate_shoppers || [];
-// Debugging output to verify the response structure
+    // Debugging output to verify the response structure
 
     res.status(200).json({
-      status: 'success',
+      status: "success",
       results: rateShoppers.length,
-      data: { rateShoppers }
+      data: { rateShoppers },
     });
   } catch (error) {
-
-
     return next(new AppError(`ShipStation Error: ${error.message}`, 502));
-
-
   }
 });
-
 
 export const fetchRatesWithShipmentId = catchAsync(async (req, res, next) => {
   const { shipmentId } = req.params;
   const rateOptions = req.body.rate_options || {};
 
-
-
-  if (!shipmentId) return next(new AppError('Shipment ID is required.', 400));
+  if (!shipmentId) return next(new AppError("Shipment ID is required.", 400));
 
   try {
-    const order = await Order.findOne({ 'shipstationDetails.orderId': shipmentId });
-    if (!order) return next(new AppError('The active order for this shipment could not be located.', 404));
+    const order = await Order.findOne({
+      "shipstationDetails.orderId": shipmentId,
+    });
+    if (!order)
+      return next(
+        new AppError(
+          "The active order for this shipment could not be located.",
+          404,
+        ),
+      );
 
-    const configuredCarriers = await Carrier.find({ division: order.division, isActive: true });
-    rateOptions.carrier_ids = configuredCarriers.map(c => c.shipStationId).filter(Boolean);
+    const configuredCarriers = await Carrier.find({
+      division: order.division,
+      isActive: true,
+    });
+    rateOptions.carrier_ids = configuredCarriers
+      .map((c) => c.shipStationId)
+      .filter(Boolean);
 
     const response = await getRatesWithShipmentId(shipmentId, rateOptions);
 
@@ -315,16 +422,22 @@ export const fetchRatesWithShipmentId = catchAsync(async (req, res, next) => {
     const rawRates = response?.rate_response?.rates || [];
 
     // Normalize into clean UI objects
-    const normalizedRates = rawRates.map(r => ({
+    const normalizedRates = rawRates.map((r) => ({
       rateId: r.rate_id,
       serviceCode: r.service_code,
       serviceName: r.service_type || r.service_code,
       shipmentCost: r.shipping_amount?.amount || 0,
       transitDays: r.delivery_days || null,
-      carrierFriendlyName: r.carrier_friendly_name || r.carrier_code
+      carrierFriendlyName: r.carrier_friendly_name || r.carrier_code,
     }));
 
-    res.status(200).json({ status: 'success', results: normalizedRates.length, data: { rates: normalizedRates } });
+    res
+      .status(200)
+      .json({
+        status: "success",
+        results: normalizedRates.length,
+        data: { rates: normalizedRates },
+      });
   } catch (error) {
     return next(new AppError(`ShipStation Error: ${error.message}`, 502));
   }
@@ -332,19 +445,42 @@ export const fetchRatesWithShipmentId = catchAsync(async (req, res, next) => {
 
 export const fetchLiveRates = catchAsync(async (req, res, next) => {
   const { carrierCode, address, totalWeightInOunces, divisionId } = req.body;
-  if (!address || (!address.zipCode && !address.zip) || (!address.state && !address.state_province) || (!address.city && !address.city_locality)) {
-    return next(new AppError('Missing required shipping address fields (City, State, Zip).', 400));
+  if (
+    !address ||
+    (!address.zipCode && !address.zip) ||
+    (!address.state && !address.state_province) ||
+    (!address.city && !address.city_locality)
+  ) {
+    return next(
+      new AppError(
+        "Missing required shipping address fields (City, State, Zip).",
+        400,
+      ),
+    );
   }
-  if (!carrierCode) return next(new AppError('Carrier Code is required to fetch rates.', 400));
+  if (!carrierCode)
+    return next(new AppError("Carrier Code is required to fetch rates.", 400));
 
-  const carrier = await Carrier.findOne({ carrierType: carrierCode, division: divisionId, isActive: true });
-  if (!carrier) return next(new AppError(`Carrier ${carrierCode} is not configured or disabled.`, 404));
+  const carrier = await Carrier.findOne({
+    carrierType: carrierCode,
+    division: divisionId,
+    isActive: true,
+  });
+  if (!carrier)
+    return next(
+      new AppError(
+        `Carrier ${carrierCode} is not configured or disabled.`,
+        404,
+      ),
+    );
 
   const ratePayload = {
     shipment: {
       validate_address: "no_validation",
       ship_to: {
-        name: address.firstName ? `${address.firstName} ${address.lastName}`.trim() : (address.name || "Customer"),
+        name: address.firstName
+          ? `${address.firstName} ${address.lastName}`.trim()
+          : address.name || "Customer",
         phone: address.contactPhone || address.phone || "",
         email: address.contactEmail || address.email || "",
         company_name: "", // Explicitly blank
@@ -354,37 +490,58 @@ export const fetchLiveRates = catchAsync(async (req, res, next) => {
         state_province: address.state || address.state_province,
         postal_code: address.zipCode || address.zip || address.postal_code,
         country_code: normalizeCountry(address.country || address.country_code),
-        address_residential_indicator: address.isResidential ? "yes" : "no"
+        address_residential_indicator: address.isResidential ? "yes" : "no",
       },
       ship_from: getMIKROShipFrom(),
-      packages: mapPackages([], totalWeightInOunces)
+      packages: mapPackages([], totalWeightInOunces),
     },
-    rate_options: { carrier_ids: process.env.SHIPSTATION_CARRIERS ? JSON.parse(process.env.SHIPSTATION_CARRIERS) : [] }
+    rate_options: {
+      carrier_ids: process.env.SHIPSTATION_CARRIERS
+        ? JSON.parse(process.env.SHIPSTATION_CARRIERS)
+        : [],
+    },
   };
 
   try {
     const response = await getRates(ratePayload);
     const rates = response?.rate_response?.rates || [];
-    const normalizedRates = rates.map(r => ({
+    const normalizedRates = rates.map((r) => ({
       serviceCode: r.service_code,
       serviceName: r.service_type || r.service_code,
       shipmentCost: r.shipping_amount?.amount || 0,
-      transitDays: r.delivery_days || null
+      transitDays: r.delivery_days || null,
     }));
-    res.status(200).json({ status: 'success', results: normalizedRates?.length || 0, data: { rates: normalizedRates } });
-  } catch (error) { return next(new AppError(`ShipStation Error: ${error.message}`, 502)); }
+    res
+      .status(200)
+      .json({
+        status: "success",
+        results: normalizedRates?.length || 0,
+        data: { rates: normalizedRates },
+      });
+  } catch (error) {
+    return next(new AppError(`ShipStation Error: ${error.message}`, 502));
+  }
 });
 
 export const getCheckoutRates = catchAsync(async (req, res, next) => {
   const { divisionId, address, totalWeightInOunces } = req.body;
-  if (!divisionId) return next(new AppError('Division ID context is required.', 400));
-  if (!address || (!address.zipCode && !address.zip) || !address.state || !address.city) {
-    return next(new AppError('Missing required shipping address fields.', 400));
+  if (!divisionId)
+    return next(new AppError("Division ID context is required.", 400));
+  if (
+    !address ||
+    (!address.zipCode && !address.zip) ||
+    !address.state ||
+    !address.city
+  ) {
+    return next(new AppError("Missing required shipping address fields.", 400));
   }
 
-  const configuredCarriers = await Carrier.find({ division: divisionId, isActive: true });
+  const configuredCarriers = await Carrier.find({
+    division: divisionId,
+    isActive: true,
+  });
   if (!configuredCarriers || configuredCarriers.length === 0) {
-    return res.status(200).json({ status: 'success', data: { rates: [] } });
+    return res.status(200).json({ status: "success", data: { rates: [] } });
   }
 
   let unifiedRates = [];
@@ -395,7 +552,9 @@ export const getCheckoutRates = catchAsync(async (req, res, next) => {
         shipment: {
           validate_address: "no_validation",
           ship_to: {
-            name: address.firstName ? `${address.firstName} ${address.lastName}`.trim() : "Customer",
+            name: address.firstName
+              ? `${address.firstName} ${address.lastName}`.trim()
+              : "Customer",
             phone: address.contactPhone || "",
             email: address.contactEmail || "",
             company_name: "", // Explicitly blank
@@ -405,12 +564,12 @@ export const getCheckoutRates = catchAsync(async (req, res, next) => {
             state_province: address.state,
             postal_code: address.zipCode || address.zip,
             country_code: normalizeCountry(address.country),
-            address_residential_indicator: "yes"
+            address_residential_indicator: "yes",
           },
           ship_from: getMIKROShipFrom(),
-          packages: mapPackages([], totalWeightInOunces)
+          packages: mapPackages([], totalWeightInOunces),
         },
-        rate_options: { carrier_ids: [carrier.shipStationId] }
+        rate_options: { carrier_ids: [carrier.shipStationId] },
       };
 
       try {
@@ -418,8 +577,10 @@ export const getCheckoutRates = catchAsync(async (req, res, next) => {
         const ssRates = response?.rate_response?.rates || [];
         if (!ssRates || ssRates.length === 0) return;
 
-        const enabledServiceCodes = carrier.enabledServices.filter(s => s.isActive).map(s => s.serviceCode);
-        ssRates.forEach(rate => {
+        const enabledServiceCodes = carrier.enabledServices
+          .filter((s) => s.isActive)
+          .map((s) => s.serviceCode);
+        ssRates.forEach((rate) => {
           if (enabledServiceCodes.includes(rate.service_code)) {
             unifiedRates.push({
               code: rate.service_code,
@@ -427,34 +588,66 @@ export const getCheckoutRates = catchAsync(async (req, res, next) => {
               carrierCode: carrier.carrierType,
               carrierId: carrier._id,
               cost: rate.shipping_amount?.amount || 0,
-              transitDays: rate.delivery_days || null
+              transitDays: rate.delivery_days || null,
             });
           }
         });
       } catch (carrierErr) {
-        console.error(`[Rate Fetching] Failed to fetch rates for ${carrier.carrierType}:`, carrierErr.message);
+        console.error(
+          `[Rate Fetching] Failed to fetch rates for ${carrier.carrierType}:`,
+          carrierErr.message,
+        );
       }
     });
 
     await Promise.all(rateRequests);
     unifiedRates.sort((a, b) => a.cost - b.cost);
 
-    res.status(200).json({ status: 'success', results: unifiedRates.length, data: { rates: unifiedRates } });
+    res
+      .status(200)
+      .json({
+        status: "success",
+        results: unifiedRates.length,
+        data: { rates: unifiedRates },
+      });
   } catch (error) {
-    return next(new AppError('Fulfillment system was unable to calculate shipping rates.', 502));
+    return next(
+      new AppError(
+        "Fulfillment system was unable to calculate shipping rates.",
+        502,
+      ),
+    );
   }
 });
 
 export const createOrderShipment = catchAsync(async (req, res, next) => {
-  const { orderId } = req.params;
-  const { packages, isResidential, carrierCode, serviceCode, cartoons, pallets, totalBoxes, totalWeightOunces, processingFees } = req.body;
 
-  const order = await Order.findById(orderId).populate('division customer');
-  if (!order) return next(new AppError('Order not found in database.', 404));
+  const { orderId } = req.params;
+  const {
+    packages,
+    isResidential,
+    carrierCode,
+    serviceCode,
+    cartoons,
+    pallets,
+    totalBoxes,
+    totalWeightOunces,
+    processingFees,
+  } = req.body;
+
+
+
+  const order = await Order.findById(orderId).populate("division customer");
+  if (!order) return next(new AppError("Order not found in database.", 404));
 
   // --- STRICT STATUS ENFORCEMENT ---
-  if (order.status !== 'Picked') {
-    return next(new AppError('Shipment creation is restricted. Order status must be "Picked".', 400));
+  if (order.status !== "Picked") {
+    return next(
+      new AppError(
+        'Shipment creation is restricted. Order status must be "Picked".',
+        400,
+      ),
+    );
   }
 
   try {
@@ -464,85 +657,119 @@ export const createOrderShipment = catchAsync(async (req, res, next) => {
       isResidential,
       carrierCode,
       serviceCode,
-      { cartoons, pallets, totalBoxes, totalWeightOunces, processingFees } // Pass the UI-calculated fees into the shipment generator
+      { cartoons, pallets, totalBoxes, totalWeightOunces, processingFees }, // Pass the UI-calculated fees into the shipment generator
     );
-    res.status(200).json({ status: 'success', message: 'Shipment successfully created in ShipStation.', data: result });
+    res
+      .status(200)
+      .json({
+        status: "success",
+        message: "Shipment successfully created in ShipStation.",
+        data: result,
+      });
   } catch (error) {
     return next(new AppError(`ShipStation Rejected: ${error.message}`, 400));
   }
 });
 
-
 export const generateOrderLabel = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
-  const { packages, weightInOunces, carrierCode, serviceCode, cartoons, pallets, totalBoxes, totalWeightOunces, processingFees } = req.body;
+  const {
+    packages,
+    weightInOunces,
+    carrierCode,
+    serviceCode,
+    cartoons,
+    pallets,
+    totalBoxes,
+    totalWeightOunces,
+    processingFees,
+  } = req.body;
 
-  const order = await Order.findById(orderId).populate('division customer');
-  if (!order) return next(new AppError('Order not found', 404));
+  const order = await Order.findById(orderId).populate("division customer");
+  if (!order) return next(new AppError("Order not found", 404));
 
-  const finalCarrierType = carrierCode || order.shippingDetails?.carrierType;
-  const finalServiceCode = serviceCode || order.shippingDetails?.serviceCode;
+  const finalCarrierType = carrierCode;
+  const finalServiceCode = serviceCode;
 
-  if (!finalCarrierType || !finalServiceCode) return next(new AppError('Shipping carrier and service code must be selected.', 400));
+  if (!finalCarrierType || !finalServiceCode)
+    return next(
+      new AppError("Shipping carrier and service code must be selected.", 400),
+    );
 
   // 1. EXTRACT EXISTING SHIPMENT ID (Prevents Duplication)
   const shipmentId = order.shipstationDetails?.orderId;
-  if (!shipmentId) return next(new AppError('No active ShipStation shipment found for this order.', 400));
+  if (!shipmentId)
+    return next(
+      new AppError("No active ShipStation shipment found for this order.", 400),
+    );
 
-  let totalWeight = weightInOunces || 16;
+  let totalWeight = weightInOunces;
   if (packages && packages.length > 0) {
-    totalWeight = packages.reduce((acc, p) => acc + Number(p.weightInOunces || 0), 0);
+    totalWeight = packages.reduce(
+      (acc, p) => acc + Number(p.weightInOunces),
+      0,
+    );
   }
 
   // 2. USE THE EXACT SNIPPET PAYLOAD (With Carrier/Weight overrides included to ensure UI changes sync)
   const labelPayload = {
-    // carrierCode: finalCarrierType,
-    // serviceCode: finalServiceCode,
-    // weight: {
-    //   value: totalWeight,
-    //   units: "ounces"
-    // },
+    carrier_id: finalCarrierType,
+    service_code: finalServiceCode,
+    weight: {
+      value: totalWeight,
+      units: "ounces",
+    },
     // Restored the missing packages parameter required for ShipStation API v2 dimension extraction
-    // packages: mapPackages(packages, totalWeight),
-    validate_address: 'no_validation',
-    label_layout: '4x6',
-    label_format: 'pdf',
-    label_download_type: 'url',
-    display_scheme: 'label'
+    packages: mapPackages(packages, totalWeight),
+    validate_address: "no_validation",
+    label_layout: "4x6",
+    label_format: "pdf",
+    label_download_type: "url",
+    display_scheme: "label",
   };
 
   try {
     // Generates the label directly on the existing Shipment ID
-    const labelResponse = await createLabelForShipment(shipmentId, labelPayload);
+    const labelResponse = await createLabelForShipment(
+      shipmentId,
+      labelPayload,
+    );
 
     if (labelResponse?.hasErrors) {
-      const errorMsg = labelResponse.shipments?.[0]?.errorMessage || labelResponse.results?.[0]?.errorMessage || "Failed to generate label.";
+      const errorMsg =
+        labelResponse.shipments?.[0]?.errorMessage ||
+        labelResponse.results?.[0]?.errorMessage ||
+        "Failed to generate label.";
       return next(new AppError(`ShipStation Error: ${errorMsg}`, 400));
     }
 
-    order.status = 'Shipped';
-    order.shippingDetails.trackingNumber = labelResponse.tracking_number || labelResponse.trackingNumber;
-    order.shippingDetails.shippingCost = labelResponse.shipment_cost?.amount || labelResponse.shipmentCost || order.shippingDetails.shippingCost;
+    order.status = "Shipped";
+    order.shippingDetails.trackingNumber =
+      labelResponse.tracking_number || labelResponse.trackingNumber;
+    order.shippingDetails.shippingCost =
+      labelResponse.shipment_cost?.amount ||
+      labelResponse.shipmentCost ||
+      order.shippingDetails.shippingCost;
 
-    // Update internal metrics payload 
+    // Update internal metrics payload
     if (cartoons !== undefined) order.shippingDetails.cartoons = cartoons;
     if (pallets !== undefined) order.shippingDetails.pallets = pallets;
     if (totalBoxes !== undefined) order.shippingDetails.totalBoxes = totalBoxes;
-    if (totalWeightOunces !== undefined) order.shippingDetails.totalWeightOunces = totalWeightOunces;
+    if (totalWeightOunces !== undefined)
+      order.shippingDetails.totalWeightOunces = totalWeightOunces;
 
     // FIX: Sync frontend processing fees explicitly
     if (processingFees) order.processingFees = processingFees;
 
     if (packages && packages.length > 0) {
-      order.shippingDetails.packages = packages.map(p => ({
-        packageCode: p.packageCode || 'package',
+      order.shippingDetails.packages = packages.map((p) => ({
+        packageCode: p.packageCode || "package",
         weightInOunces: Number(p.weightInOunces) || 16,
         length: Number(p.length) || 10,
         width: Number(p.width) || 10,
-        height: Number(p.height) || 10
+        height: Number(p.height) || 10,
       }));
     }
-    
 
     order.shipstationDetails = {
       ...order.shipstationDetails,
@@ -555,25 +782,39 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
       shipmentTracker = new Shipment({
         order: order._id,
         division: order.division._id,
-        shipStationLabelId: labelResponse.label_id || labelResponse.labelId || '',
-        currentStatus: 'Label Purchased',
+        shipStationLabelId:
+          labelResponse.label_id || labelResponse.labelId || "",
+        currentStatus: "Label Purchased",
         isLabelPurchased: true,
         isShipmentCreated: true,
-        statusHistory: [{ status: 'Label Purchased', notes: `Label generated via ${finalCarrierType}.` }]
+        statusHistory: [
+          {
+            status: "Label Purchased",
+            notes: `Label generated via ${finalCarrierType}.`,
+          },
+        ],
       });
     } else {
       shipmentTracker.isLabelPurchased = true;
-      shipmentTracker.currentStatus = 'Label Purchased';
-      shipmentTracker.shipStationLabelId = labelResponse.label_id || labelResponse.labelId || '';
-      shipmentTracker.statusHistory.push({ status: 'Label Purchased', notes: `Label generated via ${finalCarrierType}.` });
+      shipmentTracker.currentStatus = "Label Purchased";
+      shipmentTracker.shipStationLabelId =
+        labelResponse.label_id || labelResponse.labelId || "";
+      shipmentTracker.statusHistory.push({
+        status: "Label Purchased",
+        notes: `Label generated via ${finalCarrierType}.`,
+      });
     }
     await shipmentTracker.save();
 
     let labelData = labelResponse.label_data || labelResponse.labelData;
-    let labelUrl = labelResponse.label_download?.pdf || labelResponse.label_download?.href || labelResponse.download_url || labelResponse.label_url;
+    let labelUrl =
+      labelResponse.label_download?.pdf ||
+      labelResponse.label_download?.href ||
+      labelResponse.download_url ||
+      labelResponse.label_url;
 
     // 3. SECURE PROXY: Intercept authenticated API links to bypass frontend 404s
-    if (!labelData && labelUrl && labelUrl.includes('api.shipstation.com')) {
+    if (!labelData && labelUrl && labelUrl.includes("api.shipstation.com")) {
       const proxyBase64 = await fetchLabelBufferAsBase64(labelUrl);
       if (proxyBase64) {
         labelData = proxyBase64;
@@ -582,33 +823,42 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
     }
 
     res.status(200).json({
-      status: 'success',
+      status: "success",
       data: {
         order,
         labelData: labelData,
         labelUrl: labelUrl,
-        trackingNumber: labelResponse.tracking_number || labelResponse.trackingNumber
-      }
+        trackingNumber:
+          labelResponse.tracking_number || labelResponse.trackingNumber,
+      },
     });
-  } catch (error) { return next(new AppError(`ShipStation Label Error: ${error.message}`, 502)); }
+  } catch (error) {
+    return next(new AppError(`ShipStation Label Error: ${error.message}`, 502));
+  }
 });
 
 export const downloadOrderLabel = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
 
   const order = await Order.findById(orderId);
-  if (!order) return next(new AppError('Order not found', 400));
+  if (!order) return next(new AppError("Order not found", 400));
 
-  const externalId = order.shipstationDetails?.externalShipmentId || order.orderNumber || order._id.toString();
+  const externalId =
+    order.shipstationDetails?.externalShipmentId ||
+    order.orderNumber ||
+    order._id.toString();
 
   try {
     const labelResponse = await getLabelByExternalId(externalId);
 
-    let pdfUrl = labelResponse?.label_download?.pdf || labelResponse?.label_download?.href || labelResponse?.download_url;
+    let pdfUrl =
+      labelResponse?.label_download?.pdf ||
+      labelResponse?.label_download?.href ||
+      labelResponse?.download_url;
     let labelData = labelResponse?.label_data || labelResponse?.labelData;
 
     // SECURE PROXY: Intercept authenticated API links to bypass frontend 404s
-    if (!labelData && pdfUrl && pdfUrl.includes('api.shipstation.com')) {
+    if (!labelData && pdfUrl && pdfUrl.includes("api.shipstation.com")) {
       const proxyBase64 = await fetchLabelBufferAsBase64(pdfUrl);
       if (proxyBase64) {
         labelData = proxyBase64;
@@ -617,14 +867,18 @@ export const downloadOrderLabel = catchAsync(async (req, res, next) => {
     }
 
     if (labelData) {
-      return res.status(200).json({ status: 'success', data: { labelData } });
+      return res.status(200).json({ status: "success", data: { labelData } });
     }
 
     if (pdfUrl) {
-      return res.status(200).json({ status: 'success', data: { labelUrl: pdfUrl } });
+      return res
+        .status(200)
+        .json({ status: "success", data: { labelUrl: pdfUrl } });
     }
 
-    return next(new AppError('Label data could not be retrieved from ShipStation.', 400));
+    return next(
+      new AppError("Label data could not be retrieved from ShipStation.", 400),
+    );
   } catch (error) {
     return next(new AppError(`ShipStation API Error: ${error.message}`, 502));
   }
@@ -633,16 +887,19 @@ export const downloadOrderLabel = catchAsync(async (req, res, next) => {
 export const voidOrderLabel = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
   const order = await Order.findById(orderId);
-  if (!order) return next(new AppError('Order not found', 404));
+  if (!order) return next(new AppError("Order not found", 404));
 
   const labelId = order.shipstationDetails?.labelId;
-  if (!labelId) return next(new AppError('No active label found for this order to void.', 400));
+  if (!labelId)
+    return next(
+      new AppError("No active label found for this order to void.", 400),
+    );
 
   try {
     await voidLabel(labelId);
 
-    order.status = 'Pending';
-    order.shippingDetails.trackingNumber = '';
+    order.status = "Pending";
+    order.shippingDetails.trackingNumber = "";
     order.shippingDetails.shippingCost = 0;
 
     order.shipstationDetails.labelId = null;
@@ -651,69 +908,87 @@ export const voidOrderLabel = catchAsync(async (req, res, next) => {
     let shipmentTracker = await Shipment.findOne({ order: order._id });
     if (shipmentTracker) {
       shipmentTracker.isLabelPurchased = false;
-      shipmentTracker.currentStatus = 'Label Voided';
-      shipmentTracker.shipStationLabelId = '';
-      shipmentTracker.statusHistory.push({ status: 'Label Voided', notes: 'Label was manually voided.' });
+      shipmentTracker.currentStatus = "Label Voided";
+      shipmentTracker.shipStationLabelId = "";
+      shipmentTracker.statusHistory.push({
+        status: "Label Voided",
+        notes: "Label was manually voided.",
+      });
       await shipmentTracker.save();
     }
 
-    res.status(200).json({ status: 'success', message: 'Label successfully voided.', data: { order } });
+    res
+      .status(200)
+      .json({
+        status: "success",
+        message: "Label successfully voided.",
+        data: { order },
+      });
   } catch (error) {
-    return next(new AppError(`ShipStation Void Label Error: ${error.message}`, 502));
+    return next(
+      new AppError(`ShipStation Void Label Error: ${error.message}`, 502),
+    );
   }
 });
-
-
-
-
-
-
 
 export const cancelOrderShipment = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;
   const order = await Order.findById(orderId);
-  if (!order) return next(new AppError('Order not found', 404));
+  if (!order) return next(new AppError("Order not found", 404));
 
   const shipmentId = order.shipstationDetails?.orderId;
-  if (!shipmentId) return next(new AppError('No shipment found for this order to cancel.', 400));
+  if (!shipmentId)
+    return next(
+      new AppError("No shipment found for this order to cancel.", 400),
+    );
 
   try {
     await cancelShipment(shipmentId);
 
-    order.status = 'New';
+    order.status = "New";
     order.shipstationDetails.orderId = null;
-    order.shipstationDetails.orderStatus = 'cancelled';
+    order.shipstationDetails.orderStatus = "cancelled";
     await order.save();
 
     let shipmentTracker = await Shipment.findOne({ order: order._id });
     if (shipmentTracker) {
       shipmentTracker.isShipmentCreated = false;
-      shipmentTracker.currentStatus = 'Shipment Cancelled';
-      shipmentTracker.statusHistory.push({ status: 'Shipment Cancelled', notes: 'Shipment was manually cancelled.' });
+      shipmentTracker.currentStatus = "Shipment Cancelled";
+      shipmentTracker.statusHistory.push({
+        status: "Shipment Cancelled",
+        notes: "Shipment was manually cancelled.",
+      });
       await shipmentTracker.save();
     }
 
-    res.status(200).json({ status: 'success', message: 'Shipment successfully cancelled.', data: { order } });
+    res
+      .status(200)
+      .json({
+        status: "success",
+        message: "Shipment successfully cancelled.",
+        data: { order },
+      });
   } catch (error) {
-    return next(new AppError(`ShipStation Cancel Shipment Error: ${error.message}`, 502));
+    return next(
+      new AppError(`ShipStation Cancel Shipment Error: ${error.message}`, 502),
+    );
   }
 });
-
 
 // --- NEW: Fetch Freight Provider Accounts ---
 export const fetchFreightProviders = catchAsync(async (req, res, next) => {
   try {
     const response = await getFreightProviders();
-    
+
     // Safely extract the array matching your screenshot payload
     const providers = response?.freight_provider_accounts || [];
-    
-    res.status(200).json({ 
-      status: 'success', 
-      results: providers.length, 
-      data: { providers } 
+
+    res.status(200).json({
+      status: "success",
+      results: providers.length,
+      data: { providers },
     });
-  } catch (error) { 
-    return next(new AppError(`ShipStation Error: ${error.message}`, 502)); 
+  } catch (error) {
+    return next(new AppError(`ShipStation Error: ${error.message}`, 502));
   }
 });

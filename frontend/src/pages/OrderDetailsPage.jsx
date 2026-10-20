@@ -285,11 +285,11 @@ export default function OrderDetailsPage() {
 
       setShipping({ 
         carrierId: currentOrder.shippingDetails?.carrierId?._id || currentOrder.shippingDetails?.carrierId || '',
-        carrierType: currentOrder.shippingDetails?.carrierType || '', 
-        serviceCode: currentOrder.shippingDetails?.serviceCode || '', 
-        trackingNumber: currentOrder.shippingDetails?.trackingNumber || '',
+        carrierType: currentOrder.shippingDetails?.carrierType , 
+        serviceCode: currentOrder.shippingDetails?.serviceCode, 
+        trackingNumber: currentOrder.shippingDetails?.trackingNumber,
         shippingCost: currentOrder.shippingDetails?.shippingCost || 0,
-        shipStationId: currentOrder.shippingDetails?.shipStationId || ''
+        shipStationId: currentOrder.shippingDetails?.shipStationId
       });
 
       setAddress({ 

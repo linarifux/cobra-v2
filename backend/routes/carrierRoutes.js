@@ -21,7 +21,7 @@ const router = express.Router({ mergeParams: true });
 // ==========================================
 // Require valid JWT authentication for all carrier routes
 // UNCOMMENT IN PRODUCTION
-router.use(protect);
+// router.use(protect);
 
 // Restrict ALL integration settings strictly to Administrators
 // UNCOMMENT IN PRODUCTION
