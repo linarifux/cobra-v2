@@ -18,6 +18,8 @@ const carrierServiceSchema = new mongoose.Schema({
   }
 }, { _id: false }); 
 
+
+
 const carrierSchema = new mongoose.Schema(
   {
     // Scope this carrier configuration to a specific division
@@ -50,6 +52,10 @@ const carrierSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: ''
+    },
+    orderOfServices: {
+      type: Number,
+      default: 0
     },
     isActive: {
       type: Boolean,

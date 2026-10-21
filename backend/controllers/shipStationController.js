@@ -744,12 +744,8 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
     }
 
     order.status = "Shipped";
-    order.shippingDetails.trackingNumber =
-      labelResponse.tracking_number || labelResponse.trackingNumber;
-    order.shippingDetails.shippingCost =
-      labelResponse.shipment_cost?.amount ||
-      labelResponse.shipmentCost ||
-      order.shippingDetails.shippingCost;
+    order.shippingDetails.trackingNumber = labelResponse.tracking_number ;
+    order.shippingDetails.shippingCost = labelResponse.shipment_cost?.amount
 
     // Update internal metrics payload
     if (cartoons !== undefined) order.shippingDetails.cartoons = cartoons;
@@ -775,6 +771,7 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
       ...order.shipstationDetails,
       labelId: labelResponse.label_id || labelResponse.labelId,
     };
+    order.totalAmount = Number(order.processingFees.totalProcessingFee + order.shippingDetails?.shippingCost);
     await order.save();
 
     let shipmentTracker = await Shipment.findOne({ order: order._id });
