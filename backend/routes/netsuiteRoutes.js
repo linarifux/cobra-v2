@@ -9,6 +9,7 @@ import {
 
 const router = express.Router();
 
+
 /**
  * @route   GET /api/netsuite/:recordType
  * @desc    Get all records of a specific type (e.g., salesOrder, customer)
