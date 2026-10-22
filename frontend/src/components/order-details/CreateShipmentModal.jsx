@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { CloudUpload, X, MapPin, Truck, PackageCheck, MessageSquare, Loader2, Plus, Trash2, Scale, Maximize } from 'lucide-react';
 import { fetchCarrierPackages } from '../../store/slices/carrierSlice';
 
+
 export default function CreateShipmentModal({
   isOpen,
   onClose,

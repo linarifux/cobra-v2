@@ -878,6 +878,7 @@ export default function OrderDetailsPage() {
     }
   };
 
+
   const handleCreateShipmentSubmit = async (modalCartoonsCount) => {
     if (orderStatus !== 'Picked') return toast.warning("Order status must be 'Picked' before you can create a shipment.");
     if (!shipping.carrierType || !shipping.serviceCode) return toast.warning("Please configure shipping carrier and service code on the order.");
@@ -885,7 +886,10 @@ export default function OrderDetailsPage() {
 
     setIsCreatingShipment(true);
 
-    const payload = {
+    const activeCartons = Number(modalCartoonsCount) || Number(cartoonsCount) || 0;
+
+    // 1. Prepare ShipStation Payload
+    const shipstationPayload = {
       packages: packages.map(p => ({
         packageCode: p.packageCode || 'package',
         weightInOunces: Number(p.weightInOunces),
@@ -896,22 +900,47 @@ export default function OrderDetailsPage() {
       isResidential: fulfillmentData.isResidential,
       carrierCode: shipping.carrierType,
       serviceCode: shipping.serviceCode,
-      cartoons: Number(modalCartoonsCount) || Number(cartoonsCount) || 0,
+      cartoons: activeCartons,
       pallets: Number(palletsCount) || 0,
       totalBoxes: packages.length,
       totalWeightOunces: finalPayloadWeightOz,
       processingFees: processingFeesPreview 
     };
 
+    // 2. Prepare Database Update Payload
+    const updatePayload = {
+      shippingDetails: {
+        ...currentOrder.shippingDetails,
+        cartoons: activeCartons,
+        pallets: Number(palletsCount) || 0,
+        totalBoxes: packages.length,
+        totalWeightOunces: finalPayloadWeightOz,
+        manuallyAdjustedWeightOunces: manualAdjustmentOz,
+        packages: packages.map(p => ({
+          packageCode: p.packageCode || 'package',
+          weightInOunces: Number(p.weightInOunces) || 16,
+          length: Number(p.length) || 10,
+          width: Number(p.width) || 10,
+          height: Number(p.height) || 10
+        }))
+      }
+    };
+
     try {
-      await dispatch(createOrderShipment({ orderId: currentOrder._id, fulfillmentData: payload })).unwrap();
+      // Save modified metrics to database instantly
+      await dispatch(updateOrder({ id: currentOrder._id, updateData: updatePayload })).unwrap();
+      
+      // Push to ShipStation
+      await dispatch(createOrderShipment({ orderId: currentOrder._id, fulfillmentData: shipstationPayload })).unwrap();
+      
       toast.success("Shipment successfully created in ShipStation.");
       setCreateShipmentModalOpen(false);
-      dispatch(fetchOrderById(currentOrder._id));
+      
+      // Reload the page to ensure all fresh metrics and ShipStation IDs are rendered perfectly
+      window.location.reload();
     } catch (error) {
       toast.error("Failed to create shipment", { description: typeof error === 'string' ? error : error.message });
-    } finally {
-      setIsCreatingShipment(false);
+      setIsCreatingShipment(false); // Stop loader only on error, let the reload handle success state clearing
     }
   };
 
