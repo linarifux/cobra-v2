@@ -1,8 +1,24 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { ArrowLeft, Loader2, AlertTriangle, FileText, User, Calendar, DollarSign, Package, Code, LayoutList, MapPin } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertTriangle, FileText, User, Calendar, DollarSign, Package, Code, LayoutList, MapPin, RefreshCw, MessageSquare } from 'lucide-react';
 import { fetchNetSuiteRecordById, clearSelectedRecord } from '../store/slices/netSuiteSlice';
+
+// --- ERROR PARSING UTILITY ---
+const parseNetSuiteError = (err) => {
+  if (!err) return 'The requested record could not be found.';
+  if (typeof err === 'string') return err;
+  
+  if (err['o:errorDetails'] && Array.isArray(err['o:errorDetails']) && err['o:errorDetails'][0]) {
+    return err['o:errorDetails'][0].detail || err['o:errorDetails'][0]['o:errorCode'] || 'NetSuite API validation failed.';
+  }
+  
+  if (err.message) return err.message;
+  if (err.title) return `${err.title}: ${err.status || ''}`;
+  if (err.error) return typeof err.error === 'string' ? err.error : JSON.stringify(err.error);
+  
+  return 'A complex data error occurred. Check console for details.';
+};
 
 export default function NetSuiteSaleDetail() {
   const { id } = useParams();
@@ -13,21 +29,42 @@ export default function NetSuiteSaleDetail() {
   const [viewMode, setViewMode] = useState('visual'); // 'visual' | 'raw'
 
   // Redux state
-  const { selectedRecord: record, status, error } = useSelector((state) => state.netsuite || {});
+  const { 
+    selectedRecord, 
+    recordsByRecordType = {}, 
+    recordDetailsCache = {}, 
+    status, 
+    error 
+  } = useSelector((state) => state.netsuite || {});
+
+  // Fallback to cached detail or list preview immediately while full record loads
+  const cachedDetail = recordDetailsCache[`salesOrder:${id}`];
+  const listPreview = useMemo(() => {
+    const list = recordsByRecordType.salesOrder || [];
+    return list.find((item) => String(item.id) === String(id));
+  }, [recordsByRecordType.salesOrder, id]);
+
+  const record = selectedRecord || cachedDetail || listPreview || null;
+  const isFetchingFullDetails = status === 'loading' && !selectedRecord && !cachedDetail;
+
+  const loadOrderDetails = (forceRefresh = false) => {
+    if (id) {
+      dispatch(fetchNetSuiteRecordById({ recordType: 'salesOrder', id, forceRefresh }));
+    }
+  };
 
   useEffect(() => {
-    if (id) {
-      dispatch(fetchNetSuiteRecordById({ recordType: 'salesOrder', id }));
-    }
+    loadOrderDetails(false);
     
     // Cleanup when leaving the page so the old record doesn't flash on the next visit
     return () => {
       dispatch(clearSelectedRecord());
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch, id]);
 
   // --- RENDER HELPERS ---
-  if (status === 'loading' || (!record && status === 'idle')) {
+  if (!record && (status === 'loading' || status === 'idle')) {
     return (
       <div className="flex flex-col justify-center items-center h-[calc(100vh-6rem)]">
         <Loader2 className="animate-spin text-brand-gold mb-4" size={48} />
@@ -36,19 +73,27 @@ export default function NetSuiteSaleDetail() {
     );
   }
 
-  if (status === 'failed') {
+  if (status === 'failed' && !record) {
     return (
       <div className="flex justify-center items-center h-[calc(100vh-6rem)] p-6">
         <div className="bg-red-50 text-red-600 p-8 rounded-3xl text-center border border-red-200 max-w-md w-full shadow-lg">
           <AlertTriangle size={40} className="mx-auto mb-4 text-red-500" />
           <h3 className="text-lg font-black tracking-tight mb-2">Failed to Load Record</h3>
-          <p className="text-sm font-medium opacity-80 mb-6">{error || 'The requested record could not be found.'}</p>
-          <button 
-            onClick={() => navigate(-1)}
-            className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all"
-          >
-            Go Back
-          </button>
+          <p className="text-sm font-medium opacity-80 mb-6 break-words">{parseNetSuiteError(error)}</p>
+          <div className="flex items-center justify-center gap-3">
+            <button 
+              onClick={() => navigate(-1)}
+              className="px-6 py-2.5 bg-white border border-red-200 hover:bg-red-100 text-red-600 rounded-xl text-xs font-black uppercase tracking-widest transition-all"
+            >
+              Go Back
+            </button>
+            <button 
+              onClick={() => loadOrderDetails(true)}
+              className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all"
+            >
+              Retry
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -56,20 +101,29 @@ export default function NetSuiteSaleDetail() {
 
   if (!record) return null;
 
-  // Extract fields matching the provided JSON structure
-  const tranId = record.tranId || record.id || 'N/A';
-  const customerName = record.entity?.refName || 'Unknown Customer';
-  const orderStatus = record.status?.refName || 'Unknown';
-  const totalAmount = record.total || 0;
-  const orderDate = record.tranDate ? new Date(record.tranDate).toLocaleDateString() : 'N/A';
+  // Safely extract fields across both SuiteQL and REST Record API shapes
+  const tranId = record.tranId || record.tranid || record.id || 'N/A';
+  const customerName = record.entity?.refName || record.entity?.name || 'Unknown Customer';
+  const orderStatus = record.status?.refName || record.status?.name || 'Unknown';
+  const totalAmount = record.total ?? record.foreigntotal ?? 0;
   
-  // Custom Fields from JSON
+  const rawDate = record.tranDate || record.trandate;
+  const orderDate = rawDate ? new Date(rawDate).toLocaleDateString() : 'N/A';
+  
+  // Custom & Address Fields
   const email = record.email || record.custbody53 || 'N/A';
-  const orderType = record.custbody_pet_salesorder_type?.refName || 'Standard';
+  const orderType = typeof record.custbody_pet_salesorder_type === 'object'
+    ? (record.custbody_pet_salesorder_type?.refName || 'Standard')
+    : (record.custbody_pet_salesorder_type || 'Standard');
   const trackingMemo = record.memo || 'No notes provided.';
-  const shippingAddress = record.shippingAddress_text || record.shipAddress || 'No shipping address provided.';
+  
+  const shippingAddress = 
+    record.shippingAddress?.addrText || 
+    record.shippingAddress_text || 
+    (typeof record.shipAddress === 'string' ? record.shipAddress : '') || 
+    'No shipping address provided.';
 
-  // NetSuite line items usually exist under `item.items` in the REST API
+  // NetSuite line items exist under `item.items` in the expanded REST Record API
   const lineItems = record.item?.items || [];
 
   return (
@@ -85,29 +139,42 @@ export default function NetSuiteSaleDetail() {
             <ArrowLeft size={18} />
           </button>
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-2xl font-black text-slate-900 tracking-tight">Sales Order #{tranId}</h1>
               <span className="bg-indigo-50 text-indigo-600 border border-indigo-200 px-2.5 py-0.5 rounded text-[10px] font-black uppercase tracking-widest">
                 {orderStatus}
               </span>
             </div>
-            <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-widest">Internal ID: {record.id} • Type: {orderType}</p>
+            <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-widest">
+              Internal ID: {record.id} • Type: {orderType}
+            </p>
           </div>
         </div>
 
-        {/* View Toggle */}
-        <div className="flex bg-white/60 backdrop-blur-md border border-slate-200 p-1 rounded-xl shadow-sm">
+        {/* View Toggle & Force Refresh */}
+        <div className="flex items-center gap-3">
+          <div className="flex bg-white/60 backdrop-blur-md border border-slate-200 p-1 rounded-xl shadow-sm">
+            <button 
+              onClick={() => setViewMode('visual')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${viewMode === 'visual' ? 'bg-slate-900 text-brand-gold shadow-md' : 'text-slate-500 hover:text-slate-900'}`}
+            >
+              <LayoutList size={14} /> Formatted
+            </button>
+            <button 
+              onClick={() => setViewMode('raw')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${viewMode === 'raw' ? 'bg-slate-900 text-brand-gold shadow-md' : 'text-slate-500 hover:text-slate-900'}`}
+            >
+              <Code size={14} /> Raw JSON
+            </button>
+          </div>
+
           <button 
-            onClick={() => setViewMode('visual')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${viewMode === 'visual' ? 'bg-slate-900 text-brand-gold shadow-md' : 'text-slate-500 hover:text-slate-900'}`}
+            onClick={() => loadOrderDetails(true)}
+            disabled={status === 'loading'}
+            className="flex items-center justify-center gap-2 bg-white border border-slate-200 text-slate-700 px-3.5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-50 hover:text-blue-600 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+            title="Bypass cache and force refresh order details"
           >
-            <LayoutList size={14} /> Formatted
-          </button>
-          <button 
-            onClick={() => setViewMode('raw')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${viewMode === 'raw' ? 'bg-slate-900 text-brand-gold shadow-md' : 'text-slate-500 hover:text-slate-900'}`}
-          >
-            <Code size={14} /> Raw JSON
+            <RefreshCw size={14} className={status === 'loading' ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>
@@ -143,11 +210,29 @@ export default function NetSuiteSaleDetail() {
             </div>
           </div>
 
+          {/* Memo / Notes Banner */}
+          {trackingMemo && trackingMemo !== 'No notes provided.' && (
+            <div className="bg-amber-50/60 border border-amber-200/70 p-4 rounded-2xl flex items-start gap-3">
+              <MessageSquare size={16} className="text-amber-600 mt-0.5 shrink-0" />
+              <div>
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-amber-600 mb-0.5">Order Memo</h4>
+                <p className="text-xs font-medium text-amber-900 whitespace-pre-line">{trackingMemo}</p>
+              </div>
+            </div>
+          )}
+
           {/* 3. Line Items Table */}
           <div className="bg-white/60 backdrop-blur-2xl border border-white/80 rounded-[2rem] overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
-            <div className="p-6 border-b border-slate-200/60 bg-slate-50/50 flex items-center gap-3">
-              <Package className="text-brand-gold" size={20} />
-              <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest">Line Items ({lineItems.length})</h2>
+            <div className="p-6 border-b border-slate-200/60 bg-slate-50/50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Package className="text-brand-gold" size={20} />
+                <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest">Line Items ({lineItems.length})</h2>
+              </div>
+              {isFetchingFullDetails && (
+                <span className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  <Loader2 size={14} className="animate-spin text-brand-gold" /> Loading Line Items...
+                </span>
+              )}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
@@ -164,13 +249,20 @@ export default function NetSuiteSaleDetail() {
                   {lineItems.length > 0 ? (
                     lineItems.map((line, idx) => (
                       <tr key={idx} className="hover:bg-white/80 transition-colors">
-                        <td className="p-5 font-bold text-slate-800">{line.item?.refName || line.item?.id || `Item ${idx+1}`}</td>
+                        <td className="p-5 font-bold text-slate-800">{line.item?.refName || line.item?.id || `Item ${idx + 1}`}</td>
                         <td className="p-5 text-slate-600 truncate max-w-[250px]">{line.description || '-'}</td>
                         <td className="p-5 text-right font-black text-slate-700">{line.quantity || 0}</td>
                         <td className="p-5 text-right text-slate-600">${Number(line.rate || 0).toFixed(2)}</td>
                         <td className="p-5 text-right font-bold text-slate-900">${Number(line.amount || 0).toFixed(2)}</td>
                       </tr>
                     ))
+                  ) : isFetchingFullDetails ? (
+                    <tr>
+                      <td colSpan="5" className="p-10 text-center text-slate-400">
+                        <Loader2 className="animate-spin text-brand-gold mx-auto mb-2" size={24} />
+                        <p className="text-xs font-black uppercase tracking-widest">Hydrating order line items...</p>
+                      </td>
+                    </tr>
                   ) : (
                     <tr>
                       <td colSpan="5" className="p-10 text-center text-slate-400">
@@ -188,9 +280,9 @@ export default function NetSuiteSaleDetail() {
         /* 4. Raw JSON Viewer */
         <div className="bg-slate-900 rounded-[2rem] overflow-hidden shadow-xl border border-slate-800 flex flex-col">
           <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
-             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                <Code size={14}/> Raw Payload
-             </span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+              <Code size={14}/> Raw Payload
+            </span>
           </div>
           <div className="p-6 overflow-auto max-h-[60vh] custom-scrollbar">
             <pre className="text-xs font-mono text-emerald-400 whitespace-pre-wrap break-words">

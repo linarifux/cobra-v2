@@ -7,22 +7,54 @@ import * as netSuiteApi from '../../utils/netSuiteApi';
 
 export const fetchNetSuiteRecords = createAsyncThunk(
   'netsuite/fetchRecords',
-  async ({ recordType, query = '' }, { rejectWithValue }) => {
+  async ({ recordType, query = '', forceRefresh = false }, { getState, rejectWithValue }) => {
     try {
-      const response = await netSuiteApi.getRecords(recordType, query);
-      return { recordType, data: response.data };
+      const cacheKey = `${recordType}:${query}`;
+      const existingCache = getState().netsuite.pageCache[cacheKey];
+
+      // Serve directly from Redux cache in 0ms if not forcing refresh
+      if (!forceRefresh && existingCache) {
+        return { recordType, cacheKey, data: existingCache, fromCache: true };
+      }
+
+      const finalQuery = forceRefresh
+        ? `${query}${query ? '&' : ''}refresh=true`
+        : query;
+
+      const data = await netSuiteApi.getRecords(recordType, finalQuery);
+      return { recordType, cacheKey, data, fromCache: false };
     } catch (error) {
       return rejectWithValue(error.response?.data?.error || error.message);
     }
   }
 );
 
+// Silent background prefetch for the next page (does not trigger loading spinners)
+export const prefetchNetSuiteRecords = createAsyncThunk(
+  'netsuite/prefetchRecords',
+  async ({ recordType, query = '' }, { getState }) => {
+    const cacheKey = `${recordType}:${query}`;
+    if (getState().netsuite.pageCache[cacheKey]) {
+      return null; // Already cached
+    }
+    const data = await netSuiteApi.getRecords(recordType, query);
+    return { cacheKey, data };
+  }
+);
+
 export const fetchNetSuiteRecordById = createAsyncThunk(
   'netsuite/fetchRecordById',
-  async ({ recordType, id }, { rejectWithValue }) => {
+  async ({ recordType, id, forceRefresh = false }, { getState, rejectWithValue }) => {
     try {
-      const response = await netSuiteApi.getRecordById(recordType, id);
-      return response.data;
+      const cacheKey = `${recordType}:${id}`;
+      const cachedRecord = getState().netsuite.recordDetailsCache[cacheKey];
+
+      if (!forceRefresh && cachedRecord) {
+        return { cacheKey, data: cachedRecord };
+      }
+
+      const data = await netSuiteApi.getRecordById(recordType, id);
+      return { cacheKey, data };
     } catch (error) {
       return rejectWithValue(error.response?.data?.error || error.message);
     }
@@ -33,8 +65,8 @@ export const createNetSuiteRecord = createAsyncThunk(
   'netsuite/createRecord',
   async ({ recordType, payload }, { rejectWithValue }) => {
     try {
-      const response = await netSuiteApi.createRecord(recordType, payload);
-      return { recordType, data: response.data };
+      const data = await netSuiteApi.createRecord(recordType, payload);
+      return { recordType, data };
     } catch (error) {
       return rejectWithValue(error.response?.data?.error || error.message);
     }
@@ -45,8 +77,8 @@ export const updateNetSuiteRecord = createAsyncThunk(
   'netsuite/updateRecord',
   async ({ recordType, id, payload }, { rejectWithValue }) => {
     try {
-      const response = await netSuiteApi.updateRecord(recordType, id, payload);
-      return { recordType, id, data: response.data };
+      const data = await netSuiteApi.updateRecord(recordType, id, payload);
+      return { recordType, id, data };
     } catch (error) {
       return rejectWithValue(error.response?.data?.error || error.message);
     }
@@ -70,9 +102,12 @@ export const deleteNetSuiteRecord = createAsyncThunk(
 // ==========================================
 
 const initialState = {
-  recordsByRecordType: {}, 
-  selectedRecord: null, 
-  status: 'idle', 
+  recordsByRecordType: {},
+  hasMoreByRecordType: {},
+  pageCache: {},          // Stores visited & prefetched pages by query key
+  recordDetailsCache: {}, // Stores full single-record details by ID
+  selectedRecord: null,
+  status: 'idle',
   error: null,
 };
 
@@ -85,81 +120,98 @@ const netSuiteSlice = createSlice({
     },
     clearSelectedRecord: (state) => {
       state.selectedRecord = null;
+    },
+    invalidateNetSuiteCache: (state) => {
+      state.pageCache = {};
+      state.recordDetailsCache = {};
     }
   },
   extraReducers: (builder) => {
     builder
-      // --- Fetch All Records ---
-      .addCase(fetchNetSuiteRecords.pending, (state) => {
-        state.status = 'loading';
+      // --- Fetch Page Records ---
+      .addCase(fetchNetSuiteRecords.pending, (state, action) => {
+        const { recordType, query = '', forceRefresh = false } = action.meta.arg;
+        const cacheKey = `${recordType}:${query}`;
+        // Only show loading spinner if page isn't already in Redux cache
+        if (forceRefresh || !state.pageCache[cacheKey]) {
+          state.status = 'loading';
+        }
         state.error = null;
       })
       .addCase(fetchNetSuiteRecords.fulfilled, (state, action) => {
         state.status = 'succeeded';
-        const { recordType, data } = action.payload;
-        // Adjust based on NetSuite's exact list return shape
-        state.recordsByRecordType[recordType] = data?.items || data; 
+        const { recordType, cacheKey, data } = action.payload;
+        const items = data?.items || data || [];
+        const hasMore = data?.hasMore || false;
+
+        state.recordsByRecordType[recordType] = items;
+        state.hasMoreByRecordType[recordType] = hasMore;
+        state.pageCache[cacheKey] = { items, hasMore };
       })
       .addCase(fetchNetSuiteRecords.rejected, (state, action) => {
         state.status = 'failed';
         state.error = action.payload || 'Failed to fetch NetSuite records';
       })
 
-      // --- Fetch Record By ID ---
-      .addCase(fetchNetSuiteRecordById.pending, (state) => {
-        state.status = 'loading';
+      // --- Silent Background Prefetch ---
+      .addCase(prefetchNetSuiteRecords.fulfilled, (state, action) => {
+        if (!action.payload) return;
+        const { cacheKey, data } = action.payload;
+        state.pageCache[cacheKey] = {
+          items: data?.items || data || [],
+          hasMore: data?.hasMore || false
+        };
+      })
+
+      // --- Fetch Single Record By ID ---
+      .addCase(fetchNetSuiteRecordById.pending, (state, action) => {
+        const { recordType, id, forceRefresh = false } = action.meta.arg;
+        const cacheKey = `${recordType}:${id}`;
+        if (forceRefresh || !state.recordDetailsCache[cacheKey]) {
+          state.status = 'loading';
+          state.selectedRecord = null;
+        }
         state.error = null;
-        state.selectedRecord = null; 
       })
       .addCase(fetchNetSuiteRecordById.fulfilled, (state, action) => {
         state.status = 'succeeded';
-        state.selectedRecord = action.payload;
+        const { cacheKey, data } = action.payload;
+        state.selectedRecord = data;
+        state.recordDetailsCache[cacheKey] = data;
       })
       .addCase(fetchNetSuiteRecordById.rejected, (state, action) => {
         state.status = 'failed';
         state.error = action.payload || 'Failed to fetch the record';
       })
 
-      // --- Create Record ---
+      // --- Create / Update / Delete Invalidate Page Cache ---
       .addCase(createNetSuiteRecord.fulfilled, (state, action) => {
         const { recordType, data } = action.payload;
+        state.pageCache = {};
         if (state.recordsByRecordType[recordType]) {
           state.recordsByRecordType[recordType].unshift(data);
         }
       })
-
-      // --- Update Record ---
       .addCase(updateNetSuiteRecord.fulfilled, (state, action) => {
         const { recordType, id, data } = action.payload;
-        
-        if (state.recordsByRecordType[recordType]) {
-          const index = state.recordsByRecordType[recordType].findIndex(item => item.id === id || item.internalId === id);
-          if (index !== -1) {
-            state.recordsByRecordType[recordType][index] = { ...state.recordsByRecordType[recordType][index], ...data };
-          }
-        }
-
-        if (state.selectedRecord && (state.selectedRecord.id === id || state.selectedRecord.internalId === id)) {
+        state.pageCache = {};
+        state.recordDetailsCache[`${recordType}:${id}`] = data;
+        if (state.selectedRecord && String(state.selectedRecord.id) === String(id)) {
           state.selectedRecord = { ...state.selectedRecord, ...data };
         }
       })
-
-      // --- Delete Record ---
       .addCase(deleteNetSuiteRecord.fulfilled, (state, action) => {
         const { recordType, id } = action.payload;
-        
+        state.pageCache = {};
+        delete state.recordDetailsCache[`${recordType}:${id}`];
         if (state.recordsByRecordType[recordType]) {
           state.recordsByRecordType[recordType] = state.recordsByRecordType[recordType].filter(
-            item => item.id !== id && item.internalId !== id
+            item => String(item.id) !== String(id)
           );
-        }
-
-        if (state.selectedRecord && (state.selectedRecord.id === id || state.selectedRecord.internalId === id)) {
-          state.selectedRecord = null;
         }
       });
   }
 });
 
-export const { clearNetSuiteError, clearSelectedRecord } = netSuiteSlice.actions;
+export const { clearNetSuiteError, clearSelectedRecord, invalidateNetSuiteCache } = netSuiteSlice.actions;
 export default netSuiteSlice.reducer;
