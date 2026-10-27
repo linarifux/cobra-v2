@@ -1,20 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { toast } from 'sonner'; 
+import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-import api from '../utils/api'; 
-import { 
-  fetchOrderById, updateOrder, clearCurrentOrder, 
+import api from '../utils/api';
+import {
+  fetchOrderById, updateOrder, clearCurrentOrder,
   generateOrderLabel, downloadPurchasedLabel,
   voidOrderLabel, cancelOrderShipment, createOrderShipment
-} from '../store/slices/orderSlice'; 
-import { fetchInventory, updateInventory } from '../store/slices/inventorySlice'; 
-import { fetchUsers } from '../store/slices/userSlice'; 
+} from '../store/slices/orderSlice';
+import { fetchInventory, updateInventory } from '../store/slices/inventorySlice';
+import { fetchUsers } from '../store/slices/userSlice';
 import { fetchCarriers, fetchCarrierPackages } from '../store/slices/carrierSlice';
 
 // NEW: Freight Provider Slice
@@ -89,9 +89,9 @@ export default function OrderDetailsPage() {
   // Access core Redux state
   const { currentOrder, status: orderLoadStatus, error: orderError } = useSelector((state) => state.orders || {});
   const { items: inventoryData = [], status: inventoryStatus } = useSelector((state) => state.inventory || {});
-  const { items: usersData = [], status: usersStatus } = useSelector((state) => state.users || {}); 
+  const { items: usersData = [], status: usersStatus } = useSelector((state) => state.users || {});
   const { items: carriersData = [], packageTypes = [] } = useSelector((state) => state.carriers || {});
-  
+
   // Connect to the freight providers state
   const { items: freightProvidersData = [], status: freightProvidersStatus } = useSelector((state) => state.freightProviders || {});
 
@@ -99,9 +99,9 @@ export default function OrderDetailsPage() {
   const { items: customerCharges = [], status: processingStatus } = useSelector((state) => state.processingCharges || {});
 
   const [orderStatus, setOrderStatus] = useState('New');
-  const [selectedUserId, setSelectedUserId] = useState(''); 
+  const [selectedUserId, setSelectedUserId] = useState('');
   const [shipping, setShipping] = useState({ carrierId: '', carrierType: '', serviceCode: '', trackingNumber: '', shippingCost: 0, shipStationId: '' });
-  
+
   // State Initialization
   const [address, setAddress] = useState({ name: '', companyName: '', email: '', phone: '', street: '', line2: '', city: '', state: '', zip: '', country: '' });
   const [items, setItems] = useState([]);
@@ -115,7 +115,7 @@ export default function OrderDetailsPage() {
 
   const [fulfillOpen, setFulfillOpen] = useState(false);
   const [cartoonsCount, setCartoonsCount] = useState(0);
-  const [palletsCount, setPalletsCount] = useState(0); 
+  const [palletsCount, setPalletsCount] = useState(0);
   const [isRushOrder, setIsRushOrder] = useState(false);
 
   const [createShipmentModalOpen, setCreateShipmentModalOpen] = useState(false);
@@ -144,7 +144,7 @@ export default function OrderDetailsPage() {
   const ssLabelId = ssData?.labelId || null;
 
   const isLabelPurchased = !!ssLabelId || !!shipping.trackingNumber;
-  const isShipmentCreated = !!ssOrderId; 
+  const isShipmentCreated = !!ssOrderId;
 
   // --- TOP LEVEL CALCULATIONS ---
   const derivedItemWeightOz = items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
@@ -166,14 +166,14 @@ export default function OrderDetailsPage() {
   useEffect(() => {
     const customerId = currentOrder?.customer?._id || currentOrder?.customer;
     if (customerId) {
-        dispatch(fetchProcessingChargesByCustomer(customerId));
+      dispatch(fetchProcessingChargesByCustomer(customerId));
     }
   }, [currentOrder?.customer, dispatch]);
-  
+
 
   const processingFeesPreview = useMemo(() => {
     const config = customerCharges.length > 0 ? customerCharges[0] : {};
-    
+
     const cfgBaseUpTo10 = config.baseFeeUpTo10lbs !== undefined ? Number(config.baseFeeUpTo10lbs) : 0;
     const cfgBase11To20 = config.baseFee11To20lbs !== undefined ? Number(config.baseFee11To20lbs) : 0;
     const cfgWeight = config.weightSurcharge !== undefined ? Number(config.weightSurcharge) : 0;
@@ -187,7 +187,7 @@ export default function OrderDetailsPage() {
 
     const activeWeightOz = (isWeightMismatched && totalPackageWeightOz <= 16) ? derivedItemWeightOz : totalPackageWeightOz;
     const weightLbs = activeWeightOz / 16;
-    
+
     const lineItemsCount = items.length;
     const piecesCount = items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
     const packageCount = packages.length;
@@ -206,9 +206,9 @@ export default function OrderDetailsPage() {
     const isLocalIntl = address.country && !['US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'].includes(address.country.toUpperCase().trim());
     const internationalFee = isLocalIntl ? cfgIntl : 0;
 
-    const totalProcessingFee = baseFee + weightSurcharge + lineItemSurcharge + 
-                               packageSurcharge + pieceSurcharge + cartonSurcharge + 
-                               palletFee + rushFee + internationalFee;
+    const totalProcessingFee = baseFee + weightSurcharge + lineItemSurcharge +
+      packageSurcharge + pieceSurcharge + cartonSurcharge +
+      palletFee + rushFee + internationalFee;
 
     return {
       baseFee, weightSurcharge, lineItemSurcharge, packageSurcharge,
@@ -227,14 +227,14 @@ export default function OrderDetailsPage() {
   }, [inventoryStatus, dispatch]);
 
   useEffect(() => {
-    if (usersStatus === 'idle') dispatch(fetchUsers()); 
+    if (usersStatus === 'idle') dispatch(fetchUsers());
   }, [usersStatus, dispatch]);
 
   useEffect(() => {
     if (currentOrder?.division) {
-       const divId = currentOrder.division._id || currentOrder.division;
-       dispatch(fetchCarriers(divId));
-       dispatch(fetchConfiguredFreightProviders(divId)); 
+      const divId = currentOrder.division._id || currentOrder.division;
+      dispatch(fetchCarriers(divId));
+      dispatch(fetchConfiguredFreightProviders(divId));
     }
   }, [currentOrder?.division, dispatch]);
 
@@ -272,9 +272,9 @@ export default function OrderDetailsPage() {
   useEffect(() => {
     if (currentOrder) {
       setOrderStatus(currentOrder.status || 'New');
-      setSelectedUserId(currentOrder.user?._id || currentOrder.user || ''); 
+      setSelectedUserId(currentOrder.user?._id || currentOrder.user || '');
       setCartoonsCount(currentOrder.shippingDetails?.cartoons || 0);
-      setPalletsCount(currentOrder.shippingDetails?.pallets || 0); 
+      setPalletsCount(currentOrder.shippingDetails?.pallets || 0);
       setIsRushOrder(currentOrder.isRushOrder || false);
 
       // --- Map Timestamps to Local UI Inputs ---
@@ -283,24 +283,24 @@ export default function OrderDetailsPage() {
       setDeliveredAt(formatDatetimeLocal(currentOrder.deliveredAt));
       setCancelledAt(formatDatetimeLocal(currentOrder.cancelledAt));
 
-      setShipping({ 
+      setShipping({
         carrierId: currentOrder.shippingDetails?.carrierId?._id || currentOrder.shippingDetails?.carrierId || '',
-        carrierType: currentOrder.shippingDetails?.carrierType , 
-        serviceCode: currentOrder.shippingDetails?.serviceCode, 
+        carrierType: currentOrder.shippingDetails?.carrierType,
+        serviceCode: currentOrder.shippingDetails?.serviceCode,
         trackingNumber: currentOrder.shippingDetails?.trackingNumber,
         shippingCost: currentOrder.shippingDetails?.shippingCost || 0,
         shipStationId: currentOrder.shippingDetails?.shipStationId
       });
 
-      setAddress({ 
-        name: currentOrder.shippingAddress?.recipientName || '', 
+      setAddress({
+        name: currentOrder.shippingAddress?.recipientName || '',
         companyName: currentOrder.shippingAddress?.companyName || '',
         email: currentOrder.shippingAddress?.email || '',
         phone: currentOrder.shippingAddress?.phone || '',
-        street: currentOrder.shippingAddress?.line1 || '', 
-        line2: currentOrder.shippingAddress?.line2 || '', 
-        city: currentOrder.shippingAddress?.city || '', 
-        state: currentOrder.shippingAddress?.state || '', 
+        street: currentOrder.shippingAddress?.line1 || '',
+        line2: currentOrder.shippingAddress?.line2 || '',
+        city: currentOrder.shippingAddress?.city || '',
+        state: currentOrder.shippingAddress?.state || '',
         zip: currentOrder.shippingAddress?.zip || '',
         country: currentOrder.shippingAddress?.country || 'US'
       });
@@ -310,12 +310,12 @@ export default function OrderDetailsPage() {
       const mappedItems = currentOrder.items?.map((i) => {
         const matchedStock = inventoryData.find(inv => inv.sku === i.sku);
         return {
-          id: generateLocalId(), 
+          id: generateLocalId(),
           name: i.name,
           sku: i.sku,
           qty: i.quantity,
           price: i.unitPrice,
-          weight: matchedStock?.weight || 0 
+          weight: matchedStock?.weight || 0
         };
       }) || [];
 
@@ -333,12 +333,12 @@ export default function OrderDetailsPage() {
       } else {
         const calculatedOz = currentOrder.shippingDetails?.totalWeightOunces || mappedItems.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
         if (packages.length === 1 && packages[0].weightInOunces === 16) {
-           setPackages([{ id: generateLocalId(), packageCode: 'package', weightInOunces: calculatedOz > 0 ? calculatedOz : 16, length: 10, width: 10, height: 10 }]);
+          setPackages([{ id: generateLocalId(), packageCode: 'package', weightInOunces: calculatedOz > 0 ? calculatedOz : 16, length: 10, width: 10, height: 10 }]);
         }
       }
     }
-  }, [currentOrder, inventoryData]); 
-  
+  }, [currentOrder, inventoryData]);
+
 
   const addPackage = () => setPackages(prev => [...prev, { id: generateLocalId(), packageCode: 'package', weightInOunces: 16, length: 10, width: 10, height: 10 }]);
   const updatePackage = (id, field, value) => setPackages(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
@@ -362,9 +362,9 @@ export default function OrderDetailsPage() {
   // Fires instantly when the "Save Metrics" button is pressed inside the ShippingPanel modal
   const handleDirectSaveMetrics = async (newTotalWeightOz, newTotalBoxes, newCartons, newPallets) => {
     const newManualAdjustment = derivedItemWeightOz > 0 ? (newTotalWeightOz - derivedItemWeightOz) : 0;
-    
+
     let currentPkgs = [...packages];
-    
+
     if (newTotalBoxes !== currentPkgs.length) {
       if (newTotalBoxes > currentPkgs.length) {
         const diff = newTotalBoxes - currentPkgs.length;
@@ -375,14 +375,14 @@ export default function OrderDetailsPage() {
         currentPkgs = currentPkgs.slice(0, newTotalBoxes);
       }
     }
-    
+
     const weightPerBox = newTotalBoxes > 0 ? (newTotalWeightOz / newTotalBoxes) : newTotalWeightOz;
-    
+
     currentPkgs = currentPkgs.map(p => ({
       ...p,
       weightInOunces: Number(weightPerBox.toFixed(2))
     }));
-    
+
     setPackages(currentPkgs);
     setCartoonsCount(newCartons);
     setPalletsCount(newPallets);
@@ -394,7 +394,7 @@ export default function OrderDetailsPage() {
         pallets: Number(newPallets) || 0,
         totalBoxes: currentPkgs.length,
         totalWeightOunces: newTotalWeightOz,
-        manuallyAdjustedWeightOunces: newManualAdjustment, 
+        manuallyAdjustedWeightOunces: newManualAdjustment,
         packages: currentPkgs.map(p => ({
           packageCode: p.packageCode || 'package',
           weightInOunces: Number(p.weightInOunces) || 16,
@@ -432,20 +432,20 @@ export default function OrderDetailsPage() {
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(50, 50, 50);
       doc.text(`Order Ref: ${currentOrder.orderNumber}`, 14, 28);
-      doc.text(`Date Printed: ${new Date().toLocaleDateString('en-GB', {day: '2-digit', month: 'short', year: 'numeric'})}`, 14, 33);
+      doc.text(`Date Printed: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`, 14, 33);
 
       const pickingRows = items.map(item => {
         const invItem = inventoryData.find(inv => inv.sku === item.sku);
         let locationStr = '';
         if (invItem?.locations && Array.isArray(invItem.locations) && invItem.locations.length > 0) {
-           locationStr = invItem.locations.map(loc => loc.designation).filter(Boolean).join(', ');
+          locationStr = invItem.locations.map(loc => loc.designation).filter(Boolean).join(', ');
         }
         if (!locationStr && invItem?.locationString) {
-           locationStr = invItem.locationString;
+          locationStr = invItem.locationString;
         }
 
         return [
-          " [    ] ", 
+          " [    ] ",
           locationStr || '',
           item.sku,
           item.name,
@@ -459,7 +459,7 @@ export default function OrderDetailsPage() {
         body: pickingRows,
         theme: 'grid',
         headStyles: { fillColor: [240, 240, 240], textColor: 20, fontStyle: 'bold', lineWidth: 0.1 },
-        columnStyles: { 
+        columnStyles: {
           0: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
           1: { cellWidth: 30, halign: 'center' },
           4: { halign: 'center', fontStyle: 'bold' }
@@ -471,23 +471,18 @@ export default function OrderDetailsPage() {
 
       const customerName = currentOrder.customer?.customerName || 'Customer Order';
       const divisionName = currentOrder.division?.divisionName || 'Custom Division';
-      const isCorporate = currentOrder.customer?.isCorporate || false; 
       const orderNo = currentOrder.orderNumber || 'N/A';
-      const orderDate = currentOrder.createdAt ? new Date(currentOrder.createdAt).toLocaleDateString('en-GB', {day: '2-digit', month: 'short', year: 'numeric'}) : 'N/A';
+      const orderDate = currentOrder.createdAt ? new Date(currentOrder.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A';
       const shipVia = `${shipping.carrierType || ''} ${shipping.serviceCode || ''}`.trim() || 'UPS - Ground';
       const phone = address.phone || currentOrder.customer?.contactNumber || '';
 
       doc.setFontSize(14);
       doc.setTextColor(0, 0, 0);
       doc.setFont('helvetica', 'bold');
-      
-      if (isCorporate) {
-         doc.text(customerName.toUpperCase(), 14, 20);
-         doc.setFontSize(10);
-         doc.text(`${divisionName.toUpperCase()}`, 14, 25);
-      } else {
-         doc.text(`${customerName.toUpperCase()} - ${divisionName}`, 14, 20);
-      }
+
+
+      doc.text(`${customerName.toUpperCase()} - ${divisionName}`, 14, 20);
+
 
       const rightColKeyX = 160;
       const rightColValX = 162;
@@ -532,35 +527,31 @@ export default function OrderDetailsPage() {
       doc.setFont('helvetica', 'bold');
       doc.text("SHIP TO:", 110, addressBlockY);
       doc.setFont('helvetica', 'normal');
-      
+
       let currentYOffset = addressBlockY;
-      const recipientName = address.name || 'N/A';
-      
-      if (isCorporate) {
-         if (address.companyName) {
-             doc.text(address.companyName, 130, currentYOffset);
-             currentYOffset += 5;
-         }
-         doc.text(`${divisionName} c/o ${recipientName}`, 130, currentYOffset);
-      } else {
-         doc.text(`${divisionName} c/o ${recipientName}`, 130, currentYOffset);
+      const recipientName = address.name;
+
+      if(address.companyName){
+        doc.text(`${address.companyName}`, 130, currentYOffset);
+        currentYOffset += 5;
       }
+      doc.text(`c/o ${recipientName}`, 130, currentYOffset);
       currentYOffset += 5;
-      
+
       doc.text(`${address.street || ''} ${address.line2 || ''}`.trim(), 130, currentYOffset);
-      
+
       currentYOffset += 5;
       doc.text(`${address.city || ''}, ${address.state || ''} ${address.zip || ''}`.trim(), 130, currentYOffset);
-      
+
       currentYOffset += 5;
       doc.text(address.country || 'US', 130, currentYOffset);
 
       if (phone) {
-         currentYOffset += 5;
-         doc.setFont('helvetica', 'bold');
-         doc.text("Phone:", 110, currentYOffset);
-         doc.setFont('helvetica', 'normal');
-         doc.text(phone, 130, currentYOffset);
+        currentYOffset += 5;
+        doc.setFont('helvetica', 'bold');
+        doc.text("Phone:", 110, currentYOffset);
+        doc.setFont('helvetica', 'normal');
+        doc.text(phone, 130, currentYOffset);
       }
 
       let commentsY = 95;
@@ -569,48 +560,48 @@ export default function OrderDetailsPage() {
       doc.text("Comments:", 14, commentsY);
 
       if (notes) {
-          doc.setFont('helvetica', 'normal');
-          const splitNotes = doc.splitTextToSize(notes, 150);
-          doc.text(splitNotes, 40, commentsY);
-          commentsY += (splitNotes.length * 5);
+        doc.setFont('helvetica', 'normal');
+        const splitNotes = doc.splitTextToSize(notes, 150);
+        doc.text(splitNotes, 40, commentsY);
+        commentsY += (splitNotes.length * 5);
       } else {
-          commentsY += 5;
+        commentsY += 5;
       }
 
       const tableRows = items.map(item => {
-          const qtyStr = (item.qty || 0).toString();
-          return [ item.sku, item.name, qtyStr, qtyStr, qtyStr ];
+        const qtyStr = (item.qty || 0).toString();
+        return [item.sku, item.name, qtyStr, qtyStr, qtyStr];
       });
 
       autoTable(doc, {
-          startY: commentsY + 5,
-          head: [["Item Code / Lot(s) #", "Description", "Qty.\nPicked", "Qty.\nOrdered", "Qty.\nShipped"]],
-          body: tableRows,
-          theme: 'plain',
-          headStyles: { fontStyle: 'bold', textColor: 0, halign: 'left', borderBottomColor: 0, borderBottomWidth: 0.5 },
-          styles: { fontSize: 9, cellPadding: 3, textColor: 20, font: 'helvetica' },
-          columnStyles: {
-              0: { cellWidth: 45 }, 1: { cellWidth: 'auto' },
-              2: { cellWidth: 20, halign: 'center' }, 3: { cellWidth: 20, halign: 'center' }, 4: { cellWidth: 20, halign: 'center' }
-          },
-          willDrawCell: function(data) {
-              if (data.row.section === 'body') {
-                  doc.setDrawColor(200, 200, 200);
-                  doc.setLineWidth(0.1);
-                  doc.line(
-                      data.cell.x, 
-                      data.cell.y + data.cell.height, 
-                      data.cell.x + data.cell.width, 
-                      data.cell.y + data.cell.height
-                  );
-              }
+        startY: commentsY + 5,
+        head: [["Item Code / Lot(s) #", "Description", "Qty.\nPicked", "Qty.\nOrdered", "Qty.\nShipped"]],
+        body: tableRows,
+        theme: 'plain',
+        headStyles: { fontStyle: 'bold', textColor: 0, halign: 'left', borderBottomColor: 0, borderBottomWidth: 0.5 },
+        styles: { fontSize: 9, cellPadding: 3, textColor: 20, font: 'helvetica' },
+        columnStyles: {
+          0: { cellWidth: 45 }, 1: { cellWidth: 'auto' },
+          2: { cellWidth: 20, halign: 'center' }, 3: { cellWidth: 20, halign: 'center' }, 4: { cellWidth: 20, halign: 'center' }
+        },
+        willDrawCell: function (data) {
+          if (data.row.section === 'body') {
+            doc.setDrawColor(200, 200, 200);
+            doc.setLineWidth(0.1);
+            doc.line(
+              data.cell.x,
+              data.cell.y + data.cell.height,
+              data.cell.x + data.cell.width,
+              data.cell.y + data.cell.height
+            );
           }
+        }
       });
 
       const finalY = doc.lastAutoTable.finalY + 15;
       doc.setDrawColor(0);
       doc.setLineWidth(0.5);
-      doc.rect(55, finalY, 100, 8); 
+      doc.rect(55, finalY, 100, 8);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(10);
       doc.text("*** THANK YOU FOR YOUR ORDER! ***", 105, finalY + 5.5, { align: 'center' });
@@ -675,13 +666,13 @@ export default function OrderDetailsPage() {
           const matchedStockItem = inventoryData.find(inv => inv.sku === currentItem.sku);
           if (matchedStockItem) {
             const currentStock = Number(matchedStockItem.available) || 0;
-            const diff = newQty - originalQty; 
+            const diff = newQty - originalQty;
             const newStockLevel = currentStock - diff;
 
             inventoryUpdates.push(
-              dispatch(updateInventory({ 
-                id: matchedStockItem._id, 
-                inventoryData: { available: newStockLevel } 
+              dispatch(updateInventory({
+                id: matchedStockItem._id,
+                inventoryData: { available: newStockLevel }
               })).unwrap()
             );
           }
@@ -697,9 +688,9 @@ export default function OrderDetailsPage() {
             const restoredStockLevel = currentStock + Number(originalItem.quantity);
 
             inventoryUpdates.push(
-              dispatch(updateInventory({ 
-                id: matchedStockItem._id, 
-                inventoryData: { available: restoredStockLevel } 
+              dispatch(updateInventory({
+                id: matchedStockItem._id,
+                inventoryData: { available: restoredStockLevel }
               })).unwrap()
             );
           }
@@ -708,7 +699,7 @@ export default function OrderDetailsPage() {
 
       if (inventoryUpdates.length > 0) {
         await Promise.all(inventoryUpdates);
-        dispatch(fetchInventory()); 
+        dispatch(fetchInventory());
       }
     } catch (err) {
       toast.error("Failed to synchronize inventory adjustments.");
@@ -718,18 +709,18 @@ export default function OrderDetailsPage() {
 
     let payloadPackages = [...packages];
     if (payloadPackages.length === 1 && derivedItemWeightOz > 0 && manualAdjustmentOz === 0) {
-        payloadPackages[0].weightInOunces = derivedItemWeightOz;
-        setPackages(payloadPackages);
+      payloadPackages[0].weightInOunces = derivedItemWeightOz;
+      setPackages(payloadPackages);
     } else if (payloadPackages.length === 1 && derivedItemWeightOz > 0 && manualAdjustmentOz !== 0) {
-        payloadPackages[0].weightInOunces = finalPayloadWeightOz;
-        setPackages(payloadPackages);
+      payloadPackages[0].weightInOunces = finalPayloadWeightOz;
+      setPackages(payloadPackages);
     }
 
     const payload = {
       status: orderStatus,
       isRushOrder: isRushOrder,
       ...(selectedUserId ? { user: selectedUserId } : { user: null }),
-      
+
       // Inject updated lifecycle timestamps
       shipmentCreatedAt: shipmentCreatedAt ? new Date(shipmentCreatedAt).toISOString() : null,
       shippedAt: shippedAt ? new Date(shippedAt).toISOString() : null,
@@ -738,15 +729,15 @@ export default function OrderDetailsPage() {
 
       notes: notes,
       shippingAddress: {
-        recipientName: address.name, 
+        recipientName: address.name,
         companyName: address.companyName,
-        email: address.email, 
+        email: address.email,
         phone: address.phone,
-        line1: address.street, 
-        line2: address.line2, 
+        line1: address.street,
+        line2: address.line2,
         city: address.city,
         state: address.state.toUpperCase().trim(),
-        zip: address.zip, 
+        zip: address.zip,
         country: address.country
       },
       shippingDetails: {
@@ -754,10 +745,10 @@ export default function OrderDetailsPage() {
         carrierType: shipping.carrierType, serviceCode: shipping.serviceCode,
         trackingNumber: shipping.trackingNumber, shippingCost: Number(shipping.shippingCost),
         cartoons: Number(cartoonsCount) || 0,
-        pallets: Number(palletsCount) || 0, 
+        pallets: Number(palletsCount) || 0,
         totalBoxes: payloadPackages.length,
         totalWeightOunces: finalPayloadWeightOz,
-        manuallyAdjustedWeightOunces: manualAdjustmentOz, 
+        manuallyAdjustedWeightOunces: manualAdjustmentOz,
         packages: payloadPackages.map(p => ({
           packageCode: p.packageCode || 'package',
           weightInOunces: Number(p.weightInOunces) || 16,
@@ -766,11 +757,11 @@ export default function OrderDetailsPage() {
           height: Number(p.height) || 10
         }))
       },
-      processingFees: processingFeesPreview, 
+      processingFees: processingFeesPreview,
       items: items.map(item => ({
         sku: item.sku, name: item.name, quantity: Number(item.qty),
         unitPrice: Number(item.price), totalPrice: Number(item.qty) * Number(item.price),
-        weight: Number(item.weight) 
+        weight: Number(item.weight)
       }))
     };
 
@@ -783,7 +774,7 @@ export default function OrderDetailsPage() {
       } else {
         toast.success('Order saved successfully.');
       }
-      
+
       dispatch(fetchOrderById(currentOrder._id));
 
     } catch (error) {
@@ -801,23 +792,23 @@ export default function OrderDetailsPage() {
       status: 'Cancelled',
       isRushOrder: isRushOrder,
       ...(selectedUserId ? { user: selectedUserId } : { user: null }),
-      
-      cancelledAt: new Date().toISOString(), 
+
+      cancelledAt: new Date().toISOString(),
       shipmentCreatedAt: shipmentCreatedAt ? new Date(shipmentCreatedAt).toISOString() : null,
       shippedAt: shippedAt ? new Date(shippedAt).toISOString() : null,
       deliveredAt: deliveredAt ? new Date(deliveredAt).toISOString() : null,
 
       notes: notes,
       shippingAddress: {
-        recipientName: address.name, 
+        recipientName: address.name,
         companyName: address.companyName,
-        email: address.email, 
+        email: address.email,
         phone: address.phone,
-        line1: address.street, 
-        line2: address.line2, 
+        line1: address.street,
+        line2: address.line2,
         city: address.city,
         state: address.state.toUpperCase().trim(),
-        zip: address.zip, 
+        zip: address.zip,
         country: address.country
       },
       shippingDetails: {
@@ -904,7 +895,7 @@ export default function OrderDetailsPage() {
       pallets: Number(palletsCount) || 0,
       totalBoxes: packages.length,
       totalWeightOunces: finalPayloadWeightOz,
-      processingFees: processingFeesPreview 
+      processingFees: processingFeesPreview
     };
 
     // 2. Prepare Database Update Payload
@@ -929,13 +920,13 @@ export default function OrderDetailsPage() {
     try {
       // Save modified metrics to database instantly
       await dispatch(updateOrder({ id: currentOrder._id, updateData: updatePayload })).unwrap();
-      
+
       // Push to ShipStation
       await dispatch(createOrderShipment({ orderId: currentOrder._id, fulfillmentData: shipstationPayload })).unwrap();
-      
+
       toast.success("Shipment successfully created in ShipStation.");
       setCreateShipmentModalOpen(false);
-      
+
       // Reload the page to ensure all fresh metrics and ShipStation IDs are rendered perfectly
       window.location.reload();
     } catch (error) {
@@ -964,7 +955,7 @@ export default function OrderDetailsPage() {
       pallets: Number(palletsCount) || 0,
       totalBoxes: packages.length,
       weightInOunces: finalPayloadWeightOz,
-      processingFees: processingFeesPreview 
+      processingFees: processingFeesPreview
     };
 
     try {
@@ -981,7 +972,7 @@ export default function OrderDetailsPage() {
         } catch (e) {
           console.error("Failed standard decode, falling back.");
         }
-      } 
+      }
 
       if (!labelDownloaded && response.labelUrl) {
         window.open(response.labelUrl, "_blank");
@@ -993,14 +984,14 @@ export default function OrderDetailsPage() {
           const fetchRaw = await dispatch(downloadPurchasedLabel(currentOrder._id)).unwrap();
           const fetchRes = fetchRaw.data || fetchRaw;
           if (fetchRes.labelData) {
-             downloadBase64PDF(fetchRes.labelData, `Label_${currentOrder.orderNumber || 'Order'}.pdf`);
-             labelDownloaded = true;
+            downloadBase64PDF(fetchRes.labelData, `Label_${currentOrder.orderNumber || 'Order'}.pdf`);
+            labelDownloaded = true;
           } else if (fetchRes.labelUrl) {
-             window.open(fetchRes.labelUrl, "_blank");
-             labelDownloaded = true;
+            window.open(fetchRes.labelUrl, "_blank");
+            labelDownloaded = true;
           }
         } catch (fallbackErr) {
-           console.error("Fallback download failed:", fallbackErr);
+          console.error("Fallback download failed:", fallbackErr);
         }
       }
 
@@ -1010,7 +1001,7 @@ export default function OrderDetailsPage() {
       }
 
       if (labelDownloaded) {
-        toast.success('Label Purchased & Downloaded!', { description: `Tracking Number: ${response.trackingNumber || 'N/A'}`});
+        toast.success('Label Purchased & Downloaded!', { description: `Tracking Number: ${response.trackingNumber || 'N/A'}` });
       } else {
         toast.warning('Label Purchased, but failed to automatically download.', { description: 'Try downloading manually using the button below.' });
       }
@@ -1077,7 +1068,7 @@ export default function OrderDetailsPage() {
 
   if (!isValidMongoId) return <NotFoundPage />;
   if (orderLoadStatus === 'failed' || orderError) return <NotFoundPage />;
-  
+
   if (orderLoadStatus === 'loading' || !currentOrder || isSaving) {
     return (
       <div className="h-full flex items-center justify-center min-h-[600px]">
@@ -1091,7 +1082,7 @@ export default function OrderDetailsPage() {
     );
   }
 
-  const creationDate = currentOrder.createdAt 
+  const creationDate = currentOrder.createdAt
     ? new Date(currentOrder.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     : 'Unknown Date';
 
@@ -1100,90 +1091,90 @@ export default function OrderDetailsPage() {
   return (
     <div className="h-full flex flex-col gap-5 animate-fade-in max-w-[1400px] mx-auto pb-10 px-4 box-border text-slate-900">
 
-      <OrderHeaderActions 
-        orderStatus={orderStatus} 
-        isSaving={isSaving} 
-        isDeleting={isDeleting} 
-        isCancellingOrder={isCancellingOrder} 
-        isGeneratingDocs={isGeneratingDocs} 
-        isShipmentCreated={isShipmentCreated} 
-        isLabelPurchased={isLabelPurchased} 
-        handleDeleteOrder={handleDeleteOrder} 
-        handleCancelOrder={handleCancelOrder} 
-        handlePrintDocsAndPick={handlePrintDocsAndPick} 
-        handleSaveOrder={handleSaveOrder} 
-        setCreateShipmentModalOpen={setCreateShipmentModalOpen} 
-        setFulfillOpen={setFulfillOpen} 
+      <OrderHeaderActions
+        orderStatus={orderStatus}
+        isSaving={isSaving}
+        isDeleting={isDeleting}
+        isCancellingOrder={isCancellingOrder}
+        isGeneratingDocs={isGeneratingDocs}
+        isShipmentCreated={isShipmentCreated}
+        isLabelPurchased={isLabelPurchased}
+        handleDeleteOrder={handleDeleteOrder}
+        handleCancelOrder={handleCancelOrder}
+        handlePrintDocsAndPick={handlePrintDocsAndPick}
+        handleSaveOrder={handleSaveOrder}
+        setCreateShipmentModalOpen={setCreateShipmentModalOpen}
+        setFulfillOpen={setFulfillOpen}
       />
 
-      <CreateShipmentModal 
-        isOpen={createShipmentModalOpen} 
-        onClose={() => setCreateShipmentModalOpen(false)} 
-        onSubmit={handleCreateShipmentSubmit} 
-        isCreatingShipment={isCreatingShipment} 
-        address={address} 
-        shipping={shipping} 
-        packages={packages} 
-        notes={notes} 
-        onAddPackage={addPackage} 
-        onUpdatePackage={updatePackage} 
-        onRemovePackage={removePackage} 
-        onWeightChange={handleWeightChange} 
+      <CreateShipmentModal
+        isOpen={createShipmentModalOpen}
+        onClose={() => setCreateShipmentModalOpen(false)}
+        onSubmit={handleCreateShipmentSubmit}
+        isCreatingShipment={isCreatingShipment}
+        address={address}
+        shipping={shipping}
+        packages={packages}
+        notes={notes}
+        onAddPackage={addPackage}
+        onUpdatePackage={updatePackage}
+        onRemovePackage={removePackage}
+        onWeightChange={handleWeightChange}
         cartoonsCount={cartoonsCount}
         setCartoonsCount={setCartoonsCount}
       />
 
-      <LabelDrawer 
-        fulfillOpen={fulfillOpen} 
-        setFulfillOpen={setFulfillOpen} 
-        fulfillmentData={fulfillmentData} 
-        setFulfillmentData={setFulfillmentData} 
-        warehouses={warehouses} 
-        isLoadingWarehouses={isLoadingWarehouses} 
-        isLabelPurchased={isLabelPurchased} 
-        isShipmentCreated={isShipmentCreated} 
-        handleGenerateLabel={handleGenerateLabel} 
-        isGeneratingLabel={isGeneratingLabel} 
-        handleCancelShipment={handleCancelShipment} 
-        isCancellingShipment={isCancellingShipment} 
-        handlePrintPurchasedLabel={handlePrintPurchasedLabel} 
-        isDownloadingLabel={isDownloadingLabel} 
-        handleVoidLabel={handleVoidLabel} 
-        isVoidingLabel={isVoidingLabel} 
+      <LabelDrawer
+        fulfillOpen={fulfillOpen}
+        setFulfillOpen={setFulfillOpen}
+        fulfillmentData={fulfillmentData}
+        setFulfillmentData={setFulfillmentData}
+        warehouses={warehouses}
+        isLoadingWarehouses={isLoadingWarehouses}
+        isLabelPurchased={isLabelPurchased}
+        isShipmentCreated={isShipmentCreated}
+        handleGenerateLabel={handleGenerateLabel}
+        isGeneratingLabel={isGeneratingLabel}
+        handleCancelShipment={handleCancelShipment}
+        isCancellingShipment={isCancellingShipment}
+        handlePrintPurchasedLabel={handlePrintPurchasedLabel}
+        isDownloadingLabel={isDownloadingLabel}
+        handleVoidLabel={handleVoidLabel}
+        isVoidingLabel={isVoidingLabel}
       />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start mt-2">
         <div className="xl:col-span-2 space-y-6 w-full min-w-0">
-          <OrderInfoPanel 
-            currentOrder={currentOrder} 
-            isRushOrder={isRushOrder} 
-            isInternational={isCurrentlyInternational} 
-            orderCreatorName={orderCreatorName} 
-            creationDate={creationDate} 
+          <OrderInfoPanel
+            currentOrder={currentOrder}
+            isRushOrder={isRushOrder}
+            isInternational={isCurrentlyInternational}
+            orderCreatorName={orderCreatorName}
+            creationDate={creationDate}
           />
-          
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            <OrderStatusPanel 
-              orderStatus={orderStatus} 
-              setOrderStatus={setOrderStatus} 
-              isRushOrder={isRushOrder} 
-              setIsRushOrder={setIsRushOrder} 
+            <OrderStatusPanel
+              orderStatus={orderStatus}
+              setOrderStatus={setOrderStatus}
+              isRushOrder={isRushOrder}
+              setIsRushOrder={setIsRushOrder}
             />
-            
-            <ShippingPanel 
-              shipping={shipping} 
-              setShipping={setShipping} 
-              cartoonsCount={cartoonsCount} 
-              setCartoonsCount={setCartoonsCount} 
-              palletsCount={palletsCount} 
-              setPalletsCount={setPalletsCount} 
-              packages={packages} 
-              totalItemWeightOz={finalPayloadWeightOz} 
+
+            <ShippingPanel
+              shipping={shipping}
+              setShipping={setShipping}
+              cartoonsCount={cartoonsCount}
+              setCartoonsCount={setCartoonsCount}
+              palletsCount={palletsCount}
+              setPalletsCount={setPalletsCount}
+              packages={packages}
+              totalItemWeightOz={finalPayloadWeightOz}
               totalBoxesCount={packages.length}
-              isWeightMismatched={isWeightMismatched} 
-              orderStatus={orderStatus} 
+              isWeightMismatched={isWeightMismatched}
+              orderStatus={orderStatus}
               carriersData={carriersData}
-              freightProvidersData={freightProvidersData} 
+              freightProvidersData={freightProvidersData}
               shipmentId={currentOrder?.shipstationDetails?.orderId || ''}
               handleDirectSaveMetrics={handleDirectSaveMetrics}
               manuallyAdjustedWeightOunces={manualAdjustmentOz}
@@ -1203,33 +1194,33 @@ export default function OrderDetailsPage() {
             isSaving={isSaving}
           />
 
-          <AddressPanel 
-            address={address} 
-            setAddress={setAddress} 
+          <AddressPanel
+            address={address}
+            setAddress={setAddress}
           />
 
-          <NotesAndFeesPanel 
-            notes={notes} 
-            setNotes={setNotes} 
-            currentOrder={currentOrder} 
-            processingFeesPreview={processingFeesPreview} 
+          <NotesAndFeesPanel
+            notes={notes}
+            setNotes={setNotes}
+            currentOrder={currentOrder}
+            processingFeesPreview={processingFeesPreview}
             processingStatus={processingStatus}
           />
 
         </div>
 
         <div className="space-y-6">
-          <ManifestPanel 
-            items={items} 
-            setItems={setItems} 
-            inventoryData={inventoryData} 
-            inventoryStatus={inventoryStatus} 
+          <ManifestPanel
+            items={items}
+            setItems={setItems}
+            inventoryData={inventoryData}
+            inventoryStatus={inventoryStatus}
           />
 
-          <InvoicePanel 
+          <InvoicePanel
             currentOrder={currentOrder}
-            shipping={shipping} 
-            setShipping={setShipping} 
+            shipping={shipping}
+            setShipping={setShipping}
           />
         </div>
       </div>
