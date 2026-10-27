@@ -58,6 +58,12 @@ jobs:
           SMTP_USER=$SMTP_USER
           SMTP_PASS=$SMTP_PASS
           FROM_EMAIL=$FROM_EMAIL
+          NETSUITE_ACCOUNT_ID=$NETSUITE_ACCOUNT_ID
+          NETSUITE_URL=$NETSUITE_URL
+          NETSUITE_CONSUMER_KEY=$NETSUITE_CONSUMER_KEY
+          NETSUITE_CONSUMER_SECRET=$NETSUITE_CONSUMER_SECRET
+          NETSUITE_TOKEN_ID=$NETSUITE_TOKEN_ID
+          NETSUITE_TOKEN_SECRET=$NETSUITE_TOKEN_SECRET
           EOF
         env:
           MONGO_URI: ${{ secrets.MONGO_URI }}
@@ -70,6 +76,12 @@ jobs:
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
+          NETSUITE_ACCOUNT_ID: ${{ secrets.NETSUITE_ACCOUNT_ID }}
+          NETSUITE_URL: ${{ secrets.NETSUITE_URL }}
+          NETSUITE_CONSUMER_KEY: ${{ secrets.NETSUITE_CONSUMER_KEY }}
+          NETSUITE_CONSUMER_SECRET: ${{ secrets.NETSUITE_CONSUMER_SECRET }}
+          NETSUITE_TOKEN_ID: ${{ secrets.NETSUITE_TOKEN_ID }}
+          NETSUITE_TOKEN_SECRET: ${{ secrets.NETSUITE_TOKEN_SECRET }}
 
       - name: RUN Docker container with env file
         run: |
