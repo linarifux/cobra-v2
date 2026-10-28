@@ -108,6 +108,7 @@ export const getRecordById = async (req, res) => {
     }
 };
 
+
 // POST /api/netsuite/:recordType
 export const createRecord = async (req, res) => {
     try {

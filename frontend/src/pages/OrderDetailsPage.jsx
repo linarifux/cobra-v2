@@ -535,7 +535,7 @@ export default function OrderDetailsPage() {
         doc.text(`${address.companyName}`, 130, currentYOffset);
         currentYOffset += 5;
       }
-      doc.text(`c/o ${recipientName}`, 130, currentYOffset);
+      doc.text(`${address.companyName? 'c/o ' : ''}${recipientName}`, 130, currentYOffset);
       currentYOffset += 5;
 
       doc.text(`${address.street || ''} ${address.line2 || ''}`.trim(), 130, currentYOffset);
