@@ -64,7 +64,6 @@ class NetSuiteClient {
     }
 
     _setCache(key, data) {
-        // Cap cache size at 500 entries to protect server RAM
         if (this.cache.size >= 500) {
             const oldestKey = this.cache.keys().next().value;
             this.cache.delete(oldestKey);
@@ -129,7 +128,6 @@ class NetSuiteClient {
         }
     }
 
-    // Helper that wraps queue execution with In-Flight Deduplication
     _enqueueWithDeduplication(cacheKey, method, fullUrl, data, customHeaders) {
         if (this.inFlight.has(cacheKey)) {
             return this.inFlight.get(cacheKey);
@@ -161,7 +159,12 @@ class NetSuiteClient {
 
     // --- CORE REST RECORD REQUEST ---
     async request(method, endpoint, params = {}, data = null, customHeaders = {}, forceRefresh = false) {
-        const baseUrl = `${process.env.NETSUITE_URL.replace(/\/+$/, '')}/${endpoint.replace(/^\/+/, '')}`;
+        // ERROR GUARD: Verify environment variables before running .replace()
+        if (!process.env.NETSUITE_URL) {
+            throw new Error("CRITICAL SERVER ERROR: NETSUITE_URL is missing from environment variables.");
+        }
+
+        const baseUrl = `${process.env.NETSUITE_URL.replace(/\/+$/, '')}/${(endpoint || '').replace(/^\/+/, '')}`;
         const urlObj = new URL(baseUrl);
 
         if (params && Object.keys(params).length > 0) {
@@ -177,7 +180,6 @@ class NetSuiteClient {
             const { status, data: cachedData } = this._getCacheState(cacheKey);
             if (status === 'FRESH') return cachedData;
             if (status === 'STALE') {
-                // Return stale data immediately, refresh silently in background
                 this._enqueueWithDeduplication(cacheKey, method, fullUrl, data, customHeaders).catch(() => {});
                 return cachedData;
             }
@@ -190,20 +192,24 @@ class NetSuiteClient {
 
     // --- FAST SUITEQL ENGINE ---
     async querySuiteQL(sqlQuery, limit = 50, offset = 0, forceRefresh = false) {
-        const suiteQlBase = process.env.NETSUITE_URL.replace(/\/record\/v1\/?$/, '/query/v1/suiteql');
+        // ERROR GUARD & TYPO FIX
+        if (!process.env.NETSUITE_SUITEQL_URL) {
+            throw new Error("CRITICAL SERVER ERROR: NETSUITE_SUITEQL_URL is missing from environment variables.");
+        }
+        
+        const suiteQlBase = process.env.NETSUITE_SUITEQL_URL;
         const urlObj = new URL(suiteQlBase);
         urlObj.searchParams.append('limit', limit);
         urlObj.searchParams.append('offset', offset);
 
         const fullUrl = urlObj.toString();
-        const normalizedSql = sqlQuery.replace(/\s+/g, ' ').trim();
+        const normalizedSql = sqlQuery ? sqlQuery.replace(/\s+/g, ' ').trim() : '';
         const cacheKey = `SUITEQL:${fullUrl}:${normalizedSql}`;
 
         if (!forceRefresh) {
             const { status, data: cachedData } = this._getCacheState(cacheKey);
             if (status === 'FRESH') return cachedData;
             if (status === 'STALE') {
-                // Return stale data in < 2ms and trigger background refresh
                 this._enqueueWithDeduplication(cacheKey, 'POST', fullUrl, { q: normalizedSql }, { Prefer: 'transient' }).catch(() => {});
                 return cachedData;
             }
