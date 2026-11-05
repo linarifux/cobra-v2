@@ -35,9 +35,6 @@ export default function TestCarrier() {
 
     setIsSubmitting(true);
     setFormError('');
-
-    console.log(formData)
-
     try {
       // Assuming your express route is mounted at /api/v1/test-carriers
       const response = await api.post('/test-carriers', formData);

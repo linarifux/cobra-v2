@@ -22,31 +22,26 @@ class NetSuiteClient {
             secret: process.env.NETSUITE_TOKEN_SECRET,
         };
 
-        // Persistent TCP/TLS connections to eliminate ~300ms SSL handshake overhead
         this.axiosInstance = axios.create({
             httpsAgent: new https.Agent({
                 keepAlive: true,
                 maxSockets: 10,
-                keepAliveMsecs: 30000
+                keepAliveMsecs: 60000
             }),
-            timeout: 30000
+            timeout: 60000
         });
 
-        // Concurrency Queue State
-        this.maxConcurrent = 2;
+        // INCREASED CONCURRENCY TO 5 FOR FASTER REST API BULK PROCESSING
+        this.maxConcurrent = 5;
         this.activeRequests = 0;
         this.queue = [];
 
-        // Multi-Tier SWR Cache State
         this.cache = new Map();
-        this.freshTTL = 5 * 60 * 1000;  // 5 Minutes (Served immediately)
-        this.staleTTL = 30 * 60 * 1000; // 30 Minutes (Served immediately + triggers silent background refresh)
-
-        // In-Flight Request Deduplication (Prevents duplicate concurrent calls)
+        this.freshTTL = 5 * 60 * 1000;  
+        this.staleTTL = 30 * 60 * 1000; 
         this.inFlight = new Map();
     }
 
-    // --- SWR CACHE ENGINE ---
     _getCacheState(key) {
         const entry = this.cache.get(key);
         if (!entry) return { status: 'MISS', data: null };
@@ -78,7 +73,6 @@ class NetSuiteClient {
         this.cache.clear();
     }
 
-    // --- CONCURRENCY QUEUE ENGINE ---
     async _processQueue() {
         if (this.queue.length === 0 || this.activeRequests >= this.maxConcurrent) return;
 
@@ -157,14 +151,11 @@ class NetSuiteClient {
         return promise;
     }
 
-    // --- CORE REST RECORD REQUEST ---
     async request(method, endpoint, params = {}, data = null, customHeaders = {}, forceRefresh = false) {
-        // ERROR GUARD: Verify environment variables before running .replace()
-        if (!process.env.NETSUITE_URL) {
-            throw new Error("CRITICAL SERVER ERROR: NETSUITE_URL is missing from environment variables.");
-        }
+        // FIX: Point this to the standard REST Record API, NOT the SuiteQL URL
+        const restApiUrl = process.env.NETSUITE_URL;
 
-        const baseUrl = `${process.env.NETSUITE_URL.replace(/\/+$/, '')}/${(endpoint || '').replace(/^\/+/, '')}`;
+        const baseUrl = `${restApiUrl.replace(/\/+$/, '')}/${(endpoint || '').replace(/^\/+/, '')}`;
         const urlObj = new URL(baseUrl);
 
         if (params && Object.keys(params).length > 0) {
@@ -173,7 +164,9 @@ class NetSuiteClient {
             });
         }
 
-        const fullUrl = urlObj.toString();
+        // Keep the strict URL encoding fix for NetSuite OAuth spaces
+        const fullUrl = urlObj.toString().replace(/\+/g, '%20');
+
         const cacheKey = `REST:${method}:${fullUrl}`;
 
         if (method === 'GET' && !forceRefresh) {
@@ -190,9 +183,8 @@ class NetSuiteClient {
         return this._enqueueWithDeduplication(cacheKey, method, fullUrl, data, customHeaders);
     }
 
-    // --- FAST SUITEQL ENGINE ---
-    async querySuiteQL(sqlQuery, limit = 50, offset = 0, forceRefresh = false) {
-        // ERROR GUARD & TYPO FIX
+    // You can keep querySuiteQL here natively in case you need it later for fast reporting!
+    async querySuiteQL(sqlQuery, limit = 1000, offset = 0, forceRefresh = false) {
         if (!process.env.NETSUITE_SUITEQL_URL) {
             throw new Error("CRITICAL SERVER ERROR: NETSUITE_SUITEQL_URL is missing from environment variables.");
         }
@@ -217,6 +209,11 @@ class NetSuiteClient {
 
         return this._enqueueWithDeduplication(cacheKey, 'POST', fullUrl, { q: normalizedSql }, { Prefer: 'transient' });
     }
+
+
+    
+
+
 }
 
 const netSuiteService = new NetSuiteClient();

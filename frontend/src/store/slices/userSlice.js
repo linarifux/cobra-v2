@@ -48,7 +48,6 @@ export const updateUser = createAsyncThunk(
       const response = await api.put(`/users/${id}`, payload);
       return response.data.data.user || response.data.data;
     } catch (error) {
-      console.log(error);
       return rejectWithValue(error.response?.data?.message || error.message || 'Failed to update user');
     }
   }

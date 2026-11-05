@@ -1,0 +1,199 @@
+import mongoose from 'mongoose';
+
+const netSuiteOrderItemSchema = new mongoose.Schema({
+  sku: { type: String, required: true },
+  name: { type: String, required: true },
+  quantity: { type: Number, required: true, min: 1 },
+  unitPrice: { type: Number, required: true, min: 0 },
+  totalPrice: { type: Number, required: true }
+}, { _id: false });
+
+const netSuiteOrderSchema = new mongoose.Schema(
+  {
+    orderNumber: {
+      type: String,
+      required: [true, 'Order number is required'],
+      unique: true,
+      trim: true
+    },
+    // NEW: The core NetSuite internal ID used for polling
+    netSuiteId: {
+      type: String,
+      required: [true, 'NetSuite internal ID is required'],
+      unique: true,
+      index: true
+    },
+    // The 3PL Client/Brand
+    customer: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Customer',
+      required: [true, 'Order must belong to a customer']
+    },
+    // The End-Consumer / Shopper
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: false // Kept false to allow guest checkouts and preserve existing DB data safely
+    },
+    // Scope this order to a specific division for strict routing and access control
+    division: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Division',
+      required: [true, 'Order must be assigned to a division']
+    },
+    status: {
+      type: String,
+      enum: ['New', 'Pending', 'Picked', 'Shipped', 'Hold', 'Cancelled', 'Delivered', 'Billed'],
+      default: 'New'
+    },
+    orderType: {
+      type: String,
+      enum: ['WEBORD', 'PRODUCTION', 'SCRAP', 'TRADESHOW'],
+      default: 'WEBORD'
+    },
+    chargeCode: {
+      type: String,
+      required: false
+    },
+    items: [netSuiteOrderItemSchema],
+    
+    // Subtotal of just the items
+    subtotal: {
+      type: Number,
+      required: true,
+      default: 0
+    },
+    
+    // Grand Total (Subtotal + Shipping + Processing)
+    totalAmount: {
+      type: Number,
+      required: true,
+      default: 0
+    },
+    qtyLimitExceeds: {
+      type: Boolean,
+      default: false
+    },
+    isRushOrder: {
+      type: Boolean,
+      default: false
+    },
+    isInternational: {
+      type: Boolean,
+      default: false
+    },
+
+    // --- Order Lifecycle Timestamps ---
+    shipmentCreatedAt: { type: Date }, // Triggered when pushed to ShipStation / Picked
+    shippedAt: { type: Date },         // Triggered when Label is generated / Shipped
+    deliveredAt: { type: Date },       // Triggered when carrier marks as delivered
+    cancelledAt: { type: Date },       // Triggered if order is cancelled
+
+    shippingAddress: {
+      companyName: { type: String, default: '' },
+      recipientName: { type: String, required: true },
+      email: { type: String, required: true },
+      phone: { type: String, required: true },
+      line1: { type: String, required: true },
+      line2: { type: String, default: '' },
+      city: { type: String, required: true },
+      state: { type: String, required: true },
+      zip: { type: String, required: true },
+      country: { type: String, default: 'US' }
+    },
+
+    // Comprehensive Order Processing Fees Breakdown
+    processingFees: {
+      baseFee: { type: Number, default: 0 },            // Base fee for 1st 3 line items
+      weightSurcharge: { type: Number, default: 0 },    // Surcharge for weight > 20 lbs
+      lineItemSurcharge: { type: Number, default: 0 },  // Surcharge for line items > 3
+      packageSurcharge: { type: Number, default: 0 },   // Surcharge for packages > 1
+      pieceSurcharge: { type: Number, default: 0 },     // Per piece fee
+      cartonSurcharge: { type: Number, default: 0 },    // Per carton fee
+      rushFee: { type: Number, default: 0 },            // Flat fee if isRushOrder is true
+      internationalFee: { type: Number, default: 0 },   // Flat fee if isInternational is true
+      palletFee: { type: Number, default: 0 },          // Fee for pallet processing
+      totalProcessingFee: { type: Number, default: 0 }  // Grand total of all processing fees
+    },
+
+    // Integration with the Carrier module
+    shippingDetails: {
+      carrierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Carrier' },
+      carrierType: { type: String }, 
+      serviceCode: { type: String }, 
+      trackingNumber: { type: String, default: '' },
+      shippingCost: { type: Number, default: 0 },
+      // Package configuration tracking
+      cartoons: { type: Number, default: 0 },
+      pallets: { type: Number, default: 0 }, // Added to track pallet processing fee trigger
+      totalBoxes: { type: Number, default: 0 },
+      manuallyAdjustedWeightOunces: { type: Number, default: 0 },
+      totalWeightOunces: { type: Number, default: 0 },
+      packages: [{
+        packageCode: { type: String },
+        weightInOunces: { type: Number },
+        length: { type: Number },
+        width: { type: Number },
+        height: { type: Number }
+      }]
+    },
+    notes: {
+      type: String,
+      default: ''
+    },
+    // ShipStation Integration Data
+    shipstationDetails: {
+      orderId: { type: String },
+      labelId: { type: String },
+      orderKey: { type: String },
+      orderStatus: { type: String },
+      externalShipmentId: { type: String }
+    }
+  },
+  { 
+    timestamps: true 
+  }
+);
+
+netSuiteOrderSchema.pre('save', function() {
+  // 1. Calculate Product Subtotal
+  if (this.items && this.items.length > 0) {
+    this.subtotal = this.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0);
+  }
+
+  // 2. Auto-calculate Grand Total for Processing Fees
+  if (this.processingFees) {
+    this.processingFees.totalProcessingFee = 
+      (this.processingFees.baseFee || 0) +
+      (this.processingFees.weightSurcharge || 0) +
+      (this.processingFees.lineItemSurcharge || 0) +
+      (this.processingFees.packageSurcharge || 0) +
+      (this.processingFees.pieceSurcharge || 0) +
+      (this.processingFees.cartonSurcharge || 0) +
+      (this.processingFees.rushFee || 0) +
+      (this.processingFees.internationalFee || 0) +
+      (this.processingFees.palletFee || 0);
+  }
+
+  // 3. Auto-populate Lifecycle Timestamps based on Status Changes
+  if (this.isModified('status')) {
+    if (this.status === 'Picked' && !this.shipmentCreatedAt) {
+      this.shipmentCreatedAt = new Date();
+    }
+    if (this.status === 'Shipped' && !this.shippedAt) {
+      this.shippedAt = new Date();
+    }
+    if (this.status === 'Delivered' && !this.deliveredAt) {
+      this.deliveredAt = new Date();
+    }
+    if (this.status === 'Cancelled' && !this.cancelledAt) {
+      this.cancelledAt = new Date();
+    }
+  }
+});
+
+// INDEXING FOR PERFORMANCE
+netSuiteOrderSchema.index({ customer: 1, division: 1, status: 1 });
+netSuiteOrderSchema.index({ user: 1 });
+
+export default mongoose.model('NetSuiteOrder', netSuiteOrderSchema);

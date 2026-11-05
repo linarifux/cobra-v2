@@ -6,8 +6,6 @@ export const getRecords = async (recordType, query = '') => {
   
   // Routes to your Node.js backend: /api/v1/netsuite/salesOrder
   const response = await api.get(`/netsuite/${recordType}${queryString}`);
-  
-  // Unwrap the backend's standard { success: true, data: { ... } } response structure
   return response.data.data; 
 };
 

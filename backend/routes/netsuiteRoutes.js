@@ -1,5 +1,6 @@
 import express from 'express';
 import {
+    syncAllOrdersBackground,
     getAllRecords,
     getRecordById,
     createRecord,
@@ -9,6 +10,14 @@ import {
 
 const router = express.Router();
 
+/**
+ * @route   GET /api/netsuite/sync/sales-orders
+ * @desc    Triggers a background process to sync all NetSuite Sales Orders to MongoDB
+ * @access  Private
+ * 
+ * IMPORTANT: This specific route MUST come before the /:recordType wildcard route!
+ */
+router.get('/sync/sales-orders', syncAllOrdersBackground);
 
 /**
  * @route   GET /api/netsuite/:recordType
@@ -16,6 +25,7 @@ const router = express.Router();
  * @access  Private
  */
 router.get('/:recordType', getAllRecords);
+
 
 /**
  * @route   GET /api/netsuite/:recordType/:id

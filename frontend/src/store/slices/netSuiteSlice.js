@@ -22,6 +22,7 @@ export const fetchNetSuiteRecords = createAsyncThunk(
         : query;
 
       const data = await netSuiteApi.getRecords(recordType, finalQuery);
+
       return { recordType, cacheKey, data, fromCache: false };
     } catch (error) {
       return rejectWithValue(error.response?.data?.error || error.message);
