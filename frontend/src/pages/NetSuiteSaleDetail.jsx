@@ -2,8 +2,8 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { 
-  ArrowLeft, Loader2, AlertTriangle, User, Calendar, 
-  DollarSign, Package, Code, LayoutList, MapPin, 
+  ArrowLeft, Loader2, AlertTriangle, User,
+  DollarSign, Code, LayoutList, MapPin, 
   RefreshCw, Truck, Link as LinkIcon, ShoppingBag, Mail, Hash, Receipt, ExternalLink,
   FileText
 } from 'lucide-react';
@@ -41,7 +41,6 @@ const getTrackingUrl = (carrierName, trackingNumber) => {
     return `https://www.dhl.com/en/express/tracking.html?AWB=${trackingNumber}`;
   }
   
-  // Fallback for unknown carriers
   return `https://www.google.com/search?q=${trackingNumber}`;
 };
 
@@ -111,47 +110,45 @@ export default function NetSuiteSaleDetail() {
   if (!record) return null;
 
   // --- DATA EXTRACTION ---
-  const tranId = record.tranId || record.tranid || record.id || 'N/A';
-  const customerName = record.entity?.refName || record.entity?.name || 'Unknown Customer';
-  const email = record.email || record.custbody53 || 'No email provided';
+  const customerName = record.entity?.refName;
+  const email = record.email || 'No email provided';
   const salesRep = record.salesRep?.refName || 'Unassigned';
-  const source = record.source?.refName || record.sourceSystem?.refName || 'Direct/Unknown';
+  const source = record.source?.refName || 'Direct/Unknown';
   
-  const rawStatus = record.status?.refName || record.status?.name || record.status_name || 'Unknown';
-  let orderStatus = rawStatus.replace(/^Sales Order\s*:\s*/i, '').trim();
+  const rawStatus = record.status?.refName;
+  let orderStatus = rawStatus ? rawStatus.replace(/^Sales Order\s*:\s*/i, '').trim() : '';
   if (orderStatus.toLowerCase() === 'pending fulfillment') orderStatus = 'PENDING';
   
-  const rawType = record.custbody_pet_salesorder_type;
-  const orderType = typeof rawType === 'object' ? (rawType?.refName || 'WEBORDER') : 'WEBORDER';
+  const orderType = 'WEBORDER';
 
-  const orderDate = record.tranDate || record.trandate || record.createdDate;
+  const orderDate = record.tranDate;
   const formattedDate = orderDate ? new Date(orderDate).toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }) : '-';
   
-  const shipDate = record.actualShipDate || record.actualshipdate;
+  const shipDate = record.actualShipDate;
   const formattedShipDate = shipDate ? new Date(shipDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Pending Fulfillment';
 
   const subTotal = record.subtotal ?? 0;
-  const shippingCost = record.shippingCost ?? record.altShippingCost ?? 0;
+  const shippingCost = record.shippingCost ?? 0;
   const discountTotal = record.discountTotal ?? 0;
   const taxTotal = record.taxTotal ?? 0;
-  const totalAmount = record.total ?? record.foreigntotal ?? 0;
+  const totalAmount = record.total ?? 0;
 
-  const shipMethod = record.shipMethod?.refName || 'Standard Ground';
+  const shipMethod = record.shipMethod?.refName;
   
-  const trackingNumbers = record.linkedTrackingNumbers || record.linkedtrackingnumberlist || '-';
+  const trackingNumbers = record.linkedTrackingNumbers;
   let trackingList = [];
   if (trackingNumbers !== '-') {
-    trackingList = Array.isArray(trackingNumbers) ? trackingNumbers : trackingNumbers.split(/[\s,]+/).filter(Boolean);
+    trackingList = Array.isArray(trackingNumbers) ? trackingNumbers : trackingNumbers?.split(/[\s,]+/).filter(Boolean);
   }
 
-  const externalId = record.externalId || record.externalid;
+  const externalId = record.externalId;
   const cleanExternalId = externalId ? externalId.replace(/^[^#]*/, '') : '-';
-  const poNumber = record.otherRefNum || record.checkNumber || '-';
+  const poNumber = record.otherRefNum;
 
-  const shipAddress = record.shippingAddress_text || record.shipAddress || record.shipaddress || 'No shipping address provided.';
-  const billAddress = record.billingAddress_text || record.billAddress || record.billaddress || 'No billing address provided.';
+  const shipAddress = record.shippingAddress_text;
+  const billAddress = record.billingAddress_text;
 
-  const lineItems = record.item?.items || [];
+  const lineItems = record.item?.items;
 
   return (
     <div className="max-w-[1400px] mx-auto p-4 sm:p-6 space-y-6 animate-in fade-in duration-500 pb-20">
@@ -164,7 +161,7 @@ export default function NetSuiteSaleDetail() {
           </button>
           <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Order #{tranId}</h1>
+              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Order #{id}</h1>
               <span className={`px-2.5 py-1 rounded-[6px] text-[10px] font-bold uppercase tracking-widest border shadow-sm ${
                 orderStatus.toLowerCase() === 'pending' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'
               }`}>
@@ -173,6 +170,7 @@ export default function NetSuiteSaleDetail() {
               <span className="bg-slate-100 text-slate-500 border border-slate-200 px-2.5 py-1 rounded-[6px] text-[10px] font-bold uppercase tracking-widest">
                 {orderType}
               </span>
+              <span className="bg-slate-100 text-blue-600 border border-slate-200 px-2.5 py-1 rounded-[6px] text-[10px] font-bold uppercase tracking-widest">Transaction #{record.tranId}</span>
             </div>
             <p className="text-xs font-semibold text-slate-400 mt-1">{formattedDate}</p>
           </div>
@@ -224,7 +222,7 @@ export default function NetSuiteSaleDetail() {
               <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <ShoppingBag className="text-brand-gold" size={18} />
-                  <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest">Line Items <span className="text-slate-400 ml-1">({lineItems.length})</span></h2>
+                  <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest">Line Items <span className="text-slate-400 ml-1">({lineItems?.length})</span></h2>
                 </div>
               </div>
               
@@ -234,25 +232,34 @@ export default function NetSuiteSaleDetail() {
                     <tr className="text-[10px] uppercase font-bold text-slate-400 tracking-widest border-b border-slate-100">
                       <th className="py-4 pl-6 pr-4">Item</th>
                       <th className="py-4 px-4">Description</th>
-                      <th className="py-4 px-4 text-center">Qty</th>
+                      <th className="py-4 px-3 text-center" title="Quantity Ordered">Ord</th>
+                      <th className="py-4 px-3 text-center" title="Quantity Shipped / Fulfilled">Ship</th>
+                      <th className="py-4 px-3 text-center" title="Quantity Available">Avail</th>
+                      <th className="py-4 px-3 text-center" title="Quantity Backordered">B/O</th>
                       <th className="py-4 px-4 text-right">Rate</th>
                       <th className="py-4 pr-6 pl-4 text-right">Amount</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {lineItems.length > 0 ? (
+                    {lineItems?.length > 0 ? (
                       lineItems.map((line, idx) => (
                         <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
                           <td className="py-4 pl-6 pr-4 font-bold text-slate-800">{line.item?.refName || line.item?.id || `Item ${idx + 1}`}</td>
-                          <td className="py-4 px-4 text-slate-500 whitespace-normal min-w-[200px] leading-relaxed">{line.description || '-'}</td>
-                          <td className="py-4 px-4 text-center font-black text-slate-700 bg-slate-50/50 w-16">{line.quantity || 0}</td>
+                          <td className="py-4 px-4 text-slate-500 whitespace-normal min-w-[150px] max-w-[250px] leading-relaxed">{line.description || '-'}</td>
+                          
+                          {/* Fulfillment Metrics */}
+                          <td className="py-4 px-3 text-center font-black text-slate-700 bg-slate-50/50">{line.quantity || 0}</td>
+                          <td className="py-4 px-3 text-center font-bold text-emerald-600">{line.quantityFulfilled ?? line.quantityBilled ?? 0}</td>
+                          <td className="py-4 px-3 text-center font-semibold text-slate-500">{line.quantityAvailable ?? 0}</td>
+                          <td className="py-4 px-3 text-center font-semibold text-amber-500">{line.quantityBackOrdered ?? 0}</td>
+                          
                           <td className="py-4 px-4 text-right text-slate-500">${Number(line.rate || 0).toFixed(2)}</td>
                           <td className="py-4 pr-6 pl-4 text-right font-black text-slate-900">${Number(line.amount || 0).toFixed(2)}</td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan="5" className="p-10 text-center text-slate-400">
+                        <td colSpan="8" className="p-10 text-center text-slate-400">
                            No line items found on this order.
                         </td>
                       </tr>
@@ -294,6 +301,7 @@ export default function NetSuiteSaleDetail() {
                   <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Status</p>
                   <p className="text-xs font-bold text-slate-900">{formattedShipDate === 'Pending Fulfillment' ? 'Unshipped' : 'Shipped'}</p>
                 </div>
+                
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Ship Date</p>
                   <p className="text-xs font-bold text-slate-900">{formattedShipDate}</p>
@@ -304,9 +312,9 @@ export default function NetSuiteSaleDetail() {
                 </div>
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Tracking Numbers</p>
-                  {trackingList.length > 0 ? (
+                  {trackingList?.length > 0 ? (
                     <div className="flex flex-col gap-1.5">
-                      {trackingList.map((track, i) => (
+                      {trackingList?.map((track, i) => (
                         <a 
                           key={i} 
                           href={getTrackingUrl(shipMethod, track)}

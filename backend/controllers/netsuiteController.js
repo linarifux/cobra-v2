@@ -1,41 +1,6 @@
 import netSuiteService from "../services/netSuiteService.js";
 import NetSuiteOrder from "../models/NetSuiteOrder.js";
 
-// // Helper to format SuiteQL results so your frontend React components don't break
-// const normalizeSuiteQLSalesOrder = (row) => {
-//   const normalized = {
-//     id: String(row.id),
-//     tranId: row.tranid,
-//     trandate: row.trandate,
-//     total: row.total,
-//     memo: row.memo,
-//     email: row.email,
-//     actualshipdate: row.actualshipdate,
-//     linkedtrackingnumberlist: row.linkedtrackingnumberlist,
-//     typebaseddocumentnumber: row.typebaseddocumentnumber,
-//     entity: {
-//       id: row.entity,
-//       refName: row.entity_name
-//     },
-//     status: {
-//       id: row.status,
-//       refName: row.status_name
-//     },
-//     salesRep: {
-//       id: row.salesrep,
-//       refName: row.salesrep_name || "Unassigned"
-//     }
-//   };
-
-//   Object.entries(row).forEach(([key, val]) => {
-//     if (val !== null && val !== undefined && !(key in normalized)) {
-//       normalized[key] = val;
-//     }
-//   });
-
-//   return normalized;
-// };
-
 // GET /api/netsuite/sync/sales-orders
 export const syncAllOrdersBackground = async (req, res) => {
   try {
