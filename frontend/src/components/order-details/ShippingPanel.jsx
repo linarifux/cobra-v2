@@ -193,7 +193,7 @@ export default function ShippingPanel({
 
                          return activeServices.map(service => (
                            <option key={`${cId}-${service.serviceCode}`} value={`${cId}|${cType}|${service.serviceCode}`}>
-                             {cType.toUpperCase()} - {service.serviceName || service.serviceCode}
+                             {carrier.accountNumber} - {cType.toUpperCase()} - {service.serviceName}
                            </option>
                          ));
                        })}

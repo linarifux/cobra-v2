@@ -59,6 +59,7 @@ export default function CarrierTab({ division }) {
       dispatch(fetchConfiguredFreightProviders(division._id)); // Fetch configured LTLs for this division
     }
   }, [dispatch, division?._id]);
+  
 
   // 2. Fetch Live ShipStation Data
   useEffect(() => {
@@ -267,8 +268,8 @@ export default function CarrierTab({ division }) {
                   <div className="space-y-3 mb-6 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
                     <div className="flex justify-between items-center text-xs">
                       <span className="text-slate-500 font-bold">Account</span>
-                      <span className="font-black text-slate-700 truncate max-w-[120px]" title={platform.accountNumber || 'Primary'}>
-                        {platform.accountNumber || 'Primary'}
+                      <span className="font-black text-slate-700 truncate max-w-[120px]" title={platform.accountNumber}>
+                        {platform.accountNumber}
                       </span>
                     </div>
                     <div className="flex justify-between items-center text-xs">

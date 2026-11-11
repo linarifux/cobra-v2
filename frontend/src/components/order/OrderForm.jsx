@@ -5,8 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, MapPin, CreditCard,
   Trash2, Plus, MessageSquare,
-  PackageCheck, Save, Loader2, Box, Building2, User, Briefcase, Truck, ChevronDown, Search, AlertTriangle, Globe, Scale,
-  HelpCircle, Package, FileText
+  PackageCheck, Save, Loader2, Box, Building2, User, Briefcase, Truck, ChevronDown, Search, AlertTriangle, Globe, Scale
 } from 'lucide-react';
 import { toast } from 'sonner';
 import zipState from 'zip-state';
@@ -25,8 +24,6 @@ import { fetchConfiguredFreightProviders } from '../../store/slices/freightProvi
 
 // --- Utilities ---
 const generateLocalId = () => `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-const generateAutoOrderNumber = () => `ORD-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
-
 // --- Static Data ---
 const US_STATES = [
   { name: 'Alabama', code: 'AL' }, { name: 'Alaska', code: 'AK' }, { name: 'Arizona', code: 'AZ' },
@@ -70,8 +67,8 @@ export default function OrderForm() {
   const { user: currentUser } = useSelector((state) => state.auth || {});
 
   // --- Form State ---
-  const [orderNumber, setOrderNumber] = useState('');
   const [orderType, setOrderType] = useState('WEBORD');
+  const [legacyNumber, setLegacyNumber] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [divisionId, setDivisionId] = useState('');
   const [userId, setUserId] = useState('');
@@ -287,7 +284,6 @@ export default function OrderForm() {
   // --- Populate Form for Editing ---
   useEffect(() => {
     if (isEditMode && currentOrder) {
-      setOrderNumber(currentOrder.orderNumber || '');
       setOrderType(currentOrder.orderType || 'WEBORD'); 
       setCustomerId(currentOrder.customer?._id || currentOrder.customer || '');
       setDivisionId(currentOrder.division?._id || currentOrder.division || '');
@@ -429,7 +425,7 @@ export default function OrderForm() {
     setIsSaving(true);
 
     const payload = {
-      orderNumber: orderNumber.trim() || generateAutoOrderNumber(),
+      legacyNumber: legacyNumber.trim(),
       orderType: orderType, 
       customer: customerId,
       division: divisionId,
@@ -540,20 +536,19 @@ export default function OrderForm() {
             <div className="space-y-4">
               {/* Routing & Identity Fields */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2 md:col-span-1">
+                <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 flex items-center gap-1.5">
-                    Order Number <span className="normal-case tracking-normal font-medium text-slate-400 ml-1">(Auto-generates)</span>
+                    Legacy Order Number *
                   </label>
                   <input
                     className="w-full bg-white p-3 rounded-xl text-xs font-bold border border-slate-200 focus:border-brand-gold outline-none shadow-sm transition-all"
-                    value={orderNumber}
-                    onChange={(e) => setOrderNumber(e.target.value)}
-                    placeholder="e.g. ORD-998822"
+                    value={legacyNumber}
+                    onChange={(e) => setLegacyNumber(e.target.value)}
+                    placeholder="e.g. LEG-998822"
                     disabled={isEditMode}
                   />
                 </div>
-
-                <div className="col-span-2 md:col-span-1">
+               <div className="col-span-2 md:col-span-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 flex items-center gap-1.5">
                     Order Type *
                   </label>

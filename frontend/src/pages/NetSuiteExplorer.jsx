@@ -30,19 +30,22 @@ const OrderTableRow = ({ record, onClick }) => {
   const chargeCode = record.tranid;
  
   // Safely handle null/undefined, then remove everything before the first '#'
-const rawExternalId = record.externalid;
-const sourceNumber = rawExternalId?.replace(/^[^#]*/, '');
+  const rawExternalId = record.externalid;
+  const sourceNumber = rawExternalId?.replace(/^[^#]*/, '');
   
   // 2. Dynamic Customer/Sales Rep Mapping
   const orderedBy = 'Leah Mockridge GW0003';
   
-  // 3. Status Formatting
-  const rawStatus = record.status_name ;
-  let statusStr = rawStatus.replace(/^Sales Order\s*:\s*/i, '').trim();
+  // 3. Status Formatting (Strip out BOTH Sales Order and Transfer Order prefixes)
+  const rawStatus = record.status_name || '';
+  let statusStr = rawStatus.replace(/^(Sales Order|Transfer Order)\s*:\s*/i, '').trim();
   if (statusStr.toLowerCase() === 'pending fulfillment') statusStr = 'PENDING';
   
-  // 4. hardcoded Order Type
-  const orderType = 'WEBORDER'
+  // 4. Dynamic Order Type (Identify if it's a transfer or sales order from the payload)
+  let orderType = 'WEBORDER';
+  if (record.recordtype === 'transferorder' || record.type === 'TrnfrOrd') {
+    orderType = 'TRANSFER';
+  }
   
   // 5. Date Formatting
   const dateStr = record.createddate;
@@ -51,7 +54,7 @@ const sourceNumber = rawExternalId?.replace(/^[^#]*/, '');
   const shipDateStr = record.actualshipdate;
   const shipDate = shipDateStr ? new Date(shipDateStr).toLocaleDateString(undefined, { month: '2-digit', day: '2-digit', year: 'numeric' }) : 'Pending';
 
-  // 6. Tracking Numbers (Clean Pill Layout)
+  // 6. Tracking Numbers
   const rawTracking = record.linkedtrackingnumberlist;
   let trackingList = [];
   if (rawTracking) {
@@ -80,7 +83,11 @@ const sourceNumber = rawExternalId?.replace(/^[^#]*/, '');
       
       {/* Order Type */}
       <td className="py-4 px-4 whitespace-nowrap">
-        <span className="bg-slate-100 text-slate-500 px-2.5 py-1 rounded-[4px] text-[10px] font-bold uppercase tracking-wider">
+        <span className={`px-2.5 py-1 rounded-[4px] text-[10px] font-bold uppercase tracking-wider ${
+          orderType === 'TRANSFER' 
+            ? 'bg-purple-50 text-purple-600 border border-purple-100' 
+            : 'bg-slate-100 text-slate-500'
+        }`}>
           {orderType}
         </span>
       </td>
@@ -114,7 +121,7 @@ const sourceNumber = rawExternalId?.replace(/^[^#]*/, '');
         )}
       </td>
       
-      {/* Tracking - Uses flex-wrap so multiple items form a clean grid block instead of a massive vertical tower */}
+      {/* Tracking */}
       <td className="py-4 px-4 max-w-[220px]">
         {trackingList.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
@@ -147,7 +154,8 @@ export default function NetSuiteExplorer() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  const activeRecordType = 'salesOrder';
+  // FIX: Switched from 'salesOrder' to the new combined 'orders' endpoint
+  const activeRecordType = 'orders'; 
   const [viewMode, setViewMode] = useState('list');
 
   const RECORDS_PER_PAGE = 50;
@@ -230,7 +238,8 @@ export default function NetSuiteExplorer() {
     rawRecords.forEach(record => {
       const st = record.status?.refName || record.status_name;
       if (st) {
-        let clean = st.replace(/^Sales Order\s*:\s*/i, '').trim();
+        // FIX: Ensure both Transfer and Sales orders have their prefix stripped
+        let clean = st.replace(/^(Sales Order|Transfer Order)\s*:\s*/i, '').trim();
         if(clean.toLowerCase() === 'pending fulfillment') clean = 'PENDING';
         statuses.add(clean);
       }
@@ -252,7 +261,8 @@ export default function NetSuiteExplorer() {
       let matchesStatus = true;
       if (statusFilter !== 'All') {
         const recStat = record.status?.refName || record.status_name || '';
-        let cleanStat = recStat.replace(/^Sales Order\s*:\s*/i, '').trim();
+        // FIX: Enforce uniform stripping for filtering
+        let cleanStat = recStat.replace(/^(Sales Order|Transfer Order)\s*:\s*/i, '').trim();
         if(cleanStat.toLowerCase() === 'pending fulfillment') cleanStat = 'PENDING';
         matchesStatus = cleanStat === statusFilter;
       }
@@ -298,7 +308,7 @@ export default function NetSuiteExplorer() {
             <Database className="text-brand-gold" /> NetSuite Explorer
           </h1>
           <p className="text-sm font-medium text-slate-500 mt-1">
-            High-speed cached view into live NetSuite Sales Orders.
+            High-speed cached view into live NetSuite Sales Orders & Transfer Orders.
           </p>
         </div>
         
@@ -333,7 +343,7 @@ export default function NetSuiteExplorer() {
       <div className="flex-shrink-0 space-y-4">
         <div className="flex flex-col md:flex-row gap-4 justify-between bg-white border border-slate-200 p-3 rounded-2xl shadow-sm">
           <div className="flex items-center gap-2 px-5 py-2.5 rounded-[10px] text-[11px] font-bold uppercase tracking-widest whitespace-nowrap bg-slate-900 text-brand-gold shadow-md">
-            <FileText size={16} /> Sales Orders
+            <FileText size={16} /> All Orders
           </div>
 
           <form onSubmit={handleSearchSubmit} className="relative w-full md:max-w-md group">
@@ -342,7 +352,7 @@ export default function NetSuiteExplorer() {
             </button>
             <input 
               type="text"
-              placeholder="Search by SO #, Customer Name, or Memo..."
+              placeholder="Search by SO/TO #, Customer Name..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 rounded-[10px] border border-slate-200 bg-slate-50 text-sm font-medium outline-none focus:bg-white focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all"

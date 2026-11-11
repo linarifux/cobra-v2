@@ -5,17 +5,17 @@ import NetSuiteOrder from "../models/NetSuiteOrder.js";
 export const syncAllOrdersBackground = async (req, res) => {
   try {
     const locationId = 415;
-    const limit = 50; 
+    const limit = 50;
 
     res.status(202).json({
       success: true,
-      message: "NetSuite SuiteQL synchronization started in the background. You can safely navigate away.",
+      message:
+        "NetSuite SuiteQL synchronization started in the background. You can safely navigate away.",
     });
 
     runBackgroundSync(locationId, limit).catch((err) => {
       console.error("Background Sync Failed:", err);
     });
-
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -27,7 +27,9 @@ const runBackgroundSync = async (locationId, limit) => {
   let hasMore = true;
   let totalSynced = 0;
 
-  console.log(`[BACKGROUND] Starting SuiteQL sync for location ${locationId}...`);
+  console.log(
+    `[BACKGROUND] Starting SuiteQL sync for location ${locationId}...`,
+  );
 
   const sql = `
       SELECT 
@@ -45,7 +47,12 @@ const runBackgroundSync = async (locationId, limit) => {
   `;
 
   while (hasMore) {
-    const response = await netSuiteService.querySuiteQL(sql, limit, offset, true);
+    const response = await netSuiteService.querySuiteQL(
+      sql,
+      limit,
+      offset,
+      true,
+    );
     const items = response.items || [];
 
     if (items.length === 0) {
@@ -73,7 +80,9 @@ const runBackgroundSync = async (locationId, limit) => {
     if (bulkOps.length > 0) {
       const result = await NetSuiteOrder.bulkWrite(bulkOps);
       totalSynced += result.upsertedCount + result.modifiedCount;
-      console.log(`[BACKGROUND] Saved batch. Total synced so far: ${totalSynced}`);
+      console.log(
+        `[BACKGROUND] Saved batch. Total synced so far: ${totalSynced}`,
+      );
     }
 
     offset += limit;
@@ -82,11 +91,167 @@ const runBackgroundSync = async (locationId, limit) => {
     }
   }
 
-  console.log(`[BACKGROUND] SYNC COMPLETE. Total records safely stored: ${totalSynced}`);
+  console.log(
+    `[BACKGROUND] SYNC COMPLETE. Total records safely stored: ${totalSynced}`,
+  );
 };
 
+// --- NEW: SWAGGER METADATA ENDPOINT ---
+// GET /api/netsuite/metadata/:recordType
+export const getRecordMetadata = async (req, res) => {
+  try {
+    const recordType = req.params.recordType; // e.g., "salesOrder"
+    const forceRefresh = req.query.refresh === "true";
 
-// GET /api/netsuite/:recordType
+    const schema = await netSuiteService.fetchMetadataCatalog(
+      recordType,
+      forceRefresh,
+    );
+
+    res.status(200).json({
+      success: true,
+      data: schema,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message || error });
+  }
+};
+
+// --- NEW: DYNAMIC LOCATION FETCHER (REST API) ---
+// GET /api/netsuite/salesOrder/location/:locationId
+export const getSalesOrdersByLocation = async (req, res) => {
+  try {
+    const locationId = parseInt(req.params.locationId, 10);
+    if (isNaN(locationId))
+      return res
+        .status(400)
+        .json({ success: false, error: "Invalid Location ID." });
+
+    const limit = req.query.limit
+      ? Math.min(Number(req.query.limit), 1000)
+      : 50;
+    const offset = req.query.offset ? Number(req.query.offset) : 0;
+    const search = req.query.q ? req.query.q.trim() : "";
+    const forceRefresh = req.query.refresh === "true";
+
+    const locationAddresses = {
+      586: "Brandywine Green LLC\r\nHainsport Whs - NJ\r\n1509 Rt 38\r\nUnit 4\r\nHainesport NJ 08036\r\nUnited States",
+      415: "BW - CORP Address String Here",
+    };
+
+    const targetAddress = locationAddresses[locationId];
+    if (!targetAddress)
+      return res
+        .status(400)
+        .json({
+          success: false,
+          error: `No address mapped for ID ${locationId}.`,
+        });
+
+    let q = `custbody_loc_header_address IS "${targetAddress}"`;
+
+    if (search) {
+      const safeSearch = search.replace(/"/g, '\\"');
+      q += ` AND (tranId CONTAINING "${safeSearch}" OR memo CONTAINING "${safeSearch}")`;
+    }
+
+    const fields = [
+      "tranId",
+      "tranDate",
+      "total",
+      "memo",
+      "email",
+      "actualShipDate",
+      "linkedTrackingNumbers",
+      "custbody_pet_salesorder_type",
+      "entity",
+      "status",
+      "shippingAddress",
+      "salesRep",
+      "custbody_loc_header_address",
+    ].join(",");
+    const queryParams = { limit, offset, q, fields };
+
+    const data = await netSuiteService.request(
+      "GET",
+      "salesOrder",
+      queryParams,
+      null,
+      {},
+      forceRefresh,
+    );
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message || error });
+  }
+};
+
+// GET /api/netsuite/orders
+export const getAllOrders = async (req, res) => {
+  try {
+    const limit = req.query.limit ? Math.min(Number(req.query.limit), 1000) : 50;
+    const offset = req.query.offset ? Number(req.query.offset) : 0;
+    const search = req.query.q ? req.query.q.trim() : "";
+    const forceRefresh = req.query.refresh === "true";
+    
+    const locationId = 586; 
+
+    // Fetch BOTH Sales Orders and Transfer Orders
+    let whereClause = `t.recordtype IN ('salesorder', 'transferorder') AND tl.mainline = 'T' AND tl.location = ${locationId}`;
+
+    if (search) {
+      const safeSearch = search.replace(/'/g, "''").toLowerCase();
+      whereClause += ` AND (LOWER(t.tranid) LIKE '%${safeSearch}%' OR LOWER(BUILTIN.DF(t.entity)) LIKE '%${safeSearch}%')`;
+    }
+
+    const sql = `
+      SELECT 
+          t.id, 
+          t.tranid, 
+          t.createddate,
+          t.recordtype,
+          t.type,
+          t.email,
+          t.actualshipdate,
+          t.linkedtrackingnumberlist,
+          t.entity,
+          BUILTIN.DF(t.entity) AS entity_name,
+          t.status,
+          BUILTIN.DF(t.status) AS status_name,
+          t.externalid,
+          tl.location
+      FROM 
+          transaction t
+      INNER JOIN 
+          transactionLine tl ON tl.transaction = t.id
+      WHERE 
+          ${whereClause}
+      ORDER BY 
+          t.id DESC
+    `;
+
+    const suiteQlData = await netSuiteService.querySuiteQL(
+      sql,
+      limit,
+      offset,
+      forceRefresh,
+    );
+
+    const items = suiteQlData.items;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        ...suiteQlData,
+        items,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message || error });
+  }
+};
+
+// GET /api/netsuite/:recordType (Now strictly used for basic REST records like Customer, Vendor, etc.)
 export const getAllRecords = async (req, res) => {
   try {
     const recordType = req.params.recordType;
@@ -94,56 +259,6 @@ export const getAllRecords = async (req, res) => {
     const offset = req.query.offset ? Number(req.query.offset) : 0;
     const search = req.query.q ? req.query.q.trim() : "";
     const forceRefresh = req.query.refresh === "true";
-    const locationId = 415;
-
-    if (recordType === "salesOrder") {
-      let whereClause = `t.type = 'SalesOrd' AND t.custbody16 = ${locationId}`;
-
-      if (search) {
-        const safeSearch = search.replace(/'/g, "''").toLowerCase();
-        whereClause += ` AND (LOWER(t.tranid) LIKE '%${safeSearch}%' OR LOWER(BUILTIN.DF(t.entity)) LIKE '%${safeSearch}%' OR LOWER(t.memo) LIKE '%${safeSearch}%')`;
-      }
-
-      // FIX: Changed t.shipAddress to t.shipaddress
-      const sql = `
-        SELECT 
-            t.id, 
-            t.tranid, 
-            t.createddate,
-            t.email,
-            t.actualshipdate,
-            t.linkedtrackingnumberlist,
-            t.entity,
-            BUILTIN.DF(t.entity) AS entity_name,
-            t.status,
-            BUILTIN.DF(t.status) AS status_name,
-            t.externalid,
-        FROM 
-            transaction t
-        WHERE 
-            ${whereClause}
-        ORDER BY 
-            t.id DESC
-      `;
-
-      const suiteQlData = await netSuiteService.querySuiteQL(
-        sql,
-        limit,
-        offset,
-        forceRefresh
-      );
-
-      const items = (suiteQlData.items);
-
-
-      return res.status(200).json({
-        success: true,
-        data: {
-          ...suiteQlData,
-          items,
-        },
-      });
-    }
 
     const queryParams = { limit, offset };
     if (search) queryParams.q = search;
@@ -157,13 +272,11 @@ export const getAllRecords = async (req, res) => {
       forceRefresh,
     );
 
-    
     res.status(200).json({ success: true, data });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message || error });
   }
 };
-
 
 // GET /api/netsuite/:recordType/:id
 export const getRecordById = async (req, res) => {
@@ -232,4 +345,3 @@ export const deleteRecord = async (req, res) => {
     res.status(500).json({ success: false, error: error.message || error });
   }
 };
-

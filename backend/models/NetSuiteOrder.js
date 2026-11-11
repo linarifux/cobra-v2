@@ -16,6 +16,13 @@ const netSuiteOrderSchema = new mongoose.Schema(
       unique: true,
       trim: true
     },
+    legacyNumber: {
+      // netsuite order id will go here
+      type: String,
+      required: false,
+      unique: false,
+      trim: true
+    },
     // NEW: The core NetSuite internal ID used for polling
     netSuiteId: {
       type: String,

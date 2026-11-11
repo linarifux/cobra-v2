@@ -15,7 +15,7 @@ import {
   fetchCustomerUsers
 } from '../store/slices/customerSlice';
 import { fetchDivisions } from '../store/slices/divisionSlice';
-import { fetchRates } from '../store/slices/rateSlice'; 
+// import { fetchRates } from '../store/slices/rateSlice'; 
 
 // Tab Components imports
 import OverviewTab from '../components/vendors/tabs/OverviewTab';

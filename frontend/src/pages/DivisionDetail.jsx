@@ -12,7 +12,7 @@ import { fetchInventory } from '../store/slices/inventorySlice';
 import { fetchCustomers } from '../store/slices/customerSlice';
 import { fetchTypePieces } from '../store/slices/typePieceSlice';
 import { fetchReceivingLogs } from '../store/slices/receivingSlice';
-import { fetchRates } from '../store/slices/rateSlice';
+// import { fetchRates } from '../store/slices/rateSlice';
 
 // Components
 import AddDivisionForm from '../components/division/AddDivisionForm';
@@ -66,7 +66,7 @@ export default function DivisionDetail() {
     if (custStatus === 'idle' || custStatus === 'failed') dispatch(fetchCustomers());
     if (tpStatus === 'idle' || tpStatus === 'failed') dispatch(fetchTypePieces());
     if (recStatus === 'idle' || recStatus === 'failed') dispatch(fetchReceivingLogs());
-    if (rateStatus === 'idle' || rateStatus === 'failed') dispatch(fetchRates(divisionId));
+    // if (rateStatus === 'idle' || rateStatus === 'failed') dispatch(fetchRates(divisionId));
   };
 
   useEffect(() => {
@@ -218,8 +218,8 @@ export default function DivisionDetail() {
   };
 
   // --- Render Handlers ---
-  const isGlobalLoading = [divStatus, userStatus, invStatus, custStatus, tpStatus, recStatus, rateStatus].some(s => s === 'idle' || s === 'loading');
-  const hasGlobalError = [divStatus, userStatus, invStatus, custStatus, tpStatus, recStatus, rateStatus].some(s => s === 'failed');
+  const isGlobalLoading = [divStatus, userStatus, invStatus, custStatus, tpStatus, recStatus].some(s => s === 'idle' || s === 'loading');
+  const hasGlobalError = [divStatus, userStatus, invStatus, custStatus, tpStatus, recStatus].some(s => s === 'failed');
 
   if (hasGlobalError && !isGlobalLoading) {
     return (

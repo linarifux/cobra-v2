@@ -330,6 +330,7 @@ export const fetchWarehouses = catchAsync(async (req, res, next) => {
   }
 });
 
+
 export const fetchCarriers = catchAsync(async (req, res, next) => {
   try {
     const carriers = await getCarriers();

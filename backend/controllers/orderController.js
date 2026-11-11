@@ -136,6 +136,36 @@ const calculateProcessingFees = async (orderData) => {
 
 // @desc    Create a new order
 
+// Helper function to generate the sequential order number
+const generateOrderNumber = async (OrderModel) => {
+  const currentYear = new Date().getFullYear();
+  
+  // Find the absolute latest order created in the current year
+  const latestOrder = await OrderModel.findOne({
+    createdAt: { 
+      $gte: new Date(`${currentYear}-01-01T00:00:00.000Z`),
+      $lt: new Date(`${currentYear + 1}-01-01T00:00:00.000Z`)
+    },
+    orderNumber: { $regex: `^COB-${currentYear}-` } // Ensure we only look at orders matching this format
+  }).sort({ createdAt: -1 });
+
+  let nextSequence = 1;
+
+  if (latestOrder && latestOrder.orderNumber) {
+    // Extract the last 6 digits of the latest order number (e.g. "000045" from "COB-2026-000045")
+    const latestSequenceStr = latestOrder.orderNumber.split('-')[2];
+    if (latestSequenceStr && !isNaN(latestSequenceStr)) {
+      nextSequence = parseInt(latestSequenceStr, 10) + 1;
+    }
+  }
+
+  // Pad the sequence with leading zeroes up to 6 digits
+  const paddedSequence = String(nextSequence).padStart(6, '0');
+  
+  return `COB-${currentYear}-${paddedSequence}`;
+};
+
+
 export const createOrder = catchAsync(async (req, res, next) => {
 
   if (!req.body.customer && req.params.customerId) req.body.customer = req.params.customerId;
@@ -162,6 +192,9 @@ export const createOrder = catchAsync(async (req, res, next) => {
 
   // --- CALCULATE GRAND TOTAL ---
   req.body.totalAmount = calculateTotalAmount(req.body, req.body.processingFees, req.body.subtotal);
+
+  // --- GENERATE SEQUENTIAL ORDER NUMBER ---
+  req.body.orderNumber = await generateOrderNumber(Order);
 
   let order = new Order(req.body);
   order.customer = customer;
@@ -256,7 +289,7 @@ export const createOrder = catchAsync(async (req, res, next) => {
             $inc: { available: -deduction },$push: {
               auditLedger: {
                 event: 'Order Placed',
-                referenceId: order.orderNumber || order._id.toString(),
+                referenceId: order.orderNumber, // Safely records the auto-generated number
                 quantityDelta: -deduction
               }
             }
@@ -439,7 +472,7 @@ export const updateOrder = catchAsync(async (req, res, next) => {
               $inc: { available: restockQty },$push: {
                 auditLedger: {
                   event: 'Order Cancellation Restock',
-                  referenceId: order.orderNumber || order._id.toString(),
+                  referenceId: order.orderNumber,
                   quantityDelta: restockQty
                 }
               }
@@ -555,7 +588,7 @@ export const deleteOrder = catchAsync(async (req, res, next) => {
             $inc: { available: restockQty },$push: {
               auditLedger: {
                 event: 'Order Deletion Restock',
-                referenceId: order.orderNumber || order._id.toString(),
+                referenceId: order.orderNumber,
                 quantityDelta: restockQty
               }
             }

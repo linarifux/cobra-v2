@@ -9,6 +9,7 @@ const orderItemSchema = new mongoose.Schema({
 }, { _id: false });
 
 
+
 const orderSchema = new mongoose.Schema(
   {
     orderNumber: {
@@ -17,6 +18,14 @@ const orderSchema = new mongoose.Schema(
       unique: true,
       trim: true
     },
+
+     legacyNumber: {
+      type: String,
+      required: false,
+      unique: true,
+      trim: true
+    },
+
     // The 3PL Client/Brand
     customer: {
       type: mongoose.Schema.Types.ObjectId,
