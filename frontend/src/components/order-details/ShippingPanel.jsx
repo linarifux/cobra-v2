@@ -235,6 +235,7 @@ export default function ShippingPanel({
              <div className="text-sm font-bold text-slate-900 min-w-0 flex flex-col justify-between h-full mt-auto">
                  <div>
                    <p className="truncate text-slate-800 tracking-tight">{shipping.carrierType ? shipping.carrierType.toUpperCase() : 'No Carrier'} {shipping.serviceCode && `- ${shipping.serviceCode}`}</p>
+                   {console.log(shipping)}
                    <p className="text-slate-400 font-medium text-xs mt-1 border-b border-slate-100 pb-2">Cost: ${Number(shipping.shippingCost).toFixed(2)}</p>
                  </div>
                  

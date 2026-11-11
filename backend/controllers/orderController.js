@@ -149,22 +149,31 @@ const generateOrderNumber = async (OrderModel) => {
     orderNumber: { $regex: `^COB-${currentYear}-` } // Ensure we only look at orders matching this format
   }).sort({ createdAt: -1 });
 
-  let nextSequence = 1;
+  // Default starting point for a brand new database
+  let nextSequence = 135051;
 
   if (latestOrder && latestOrder.orderNumber) {
-    // Extract the last 6 digits of the latest order number (e.g. "000045" from "COB-2026-000045")
+    // Extract the last digits of the latest order number (e.g. "000045" or "135045")
     const latestSequenceStr = latestOrder.orderNumber.split('-')[2];
+    
     if (latestSequenceStr && !isNaN(latestSequenceStr)) {
-      nextSequence = parseInt(latestSequenceStr, 10) + 1;
+      const currentSerial = parseInt(latestSequenceStr, 10);
+      
+      if (currentSerial < 135000) {
+        // Jump existing small serials up to the 135k range (e.g., 45 becomes 135046)
+        nextSequence = 135000 + currentSerial + 1;
+      } else {
+        // If already in the 135k range, just increment by 1
+        nextSequence = currentSerial + 1;
+      }
     }
   }
 
-  // Pad the sequence with leading zeroes up to 6 digits
+  // Pad the sequence with leading zeroes (though it will naturally be at least 6 digits now)
   const paddedSequence = String(nextSequence).padStart(6, '0');
   
   return `COB-${currentYear}-${paddedSequence}`;
 };
-
 
 export const createOrder = catchAsync(async (req, res, next) => {
 
