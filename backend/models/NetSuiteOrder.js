@@ -1,77 +1,100 @@
 import mongoose from 'mongoose';
 
+// Map NetSuite's item.items array to COBRA's order item format
 const netSuiteOrderItemSchema = new mongoose.Schema({
-  sku: { type: String, required: true },
-  name: { type: String, required: true },
-  quantity: { type: Number, required: true, min: 1 },
-  unitPrice: { type: Number, required: true, min: 0 },
-  totalPrice: { type: Number, required: true }
+  sku: { type: String, required: true }, // Maps to: item.item.refName
+  name: { type: String, required: true }, // Maps to: item.description
+  quantity: { type: Number, required: true, min: 1 }, // Maps to: item.quantity
+  quantityFulfilled: { type: Number, default: 0 }, // Maps to: item.quantityFulfilled
+  quantityBackOrdered: { type: Number, default: 0 }, // Maps to: item.quantityBackOrdered
+  unitPrice: { type: Number, required: true, min: 0 }, // Maps to: item.rate (Sales Order only)
+  totalPrice: { type: Number, required: true } // Maps to: item.amount (Sales Order only)
 }, { _id: false });
 
 const netSuiteOrderSchema = new mongoose.Schema(
   {
+    // Maps to: tranId (e.g. SO16305425 or TO115071)
     orderNumber: {
       type: String,
       required: [true, 'Order number is required'],
       unique: true,
       trim: true
     },
+    // Maps to: otherRefNum (e.g. #6821)
     legacyNumber: {
-      // netsuite order id will go here
       type: String,
       required: false,
       unique: false,
       trim: true
     },
-    // NEW: The core NetSuite internal ID used for polling
+    // Maps to: id (The core NetSuite internal ID)
     netSuiteId: {
       type: String,
       required: [true, 'NetSuite internal ID is required'],
       unique: true,
       index: true
     },
-    // The 3PL Client/Brand
+    // NEW: Distinguish between NetSuite's 'salesOrder' and 'transferOrder'
+    netSuiteRecordType: {
+      type: String,
+      enum: ['salesOrder', 'transferOrder'],
+      required: true
+    },
+    // Maps to: location.id (e.g., 586)
+    locationId: {
+      type: Number,
+      required: false
+    },
+    // The 3PL Client/Brand (Maps to: entity.id)
     customer: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Customer',
-      required: [true, 'Order must belong to a customer']
+      required: false // Kept false because TransferOrders DO NOT have customers
     },
     // The End-Consumer / Shopper
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: false // Kept false to allow guest checkouts and preserve existing DB data safely
+      required: false 
     },
-    // Scope this order to a specific division for strict routing and access control
+    // Scope this order to a specific division
     division: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Division',
-      required: [true, 'Order must be assigned to a division']
+      required: false // May be populated later based on locationId logic
     },
+    // COBRA Status Pipeline
     status: {
       type: String,
       enum: ['New', 'Pending', 'Picked', 'Shipped', 'Hold', 'Cancelled', 'Delivered', 'Billed'],
       default: 'New'
     },
+    // Maps to: status.refName (The raw NetSuite status for debugging, e.g. "Pending Fulfillment")
+    netSuiteRawStatus: {
+      type: String,
+      required: false
+    },
     orderType: {
       type: String,
-      enum: ['WEBORD', 'PRODUCTION', 'SCRAP', 'TRADESHOW'],
+      // Added 'TRANSFER' to support Transfer Orders
+      enum: ['WEBORD', 'PRODUCTION', 'SCRAP', 'TRADESHOW', 'TRANSFER'],
       default: 'WEBORD'
     },
+    // Maps to: externalId
     chargeCode: {
       type: String,
       required: false
     },
     items: [netSuiteOrderItemSchema],
     
-    // Subtotal of just the items
+    // Maps to: subtotal
     subtotal: {
       type: Number,
       required: true,
       default: 0
     },
     
-    // Grand Total (Subtotal + Shipping + Processing)
+    // Maps to: total (Grand Total)
     totalAmount: {
       type: Number,
       required: true,
@@ -91,48 +114,51 @@ const netSuiteOrderSchema = new mongoose.Schema(
     },
 
     // --- Order Lifecycle Timestamps ---
-    shipmentCreatedAt: { type: Date }, // Triggered when pushed to ShipStation / Picked
-    shippedAt: { type: Date },         // Triggered when Label is generated / Shipped
-    deliveredAt: { type: Date },       // Triggered when carrier marks as delivered
-    cancelledAt: { type: Date },       // Triggered if order is cancelled
+    // Maps to: createdDate
+    orderDate: { type: Date },
+    shipmentCreatedAt: { type: Date }, 
+    // Maps to: actualShipDate
+    shippedAt: { type: Date }, 
+    deliveredAt: { type: Date }, 
+    cancelledAt: { type: Date }, 
 
+    // Maps to: shippingAddress payload
     shippingAddress: {
       companyName: { type: String, default: '' },
-      recipientName: { type: String, required: true },
-      email: { type: String, required: true },
-      phone: { type: String, required: true },
-      line1: { type: String, required: true },
-      line2: { type: String, default: '' },
-      city: { type: String, required: true },
-      state: { type: String, required: true },
-      zip: { type: String, required: true },
-      country: { type: String, default: 'US' }
+      recipientName: { type: String, required: false }, // Maps to: addressee
+      email: { type: String, required: false }, // Maps to: email
+      phone: { type: String, required: false }, // Maps to: shippingAddress.addrPhone
+      line1: { type: String, required: false }, // Maps to: addr1
+      line2: { type: String, default: '' }, // Maps to: addr2
+      city: { type: String, required: false }, // Maps to: city
+      state: { type: String, required: false }, // Maps to: state
+      zip: { type: String, required: false }, // Maps to: zip
+      country: { type: String, default: 'US' } // Maps to: country.refName
     },
 
-    // Comprehensive Order Processing Fees Breakdown
+    // Comprehensive Order Processing Fees Breakdown (COBRA Logic)
     processingFees: {
-      baseFee: { type: Number, default: 0 },            // Base fee for 1st 3 line items
-      weightSurcharge: { type: Number, default: 0 },    // Surcharge for weight > 20 lbs
-      lineItemSurcharge: { type: Number, default: 0 },  // Surcharge for line items > 3
-      packageSurcharge: { type: Number, default: 0 },   // Surcharge for packages > 1
-      pieceSurcharge: { type: Number, default: 0 },     // Per piece fee
-      cartonSurcharge: { type: Number, default: 0 },    // Per carton fee
-      rushFee: { type: Number, default: 0 },            // Flat fee if isRushOrder is true
-      internationalFee: { type: Number, default: 0 },   // Flat fee if isInternational is true
-      palletFee: { type: Number, default: 0 },          // Fee for pallet processing
-      totalProcessingFee: { type: Number, default: 0 }  // Grand total of all processing fees
+      baseFee: { type: Number, default: 0 },
+      weightSurcharge: { type: Number, default: 0 },
+      lineItemSurcharge: { type: Number, default: 0 },
+      packageSurcharge: { type: Number, default: 0 },
+      pieceSurcharge: { type: Number, default: 0 },
+      cartonSurcharge: { type: Number, default: 0 },
+      rushFee: { type: Number, default: 0 },
+      internationalFee: { type: Number, default: 0 },
+      palletFee: { type: Number, default: 0 },
+      totalProcessingFee: { type: Number, default: 0 }
     },
 
     // Integration with the Carrier module
     shippingDetails: {
       carrierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Carrier' },
       carrierType: { type: String }, 
-      serviceCode: { type: String }, 
-      trackingNumber: { type: String, default: '' },
-      shippingCost: { type: Number, default: 0 },
-      // Package configuration tracking
+      serviceCode: { type: String }, // Maps to: shipMethod.refName
+      trackingNumber: { type: String, default: '' }, // Maps to: linkedTrackingNumbers
+      shippingCost: { type: Number, default: 0 }, // Maps to: shippingCost
       cartoons: { type: Number, default: 0 },
-      pallets: { type: Number, default: 0 }, // Added to track pallet processing fee trigger
+      pallets: { type: Number, default: 0 }, 
       totalBoxes: { type: Number, default: 0 },
       manuallyAdjustedWeightOunces: { type: Number, default: 0 },
       totalWeightOunces: { type: Number, default: 0 },
@@ -144,6 +170,7 @@ const netSuiteOrderSchema = new mongoose.Schema(
         height: { type: Number }
       }]
     },
+    // Maps to: memo
     notes: {
       type: String,
       default: ''
@@ -200,6 +227,7 @@ netSuiteOrderSchema.pre('save', function() {
 });
 
 // INDEXING FOR PERFORMANCE
+netSuiteOrderSchema.index({ netSuiteId: 1 });
 netSuiteOrderSchema.index({ customer: 1, division: 1, status: 1 });
 netSuiteOrderSchema.index({ user: 1 });
 

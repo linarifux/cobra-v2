@@ -292,7 +292,7 @@ export default function NetSuiteExplorer() {
   const activeFilterCount = (statusFilter !== 'All' ? 1 : 0) + (customerFilter !== 'All' ? 1 : 0) + (dateFilter ? 1 : 0);
 
   const handleRowClick = (record) => {
-    navigate(`/netsuite/salesOrder/${record.id}`);
+    navigate(`/netsuite/orders/${record.id}`);
   };
 
   const isLoading = status === 'loading';

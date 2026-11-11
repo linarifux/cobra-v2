@@ -134,7 +134,7 @@ export default function App() {
 
               <Route path="/netsuite" element={<NetSuiteExplorer />} />
 
-              <Route path="/netsuite/salesOrder/:id" element={<NetSuiteSaleDetail />} />
+              <Route path="/netsuite/orders/:id" element={<NetSuiteSaleDetail />} />
               <Route path="/netsuite/customer/:id" element={<NetSuiteCustomerDetail />} />
 
               {/* Catch-all 404 for undefined routes INSIDE the dashboard */}

@@ -3,7 +3,8 @@ import {
     syncAllOrdersBackground,
     getRecordMetadata,
     getSalesOrdersByLocation,
-    getAllOrders, // <-- Import the new function
+    getAllOrders,
+    getOrderById, // <-- Import the new function
     getAllRecords,
     getRecordById,
     createRecord,
@@ -40,6 +41,13 @@ router.get('/salesOrder/location/:locationId', getSalesOrdersByLocation);
  * @access  Private
  */
 router.get('/orders', getAllOrders);
+
+/**
+ * @route   GET /api/netsuite/orders/:id
+ * @desc    Dynamically determine order type and fetch full expanded REST record
+ * @access  Private
+ */
+router.get('/orders/:id', getOrderById); // <-- Add this route here!
 
 
 // =====================================================================

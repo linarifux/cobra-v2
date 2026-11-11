@@ -5,7 +5,7 @@ import {
   ArrowLeft, Loader2, AlertTriangle, User,
   DollarSign, Code, LayoutList, MapPin, 
   RefreshCw, Truck, Link as LinkIcon, ShoppingBag, Mail, Hash, Receipt, ExternalLink,
-  FileText
+  FileText, Building2
 } from 'lucide-react';
 import { fetchNetSuiteRecordById, clearSelectedRecord } from '../store/slices/netSuiteSlice';
 
@@ -24,27 +24,16 @@ const parseNetSuiteError = (err) => {
   return 'A complex data error occurred. Check console for details.';
 };
 
-// --- TRACKING LINK GENERATOR ---
 const getTrackingUrl = (carrierName, trackingNumber) => {
-  const carrier = carrierName.toLowerCase();
-  
-  if (carrier.includes('fedex')) {
-    return `https://www.fedex.com/fedextrack/?trknbr=${trackingNumber}`;
-  }
-  if (carrier.includes('ups')) {
-    return `https://www.ups.com/track?tracknum=${trackingNumber}`;
-  }
-  if (carrier.includes('usps') || carrier.includes('postal')) {
-    return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`;
-  }
-  if (carrier.includes('dhl')) {
-    return `https://www.dhl.com/en/express/tracking.html?AWB=${trackingNumber}`;
-  }
-  
+  const carrier = carrierName?.toLowerCase() || '';
+  if (carrier.includes('fedex')) return `https://www.fedex.com/fedextrack/?trknbr=${trackingNumber}`;
+  if (carrier.includes('ups')) return `https://www.ups.com/track?tracknum=${trackingNumber}`;
+  if (carrier.includes('usps') || carrier.includes('postal')) return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`;
+  if (carrier.includes('dhl')) return `https://www.dhl.com/en/express/tracking.html?AWB=${trackingNumber}`;
   return `https://www.google.com/search?q=${trackingNumber}`;
 };
 
-export default function NetSuiteSaleDetail() {
+export default function NetSuiteOrderDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -59,17 +48,19 @@ export default function NetSuiteSaleDetail() {
     error 
   } = useSelector((state) => state.netsuite || {});
 
-  const cachedDetail = recordDetailsCache[`salesOrder:${id}`];
+  // FIX: Look in the unified 'orders' cache
+  const cachedDetail = recordDetailsCache[`orders:${id}`];
   const listPreview = useMemo(() => {
-    const list = recordsByRecordType.salesOrder || [];
+    const list = recordsByRecordType.orders || [];
     return list.find((item) => String(item.id) === String(id));
-  }, [recordsByRecordType.salesOrder, id]);
+  }, [recordsByRecordType.orders, id]);
 
   const record = selectedRecord || cachedDetail || listPreview || null;
 
   const loadOrderDetails = (forceRefresh = false) => {
     if (id) {
-      dispatch(fetchNetSuiteRecordById({ recordType: 'salesOrder', id, forceRefresh }));
+      // FIX: Hit the new smart unified endpoint
+      dispatch(fetchNetSuiteRecordById({ recordType: 'orders', id, forceRefresh }));
     }
   };
 
@@ -95,12 +86,8 @@ export default function NetSuiteSaleDetail() {
           <h3 className="text-lg font-black tracking-tight mb-2">Failed to Load Record</h3>
           <p className="text-sm font-medium opacity-80 mb-6 break-words">{parseNetSuiteError(error)}</p>
           <div className="flex items-center justify-center gap-3">
-            <button onClick={() => navigate(-1)} className="px-6 py-2.5 bg-white border border-red-200 hover:bg-red-100 text-red-600 rounded-[10px] text-xs font-bold transition-all">
-              Go Back
-            </button>
-            <button onClick={() => loadOrderDetails(true)} className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-[10px] text-xs font-bold transition-all">
-              Retry Connection
-            </button>
+            <button onClick={() => navigate(-1)} className="px-6 py-2.5 bg-white border border-red-200 hover:bg-red-100 text-red-600 rounded-[10px] text-xs font-bold transition-all">Go Back</button>
+            <button onClick={() => loadOrderDetails(true)} className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-[10px] text-xs font-bold transition-all">Retry Connection</button>
           </div>
         </div>
       </div>
@@ -109,46 +96,53 @@ export default function NetSuiteSaleDetail() {
 
   if (!record) return null;
 
-  // --- DATA EXTRACTION ---
-  const customerName = record.entity?.refName;
-  const email = record.email || 'No email provided';
-  const salesRep = record.salesRep?.refName || 'Unassigned';
-  const source = record.source?.refName || 'Direct/Unknown';
+  // --- DYNAMIC DATA EXTRACTION (Handles both SO and TO) ---
+  const isTransfer = record.transactionNumber?.startsWith('TRNFRORD');
+  const orderTypeStr = isTransfer ? 'TRANSFER' : 'WEBORDER';
+
+  // Customer vs Transfer Location
+  const customerName = record.entity?.refName; 
+  const destinationLocation = record.transferLocation?.refName;
+
+  // Employee vs Sales Rep
+  const email = record.email || record.custbody114 || 'No email provided';
+  const assignedRep = record.salesRep?.refName || record.employee?.refName || 'Unassigned';
+  const source = record.source?.refName || record.originator || 'Direct/System';
   
+  // Status Formatting
   const rawStatus = record.status?.refName;
-  let orderStatus = rawStatus ? rawStatus.replace(/^Sales Order\s*:\s*/i, '').trim() : '';
+  let orderStatus = rawStatus ? rawStatus.replace(/^(Sales Order|Transfer Order)\s*:\s*/i, '').trim() : '';
   if (orderStatus.toLowerCase() === 'pending fulfillment') orderStatus = 'PENDING';
   
-  const orderType = 'WEBORDER';
-
+  // Dates
   const orderDate = record.tranDate;
   const formattedDate = orderDate ? new Date(orderDate).toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }) : '-';
-  
   const shipDate = record.actualShipDate;
   const formattedShipDate = shipDate ? new Date(shipDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Pending Fulfillment';
 
+  // Financials (Transfers usually have 0)
   const subTotal = record.subtotal ?? 0;
   const shippingCost = record.shippingCost ?? 0;
   const discountTotal = record.discountTotal ?? 0;
   const taxTotal = record.taxTotal ?? 0;
   const totalAmount = record.total ?? 0;
 
+  // Logistics
   const shipMethod = record.shipMethod?.refName;
-  
   const trackingNumbers = record.linkedTrackingNumbers;
   let trackingList = [];
-  if (trackingNumbers !== '-') {
+  if (trackingNumbers && trackingNumbers !== '-') {
     trackingList = Array.isArray(trackingNumbers) ? trackingNumbers : trackingNumbers?.split(/[\s,]+/).filter(Boolean);
   }
 
-  const externalId = record.externalId;
-  const cleanExternalId = externalId ? externalId.replace(/^[^#]*/, '') : '-';
-  const poNumber = record.otherRefNum;
+  const externalId = record.externalId || '-';
+  const cleanExternalId = externalId !== '-' ? externalId.replace(/^[^#]*/, '') : '-';
+  const poNumber = record.otherRefNum || '-';
 
-  const shipAddress = record.shippingAddress_text;
-  const billAddress = record.billingAddress_text;
+  const shipAddress = record.shippingAddress_text || record.shippingAddress?.addrText;
+  const billAddress = record.billingAddress_text || record.billingAddress?.addrText || 'N/A for Transfers';
 
-  const lineItems = record.item?.items;
+  const lineItems = record.item?.items || [];
 
   return (
     <div className="max-w-[1400px] mx-auto p-4 sm:p-6 space-y-6 animate-in fade-in duration-500 pb-20">
@@ -167,10 +161,12 @@ export default function NetSuiteSaleDetail() {
               }`}>
                 {orderStatus}
               </span>
-              <span className="bg-slate-100 text-slate-500 border border-slate-200 px-2.5 py-1 rounded-[6px] text-[10px] font-bold uppercase tracking-widest">
-                {orderType}
+              <span className={`border px-2.5 py-1 rounded-[6px] text-[10px] font-bold uppercase tracking-widest ${isTransfer ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                {orderTypeStr}
               </span>
-              <span className="bg-slate-100 text-blue-600 border border-slate-200 px-2.5 py-1 rounded-[6px] text-[10px] font-bold uppercase tracking-widest">Transaction #{record.tranId}</span>
+              <span className="bg-slate-100 text-blue-600 border border-slate-200 px-2.5 py-1 rounded-[6px] text-[10px] font-bold uppercase tracking-widest">
+                {record.tranId}
+              </span>
             </div>
             <p className="text-xs font-semibold text-slate-400 mt-1">{formattedDate}</p>
           </div>
@@ -198,11 +194,13 @@ export default function NetSuiteSaleDetail() {
           <div className="lg:col-span-2 space-y-6">
             
             {/* Quick Metrics Row */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-white border border-slate-200 p-4 rounded-3xl shadow-sm flex flex-col justify-center">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1 flex items-center gap-1.5"><DollarSign size={14}/> Total Amount</span>
-                <span className="text-xl font-black text-slate-900">${Number(totalAmount).toFixed(2)}</span>
-              </div>
+            <div className={`grid gap-4 ${isTransfer ? 'grid-cols-3' : 'grid-cols-2 md:grid-cols-4'}`}>
+              {!isTransfer && (
+                <div className="bg-white border border-slate-200 p-4 rounded-3xl shadow-sm flex flex-col justify-center">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1 flex items-center gap-1.5"><DollarSign size={14}/> Total Amount</span>
+                  <span className="text-xl font-black text-slate-900">${Number(totalAmount).toFixed(2)}</span>
+                </div>
+              )}
               <div className="bg-white border border-slate-200 p-4 rounded-3xl shadow-sm flex flex-col justify-center">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1 flex items-center gap-1.5"><Hash size={14}/> Source Order</span>
                 <span className="text-sm font-bold text-slate-900">{cleanExternalId}</span>
@@ -236,8 +234,8 @@ export default function NetSuiteSaleDetail() {
                       <th className="py-4 px-3 text-center" title="Quantity Shipped / Fulfilled">Ship</th>
                       <th className="py-4 px-3 text-center" title="Quantity Available">Avail</th>
                       <th className="py-4 px-3 text-center" title="Quantity Backordered">B/O</th>
-                      <th className="py-4 px-4 text-right">Rate</th>
-                      <th className="py-4 pr-6 pl-4 text-right">Amount</th>
+                      {!isTransfer && <th className="py-4 px-4 text-right">Rate</th>}
+                      {!isTransfer && <th className="py-4 pr-6 pl-4 text-right">Amount</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
@@ -253,13 +251,13 @@ export default function NetSuiteSaleDetail() {
                           <td className="py-4 px-3 text-center font-semibold text-slate-500">{line.quantityAvailable ?? 0}</td>
                           <td className="py-4 px-3 text-center font-semibold text-amber-500">{line.quantityBackOrdered ?? 0}</td>
                           
-                          <td className="py-4 px-4 text-right text-slate-500">${Number(line.rate || 0).toFixed(2)}</td>
-                          <td className="py-4 pr-6 pl-4 text-right font-black text-slate-900">${Number(line.amount || 0).toFixed(2)}</td>
+                          {!isTransfer && <td className="py-4 px-4 text-right text-slate-500">${Number(line.rate || 0).toFixed(2)}</td>}
+                          {!isTransfer && <td className="py-4 pr-6 pl-4 text-right font-black text-slate-900">${Number(line.amount || 0).toFixed(2)}</td>}
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan="8" className="p-10 text-center text-slate-400">
+                        <td colSpan={isTransfer ? "6" : "8"} className="p-10 text-center text-slate-400">
                            No line items found on this order.
                         </td>
                       </tr>
@@ -268,28 +266,36 @@ export default function NetSuiteSaleDetail() {
                 </table>
               </div>
               
-              {/* Financial Totals Footer */}
-              <div className="bg-slate-50/80 p-5 border-t border-slate-100 flex flex-col items-end space-y-2 text-xs">
-                <div className="flex justify-between w-48 text-slate-500"><span className="font-medium">Subtotal</span> <span>${Number(subTotal).toFixed(2)}</span></div>
-                {discountTotal < 0 && <div className="flex justify-between w-48 text-emerald-500"><span className="font-medium">Discount</span> <span>-${Math.abs(discountTotal).toFixed(2)}</span></div>}
-                <div className="flex justify-between w-48 text-slate-500"><span className="font-medium">Shipping</span> <span>${Number(shippingCost).toFixed(2)}</span></div>
-                <div className="flex justify-between w-48 text-slate-500"><span className="font-medium">Tax</span> <span>${Number(taxTotal).toFixed(2)}</span></div>
-                <div className="flex justify-between w-48 text-slate-900 pt-2 border-t border-slate-200 mt-2"><span className="font-black">Total</span> <span className="font-black text-sm">${Number(totalAmount).toFixed(2)}</span></div>
-              </div>
+              {/* Financial Totals Footer (Only for Sales Orders) */}
+              {!isTransfer && (
+                <div className="bg-slate-50/80 p-5 border-t border-slate-100 flex flex-col items-end space-y-2 text-xs">
+                  <div className="flex justify-between w-48 text-slate-500"><span className="font-medium">Subtotal</span> <span>${Number(subTotal).toFixed(2)}</span></div>
+                  {discountTotal < 0 && <div className="flex justify-between w-48 text-emerald-500"><span className="font-medium">Discount</span> <span>-${Math.abs(discountTotal).toFixed(2)}</span></div>}
+                  <div className="flex justify-between w-48 text-slate-500"><span className="font-medium">Shipping</span> <span>${Number(shippingCost).toFixed(2)}</span></div>
+                  <div className="flex justify-between w-48 text-slate-500"><span className="font-medium">Tax</span> <span>${Number(taxTotal).toFixed(2)}</span></div>
+                  <div className="flex justify-between w-48 text-slate-900 pt-2 border-t border-slate-200 mt-2"><span className="font-black">Total</span> <span className="font-black text-sm">${Number(totalAmount).toFixed(2)}</span></div>
+                </div>
+              )}
             </div>
           </div>
 
           {/* SIDEBAR COLUMN (Right 1/3) */}
           <div className="space-y-6">
             
-            {/* Customer Box */}
+            {/* Dynamic Customer / Destination Box */}
             <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm">
-              <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2"><User size={14}/> Customer Details</h3>
-              <p className="text-sm font-bold text-slate-900 mb-1">{customerName}</p>
-              <p className="text-xs font-medium text-blue-600 flex items-center gap-1.5 mb-4 hover:underline cursor-pointer"><Mail size={12}/> {email}</p>
-              <div className="pt-4 border-t border-slate-100">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Sales Rep</p>
-                <p className="text-xs font-semibold text-slate-700">{salesRep}</p>
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2">
+                {isTransfer ? <><Building2 size={14}/> Destination Location</> : <><User size={14}/> Customer Details</>}
+              </h3>
+              <p className="text-sm font-bold text-slate-900 mb-1">{isTransfer ? destinationLocation : customerName}</p>
+              
+              {!isTransfer && (
+                <p className="text-xs font-medium text-blue-600 flex items-center gap-1.5 mb-4 hover:underline cursor-pointer"><Mail size={12}/> {email}</p>
+              )}
+              
+              <div className={`pt-4 border-t border-slate-100 ${isTransfer && 'mt-4'}`}>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">{isTransfer ? 'Assigned Employee' : 'Sales Rep'}</p>
+                <p className="text-xs font-semibold text-slate-700">{assignedRep}</p>
               </div>
             </div>
 
@@ -308,7 +314,7 @@ export default function NetSuiteSaleDetail() {
                 </div>
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Carrier Method</p>
-                  <p className="text-xs font-bold text-slate-900">{shipMethod}</p>
+                  <p className="text-xs font-bold text-slate-900">{shipMethod || 'Unknown'}</p>
                 </div>
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Tracking Numbers</p>
@@ -343,12 +349,15 @@ export default function NetSuiteSaleDetail() {
                   {shipAddress}
                 </p>
               </div>
-              <div>
-                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 flex items-center gap-2"><FileText size={14}/> Billing Address</h3>
-                <p className="text-xs font-medium text-slate-700 whitespace-pre-line leading-relaxed bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                  {billAddress}
-                </p>
-              </div>
+              
+              {!isTransfer && (
+                <div>
+                  <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 flex items-center gap-2"><FileText size={14}/> Billing Address</h3>
+                  <p className="text-xs font-medium text-slate-700 whitespace-pre-line leading-relaxed bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                    {billAddress}
+                  </p>
+                </div>
+              )}
             </div>
 
           </div>

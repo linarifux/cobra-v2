@@ -251,6 +251,57 @@ export const getAllOrders = async (req, res) => {
   }
 };
 
+
+// GET /api/netsuite/orders/:id
+export const getOrderById = async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id, 10);
+    if (isNaN(orderId)) {
+      return res.status(400).json({ success: false, error: "Invalid Order ID." });
+    }
+
+    const queryParams = { ...req.query };
+    const forceRefresh = queryParams.refresh === "true";
+    delete queryParams.refresh;
+    if (queryParams.expandSubResources === undefined) {
+      queryParams.expandSubResources = "true";
+    }
+
+    // STEP 1: Determine the exact record type using a lightning-fast SuiteQL query
+    const sql = `SELECT recordtype FROM transaction WHERE id = ${orderId}`;
+    const suiteQlData = await netSuiteService.querySuiteQL(sql, 1, 0, forceRefresh);
+
+    if (!suiteQlData.items || suiteQlData.items.length === 0) {
+      return res.status(404).json({ success: false, error: "Order not found in NetSuite." });
+    }
+
+    // NetSuite returns standard internal strings like 'salesorder' or 'transferorder'
+    let rawRecordType = suiteQlData.items[0].recordtype;
+    
+    // Format the string to match the REST API endpoint requirement (camelCase)
+    let restEndpointType;
+    if (rawRecordType === 'salesorder') restEndpointType = 'salesOrder';
+    else if (rawRecordType === 'transferorder') restEndpointType = 'transferOrder';
+    else restEndpointType = rawRecordType; // Fallback for safety
+
+    // STEP 2: Fetch the full, expanded record using the standard REST API
+    const data = await netSuiteService.request(
+      "GET",
+      `${restEndpointType}/${orderId}`,
+      queryParams,
+      null,
+      {},
+      forceRefresh,
+    );
+
+    res.status(200).json({ success: true, data, __recordType: restEndpointType });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message || error });
+  }
+};
+
+
+
 // GET /api/netsuite/:recordType (Now strictly used for basic REST records like Customer, Vendor, etc.)
 export const getAllRecords = async (req, res) => {
   try {
