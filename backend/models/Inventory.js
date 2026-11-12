@@ -17,6 +17,10 @@ const inventorySchema = new mongoose.Schema(
       unique: true,
       trim: true,
     },
+    corporateSku: {
+      type: String,
+      trim: true,
+    },
     itemName: { 
       type: String, 
       required: [true, 'Item name is required'],
@@ -73,6 +77,7 @@ const inventorySchema = new mongoose.Schema(
     admin: { type: Boolean, default: false },
     offWeb: { type: Boolean, default: false },
 
+    
     // --- Pricing ---
     price: { type: Number, default: 0, min: 0 },
     price2: { type: Number, default: 0, min: 0 },

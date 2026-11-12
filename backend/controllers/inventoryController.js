@@ -10,6 +10,7 @@ export const createInventory = catchAsync(async (req, res, next) => {
   if (!req.body.customer && req.params.customerId) {
     req.body.customer = req.params.customerId;
   }
+  
 
   // PROACTIVE ERROR HANDLING: Prevent Duplicate Product Codes
   if (req.body.productCode) {
@@ -18,6 +19,7 @@ export const createInventory = catchAsync(async (req, res, next) => {
       return next(new AppError(`The Product Code '${req.body.productCode}' is already in use. Please choose a unique identifier.`, 400));
     }
   }
+
 
   // Automatically inject the initial baseline ledger entry if stock is provided
   if (req.body.available > 0 && (!req.body.auditLedger || req.body.auditLedger.length === 0)) {

@@ -248,6 +248,9 @@ export default function InventoryDetail() {
                 <span className="text-[11px] font-mono font-black text-slate-900 uppercase tracking-widest bg-brand-gold px-3 py-1 rounded-lg shadow-sm">
                   SKU: {item.productCode || item.sku || 'N/A'}
                 </span>
+                <span className="text-[11px] font-mono font-black text-slate-900 uppercase tracking-widest bg-brand-gold px-3 py-1 rounded-lg shadow-sm">
+                  Corporate SKU: {item.corporateSku || 'N/A'}
+                </span>
                 
                 {/* PROMINENT TYPE PIECE BADGE */}
                 {item.typePiece && (

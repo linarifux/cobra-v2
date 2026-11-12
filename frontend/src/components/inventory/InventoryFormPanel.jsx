@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 
 const INITIAL_FORM_STATE = {
-  productCode: '', description: '', description2: '', hssCode: '', division: '',
+  productCode: '', corporateSku: '', description: '', description2: '', hssCode: '', division: '',
   category1: '', category2: '', category3: '', typePiece: '', 
   locations: [], 
   admin: false, offWeb: false, status: 'Active', price: 0, price2: 0,
@@ -81,6 +81,7 @@ export default function InventoryFormPanel({
 
       setFormData({
         productCode: itemToEdit.productCode || '',
+        corporateSku: itemToEdit.corporateSku || '',
         description: itemToEdit.description || itemToEdit.itemName || '',
         description2: itemToEdit.description2 || '',
         hssCode: itemToEdit.hssCode || '',
@@ -229,6 +230,7 @@ export default function InventoryFormPanel({
 
     const payload = {
       ...formData,
+      corporateSku: formData.corporateSku || '',
       sku: formData.productCode, 
       itemName: formData.description,
       price: Number(formData.price) || 0,
@@ -341,6 +343,10 @@ export default function InventoryFormPanel({
               <div className="flex items-center">
                 <label className="w-1/3 text-sm font-semibold text-slate-600">Product Code</label>
                 <input required type="text" value={formData.productCode} onChange={e => setFormData({...formData, productCode: e.target.value})} className={`w-2/3 ${inputClass}`} disabled={isSubmitting} />
+              </div>
+              <div className="flex items-center">
+                <label className="w-1/3 text-sm font-semibold text-slate-600">Corporate SKU</label>
+                <input type="text" value={formData.corporateSku} onChange={e => setFormData({...formData, corporateSku: e.target.value})} className={`w-2/3 ${inputClass}`} disabled={isSubmitting} />
               </div>
               <div className="flex items-center">
                 <label className="w-1/3 text-sm font-semibold text-slate-600">Description</label>
