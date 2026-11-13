@@ -223,6 +223,18 @@ export default function UserModal({
               </div>
             </div>
 
+            {/* Comments section */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 ml-1">Comments</label>
+              <textarea
+                value={formData.comments || ''}
+                onChange={(e) => setFormData({...formData, comments: e.target.value})}
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-gold transition-all"
+                placeholder="your comments here..."
+                rows="3"
+              />
+            </div>
+
             {/* 3. Access Controls */}
             <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-5">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">

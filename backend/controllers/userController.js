@@ -8,7 +8,7 @@ import { parse } from 'csv-parse/sync';
 // @route   POST /api/v1/users
 export const createUser = catchAsync(async (req, res, next) => {
   let { 
-    name, email, phone, addresses, userAddress, password, 
+    name, email, phone, addresses, userAddress, comments, password, 
     portal, role, customer, divisions, chargeCode, orderLimit, 
     showCostsInCp, isActive, releasePendingOrders 
   } = req.body;
@@ -34,7 +34,8 @@ export const createUser = catchAsync(async (req, res, next) => {
     email,
     phone, 
     userAddress, // Stored directly on the user profile
-    addresses: addresses || [], 
+    addresses: addresses || [],
+    comments,
     password,
     portal,
     role,

@@ -33,6 +33,10 @@ const userSchema = new mongoose.Schema({
     zipCode: { type: String, trim: true },
     country: { type: String, trim: true, default: 'US' }
   },
+  comments: {
+    type: String,
+    trim: true
+  },
   addresses: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Address'

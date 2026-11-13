@@ -27,6 +27,7 @@ const INITIAL_FORM_STATE = {
     zipCode: '',
     country: 'US'
   },
+  comments: '',
   password: '',
   portal: 'admin',
   role: 'admin',
@@ -62,6 +63,7 @@ export default function AdminUsersPage() {
   const canManageUsers = ['admin', 'super_admin'].includes(currentUser?.role);
   const isSuperAdmin = currentUser?.role === 'super_admin';
 
+  
   // Fetch dependencies on mount
   useEffect(() => {
     dispatch(fetchUsers());
@@ -142,6 +144,7 @@ export default function AdminUsersPage() {
         zipCode: primaryAddress.zipCode || '',
         country: primaryAddress.country || 'US'
       },
+      comments: user.comments || '',
       password: '', 
       portal: user.portal || 'admin',
       role: user.role || 'admin',
