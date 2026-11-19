@@ -44,6 +44,7 @@ router.post('/shipments/:shipmentId/get-rates', fetchRatesWithShipmentId);
 // --- Fulfillment & Logistics ---
 // Restrict to admins and staff members
 router.post('/label/:orderId', restrictTo('admin', 'super_admin', 'staff'), generateOrderLabel);
+
 router.post('/shipments/:orderId', restrictTo('admin', 'super_admin', 'staff'), createOrderShipment);
 
 // View/Download/Cancel/Void operations

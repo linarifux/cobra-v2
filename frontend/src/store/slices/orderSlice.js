@@ -43,12 +43,11 @@ export const fetchOrderById = createAsyncThunk(
   }
 );
 
-// NEW: Fetch Orders by User ID 
+// Fetch Orders by User ID 
 export const fetchOrdersByUser = createAsyncThunk(
   "orders/fetchOrdersByUser",
   async (userId, { rejectWithValue }) => {
     try {
-      // Assuming you mapped it to /orders/user/:userId in your backend routes
       const response = await api.get(`/orders/user/${userId}`);
       return response.data.data.orders || response.data.data || [];
     } catch (error) {
@@ -69,6 +68,21 @@ export const createOrder = createAsyncThunk(
     } catch (error) {
       return rejectWithValue(
         error.response?.data?.message || error.message || "Failed to create order"
+      );
+    }
+  }
+);
+
+// NEW: Convert NetSuite Order to COBRA Order
+export const convertNetSuiteToCobra = createAsyncThunk(
+  "orders/convertNetSuite",
+  async (netSuitePayload, { rejectWithValue }) => {
+    try {
+      const response = await api.post("/orders/convert-netsuite", netSuitePayload);
+      return response.data.data; 
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || error.message || "Failed to convert NetSuite order"
       );
     }
   }
@@ -103,7 +117,6 @@ export const deleteOrder = createAsyncThunk(
     }
   }
 );
-
 
 
 // 6. Generate New Label via ShipStation
@@ -182,7 +195,6 @@ export const createOrderShipment = createAsyncThunk(
   }
 );
 
-
 // --- Slice Definition ---
 const orderSlice = createSlice({
   name: "orders",
@@ -248,6 +260,12 @@ const orderSlice = createSlice({
 
       // Create Order
       .addCase(createOrder.fulfilled, (state, action) => {
+        state.items.unshift(action.payload);
+      })
+      
+      // Convert NetSuite Order
+      .addCase(convertNetSuiteToCobra.fulfilled, (state, action) => {
+        // Unshift the newly converted COBRA order into the state so it immediately appears in the list
         state.items.unshift(action.payload);
       })
 

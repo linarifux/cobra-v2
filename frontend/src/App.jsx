@@ -40,7 +40,7 @@ import TestCarrier from './pages/TestCarrier';
 import VendorCarriersPage from './pages/VendorCarriersPage';
 import Billing from './pages/Billing';
 import NetSuiteExplorer from './pages/NetSuiteExplorer';
-import NetSuiteSaleDetail from './pages/NetSuiteSaleDetail';
+import NetSuiteOrderDetail from './pages/NetSuiteOrderDetail';
 import NetSuiteCustomerDetail from './pages/NetSuiteCustomerDetail';
 
 /**
@@ -134,7 +134,7 @@ export default function App() {
 
               <Route path="/netsuite" element={<NetSuiteExplorer />} />
 
-              <Route path="/netsuite/orders/:id" element={<NetSuiteSaleDetail />} />
+              <Route path="/netsuite/orders/:id" element={<NetSuiteOrderDetail />} />
               <Route path="/netsuite/customer/:id" element={<NetSuiteCustomerDetail />} />
 
               {/* Catch-all 404 for undefined routes INSIDE the dashboard */}

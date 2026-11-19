@@ -86,6 +86,13 @@ const orderSchema = new mongoose.Schema(
       default: false
     },
 
+    // Order Source Tracking for Multi-Channel Integration
+    orderSource: {
+      type: String,
+      enum: ['NETSUITE', 'WOOCOMMERCE', 'COBRA'],
+      default: 'COBRA',
+      required: false
+    },
 
     // --- NEW: Order Lifecycle Timestamps ---
     shipmentCreatedAt: { type: Date }, // Triggered when pushed to ShipStation / Picked

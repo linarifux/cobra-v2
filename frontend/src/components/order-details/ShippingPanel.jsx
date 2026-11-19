@@ -34,7 +34,7 @@ export default function ShippingPanel({
   // Track Live Rate Shopper Statuses
   const { shipmentRates = [], shipmentRatesStatus } = useSelector(state => state.rates || {});
   
-  // NEW: Tap into the global Redux status to know when DB configurations are loading
+  // Tap into the global Redux status to know when DB configurations are loading
   const { status: carrierStatus } = useSelector(state => state.carriers || {});
   const { status: freightStatus } = useSelector(state => state.freightProviders || {});
 
@@ -48,6 +48,9 @@ export default function ShippingPanel({
   const displayBoxes = totalBoxesCount !== undefined ? totalBoxesCount : packages?.length || 0;
   const displayLbs = Math.floor((totalItemWeightOz || 0) / 16);
   const displayOz = Math.round((totalItemWeightOz || 0) % 16);
+  
+  // Flag to completely hide the weight display if it's strictly 0
+  const hasWeight = displayLbs > 0 || displayOz > 0;
 
   const [modalLbs, setModalLbs] = useState(0);
   const [modalOz, setModalOz] = useState(0);
@@ -235,7 +238,6 @@ export default function ShippingPanel({
              <div className="text-sm font-bold text-slate-900 min-w-0 flex flex-col justify-between h-full mt-auto">
                  <div>
                    <p className="truncate text-slate-800 tracking-tight">{shipping.carrierType ? shipping.carrierType.toUpperCase() : 'No Carrier'} {shipping.serviceCode && `- ${shipping.serviceCode}`}</p>
-                   {console.log(shipping)}
                    <p className="text-slate-400 font-medium text-xs mt-1 border-b border-slate-100 pb-2">Cost: ${Number(shipping.shippingCost).toFixed(2)}</p>
                  </div>
                  
@@ -273,16 +275,21 @@ export default function ShippingPanel({
            </button>
          </div>
          
-         <div className="text-xs font-bold text-slate-900 mt-auto grid grid-cols-5 gap-2 divide-x divide-slate-200/60 items-end pb-1">
-             <div className="col-span-2">
-               <p className="text-base sm:text-lg font-black text-slate-800 tracking-tight flex items-baseline">
-                 {displayLbs} <span className="text-[9px] font-bold text-slate-400 mr-1 ml-0.5">lb</span>
-                 {displayOz} <span className="text-[9px] font-bold text-slate-400 ml-0.5">oz</span>
-               </p>
-               <p className="text-slate-400 text-[8px] font-bold mt-0.5 uppercase tracking-wider">Total Wgt</p>
-               {renderAdjustmentBadge()}
-             </div>
-             <div className="pl-2 sm:pl-2 flex flex-col justify-end">
+         <div className={`text-xs font-bold text-slate-900 mt-auto grid gap-2 items-end pb-1 ${hasWeight ? 'grid-cols-5 divide-x divide-slate-200/60' : 'grid-cols-3 divide-x divide-slate-200/60'}`}>
+             
+             {/* Only render weight block if weight is strictly greater than 0 */}
+             {hasWeight && (
+               <div className="col-span-2">
+                 <p className="text-base sm:text-lg font-black text-slate-800 tracking-tight flex items-baseline">
+                   {displayLbs} <span className="text-[9px] font-bold text-slate-400 mr-1 ml-0.5">lb</span>
+                   {displayOz} <span className="text-[9px] font-bold text-slate-400 ml-0.5">oz</span>
+                 </p>
+                 <p className="text-slate-400 text-[8px] font-bold mt-0.5 uppercase tracking-wider">Total Wgt</p>
+                 {renderAdjustmentBadge()}
+               </div>
+             )}
+             
+             <div className={`${hasWeight ? 'pl-2 sm:pl-2' : ''} flex flex-col justify-end`}>
                <p className="text-lg sm:text-xl font-black text-slate-800 tracking-tight truncate">{displayBoxes}</p>
                <p className="text-slate-400 text-[8px] font-bold mt-0.5 uppercase tracking-wider">Boxes</p>
              </div>

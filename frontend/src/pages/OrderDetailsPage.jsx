@@ -528,14 +528,16 @@ export default function OrderDetailsPage() {
       doc.text("SHIP TO:", 110, addressBlockY);
       doc.setFont('helvetica', 'normal');
 
+      
       let currentYOffset = addressBlockY;
-      const recipientName = address.name;
+      const recipientName = address.name;    
+      const companyName = address.companyName;
 
-      if(address.companyName){
-        doc.text(`${address.companyName}`, 130, currentYOffset);
+      if(companyName){
+        doc.text(`${companyName}`, 130, currentYOffset);
         currentYOffset += 5;
       }
-      doc.text(`${address.companyName? 'c/o ' : ''}${recipientName}`, 130, currentYOffset);
+      doc.text(`${companyName? 'c/o ' : ''}${recipientName}`, 130, currentYOffset);
       currentYOffset += 5;
 
       doc.text(`${address.street || ''} ${address.line2 || ''}`.trim(), 130, currentYOffset);
@@ -916,6 +918,7 @@ export default function OrderDetailsPage() {
         }))
       }
     };
+    
 
     try {
       // Save modified metrics to database instantly

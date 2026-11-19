@@ -163,3 +163,37 @@ export const deleteInventory = catchAsync(async (req, res, next) => {
     data: null
   });
 });
+
+
+
+
+// @desc    Get single inventory item by Division ID and Corporate SKU
+// @route   GET /api/v1/inventory/lookup/division/:divisionId/sku/:corporateSku
+export const getInventoryByDivisionAndCorporateSku = catchAsync(async (req, res, next) => {
+  const { divisionId, corporateSku } = req.params;
+
+  if (!divisionId || !corporateSku) {
+    return next(new AppError('Please provide both division ID and Corporate SKU', 400));
+  }
+
+  // Use case-insensitive regex for the SKU to prevent mismatch errors
+  const inventory = await Inventory.findOne({ 
+    division: divisionId, 
+    corporateSku: { $regex: new RegExp(`^${corporateSku.trim()}$`, 'i') } 
+  })
+    .populate('customer', 'customerName contactEmail')
+    .populate('division', 'divisionName divisionCode')
+    .populate('category1', 'categoryName')
+    .populate('category2', 'categoryName')
+    .populate('category3', 'categoryName')
+    .populate('locations', 'designation storageCategory level');
+
+  if (!inventory) {
+    return next(new AppError(`No inventory item found for Corporate SKU '${corporateSku}' in the specified division.`, 404));
+  }
+
+  res.status(200).json({
+    status: 'success',
+    data: { inventory }
+  });
+});

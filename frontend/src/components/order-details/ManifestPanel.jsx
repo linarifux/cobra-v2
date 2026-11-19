@@ -4,8 +4,9 @@ import { PackageCheck, Trash2, ChevronDown, Search, Plus, Loader2 } from 'lucide
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 
-// Imported fetchInventory thunk for real-time DB synchronization
-import { fetchInventory } from '../../store/slices/inventorySlice';
+import { fetchInventory, fetchInventoryByLookup } from '../../store/slices/inventorySlice';
+
+const GATEWAY_DIVISION_ID = "6a970ae2a05720738c1318ab"; 
 
 export default function ManifestPanel({ items, setItems, inventoryData, inventoryStatus }) {
   const dispatch = useDispatch(); 
@@ -13,11 +14,68 @@ export default function ManifestPanel({ items, setItems, inventoryData, inventor
   const [isInventoryDropdownOpen, setIsInventoryDropdownOpen] = useState(false);
   const [inventorySearch, setInventorySearch] = useState('');
   const [newItem, setNewItem] = useState({ name: '', sku: '', qty: 1, price: 0, weight: 0 });
+  const [isMappingItems, setIsMappingItems] = useState(false);
   
   const inventoryDropdownRef = useRef(null);
-
   const generateLocalId = () => `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
+  // --- AUTOMATED API MAPPING FOR NETSUITE ITEMS ---
+  useEffect(() => {
+    const mapItemsViaApi = async () => {
+      if (!items || items.length === 0) return;
+
+      // Find items that haven't been mapped via the API yet
+      const unmappedItems = items.filter(item => !item.mappedViaApi);
+      if (unmappedItems.length === 0) return;
+
+      setIsMappingItems(true);
+      let updatedItems = [...items];
+      let hasChanges = false;
+
+      for (let item of unmappedItems) {
+        try {
+          // Call the endpoint you created to lookup by division and corporateSku
+          const action = await dispatch(fetchInventoryByLookup({ 
+            divisionId: GATEWAY_DIVISION_ID, 
+            corporateSku: item.sku 
+          })).unwrap();
+
+          if (action && action.itemName) {
+            // Match found! Update the item name with the COBRA database name
+            const itemIndex = updatedItems.findIndex(i => i.id === item.id);
+            if (itemIndex !== -1) {
+              updatedItems[itemIndex] = {
+                ...updatedItems[itemIndex],
+                name: action.itemName, // Show the official COBRA name
+                mappedViaApi: true,    // Mark as mapped so we don't fetch again
+                weight: action.weight || updatedItems[itemIndex].weight
+              };
+              hasChanges = true;
+            }
+          } else {
+            // Mark as checked even if not found to prevent infinite loops
+            const itemIndex = updatedItems.findIndex(i => i.id === item.id);
+            if (itemIndex !== -1) updatedItems[itemIndex].mappedViaApi = true;
+            hasChanges = true;
+          }
+        } catch (err) {
+          // Endpoint threw 404 (Not found), mark as checked and move on
+          const itemIndex = updatedItems.findIndex(i => i.id === item.id);
+          if (itemIndex !== -1) updatedItems[itemIndex].mappedViaApi = true;
+          hasChanges = true;
+        }
+      }
+
+      if (hasChanges) {
+        setItems(updatedItems);
+      }
+      setIsMappingItems(false);
+    };
+
+    mapItemsViaApi();
+  }, [items, dispatch, setItems]);
+
+  // --- DROPDOWN LOGIC ---
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (inventoryDropdownRef.current && !inventoryDropdownRef.current.contains(event.target)) {
@@ -33,6 +91,7 @@ export default function ManifestPanel({ items, setItems, inventoryData, inventor
       id: inv._id,
       name: inv.itemName || 'Unnamed Item',
       sku: inv.sku || '',
+      corporateSku: inv.corporateSku || '', 
       price: inv.unitCost || inv.price || 0,
       weight: inv.weight || 0,
       stock: Number(inv.available) || 0 
@@ -42,7 +101,8 @@ export default function ManifestPanel({ items, setItems, inventoryData, inventor
   const filteredInventories = useMemo(() => {
     return availableInventories.filter(inv =>
       inv.name.toLowerCase().includes(inventorySearch.toLowerCase()) ||
-      inv.sku.toLowerCase().includes(inventorySearch.toLowerCase())
+      inv.sku.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+      inv.corporateSku.toLowerCase().includes(inventorySearch.toLowerCase())
     );
   }, [availableInventories, inventorySearch]);
 
@@ -50,11 +110,11 @@ export default function ManifestPanel({ items, setItems, inventoryData, inventor
     if (!newItem.name || newItem.price === undefined) return toast.error("Please select an item to add.");
     
     const qtyToAdd = Number(newItem.qty) || 1;
-    const matchedStockItem = availableInventories.find(inv => inv.sku === newItem.sku);
+    // Verify against both COBRA SKU and NetSuite Corporate SKU
+    const matchedStockItem = availableInventories.find(inv => inv.sku === newItem.sku || inv.corporateSku === newItem.sku);
     
     if (!matchedStockItem) return toast.error("Item not found in inventory.");
     
-    // Validate against current known stock + what is already drafted in the local `items` list
     const draftedItem = items.find(i => i.sku === newItem.sku);
     const draftedQty = draftedItem ? draftedItem.qty : 0;
     
@@ -72,7 +132,8 @@ export default function ManifestPanel({ items, setItems, inventoryData, inventor
           id: generateLocalId(), 
           qty: qtyToAdd, 
           price: Number(newItem.price), 
-          weight: Number(newItem.weight || 0) 
+          weight: Number(newItem.weight || 0),
+          mappedViaApi: true 
         }
       ]);
     }
@@ -83,7 +144,7 @@ export default function ManifestPanel({ items, setItems, inventoryData, inventor
 
   const handleRemoveItem = (itemToRemove) => {
     setItems(items.filter(i => i.id !== itemToRemove.id));
-    toast.success("Item removed. Press 'Save Changes' to push updates to the database.");
+    toast.success("Item removed.");
   };
 
   const handleQtyChange = (item, newQtyString) => {
@@ -93,10 +154,9 @@ export default function ManifestPanel({ items, setItems, inventoryData, inventor
 
     if (difference === 0) return; 
 
-    const matchedStockItem = availableInventories.find(inv => inv.sku === item.sku);
+    const matchedStockItem = availableInventories.find(inv => inv.sku === item.sku || inv.corporateSku === item.sku);
     if (!matchedStockItem) return toast.error("Item not found in inventory.");
 
-    // Validate if increasing quantity
     if (difference > 0 && matchedStockItem.stock < difference) {
       return toast.error(`Insufficient stock. Only ${matchedStockItem.stock} more available.`);
     }
@@ -115,128 +175,140 @@ export default function ManifestPanel({ items, setItems, inventoryData, inventor
 
   return (
     <div className="bg-white/40 backdrop-blur-2xl border border-white/60 p-6 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] relative z-30">
-      <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-5 flex items-center gap-2 border-b border-white/60 pb-3">
-        <PackageCheck size={14} /> Edit Manifest Items
-      </h3>
+      <div className="flex items-center justify-between border-b border-white/60 pb-3 mb-5">
+        <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+          <PackageCheck size={14} /> Edit Manifest Items
+        </h3>
+      </div>
       
-      <div className="space-y-4">
-          {items.length === 0 && (
-              <div className="text-center py-6 text-slate-400 text-xs font-bold border-2 border-dashed border-slate-200 rounded-xl">
-                  No items added to this order yet.
-              </div>
-          )}
-          
-          {items.map((item) => (
-              <div key={item.id} className="flex items-center gap-3 bg-white/60 p-3 rounded-xl border border-slate-100 group">
-                  <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold text-slate-900 truncate">{item.name}</p>
-                      <p className="text-[10px] font-mono text-slate-500 truncate">{item.sku}</p>
-                  </div>
-                  <div className="w-16 shrink-0">
-                      <input 
-                          type="number" 
-                          min="1" 
-                          className="w-full bg-white border border-slate-200 rounded-lg text-center text-xs font-bold py-1.5 outline-none focus:border-brand-gold shadow-sm"
-                          value={item.qty}
-                          onChange={(e) => handleQtyChange(item, e.target.value)} 
-                      />
-                  </div>
-                  <div className="w-20 shrink-0 text-right">
-                      <p className="text-xs font-black text-slate-800">${(item.price * item.qty).toFixed(2)}</p>
-                  </div>
-                  <button 
-                      onClick={() => handleRemoveItem(item)} 
-                      className="text-slate-300 hover:text-red-500 transition-colors duration-200 p-1 shrink-0"
-                  >
-                      <Trash2 size={16}/>
-                  </button>
-              </div>
-          ))}
+      {isMappingItems ? (
+        <div className="flex flex-col items-center justify-center py-12 gap-4">
+          <Loader2 size={36} className="text-brand-gold animate-spin" />
+          <div className="text-center">
+            <p className="text-xs font-black uppercase tracking-widest text-slate-700">Syncing Catalog...</p>
+            <p className="text-[10px] font-medium text-slate-500 mt-1">Cross-referencing Corporate SKUs with COBRA database</p>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4 animate-in fade-in duration-300">
+            {items.length === 0 && (
+                <div className="text-center py-6 text-slate-400 text-xs font-bold border-2 border-dashed border-slate-200 rounded-xl">
+                    No items added to this order yet.
+                </div>
+            )}
+            
+            {items.map((item) => (
+                <div key={item.id} className="flex items-center gap-3 bg-white/60 p-3 rounded-xl border border-slate-100 group">
+                    <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-slate-900 truncate">{item.name}</p>
+                        <p className="text-[10px] font-mono text-slate-500 truncate">{item.sku}</p>
+                    </div>
+                    <div className="w-16 shrink-0">
+                        <input 
+                            type="number" 
+                            min="1" 
+                            className="w-full bg-white border border-slate-200 rounded-lg text-center text-xs font-bold py-1.5 outline-none focus:border-brand-gold shadow-sm"
+                            value={item.qty}
+                            onChange={(e) => handleQtyChange(item, e.target.value)} 
+                        />
+                    </div>
+                    <div className="w-20 shrink-0 text-right">
+                        <p className="text-xs font-black text-slate-800">${(item.price * item.qty).toFixed(2)}</p>
+                    </div>
+                    <button 
+                        onClick={() => handleRemoveItem(item)} 
+                        className="text-slate-300 hover:text-red-500 transition-colors duration-200 p-1 shrink-0"
+                    >
+                        <Trash2 size={16}/>
+                    </button>
+                </div>
+            ))}
 
-          <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 shadow-inner space-y-3 mt-4">
-              <h4 className="text-[9px] font-black uppercase tracking-widest text-slate-500">Add Product</h4>
-              
-              <div className="relative w-full" ref={inventoryDropdownRef}>
-                <div
-                  className={`w-full bg-white p-2.5 rounded-lg text-xs font-bold border border-slate-200 focus-within:border-brand-gold shadow-sm flex items-center justify-between transition-all cursor-pointer`}
-                  onClick={openDropdown}
-                >
-                  <span className={newItem.name ? "text-slate-900" : "text-slate-400"}>
-                    {newItem.name ? `${newItem.name} (SKU: ${newItem.sku})` : (inventoryStatus === 'loading' ? 'Syncing Catalog...' : 'Select Item from Catalog...')}
-                  </span>
-                  {inventoryStatus === 'loading' ? <Loader2 size={14} className="text-brand-gold animate-spin" /> : <ChevronDown size={14} className="text-slate-400" />}
+            <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 shadow-inner space-y-3 mt-4">
+                <h4 className="text-[9px] font-black uppercase tracking-widest text-slate-500">Add Product</h4>
+                
+                <div className="relative w-full" ref={inventoryDropdownRef}>
+                  <div
+                    className={`w-full bg-white p-2.5 rounded-lg text-xs font-bold border border-slate-200 focus-within:border-brand-gold shadow-sm flex items-center justify-between transition-all cursor-pointer`}
+                    onClick={openDropdown}
+                  >
+                    <span className={newItem.name ? "text-slate-900" : "text-slate-400"}>
+                      {newItem.name ? `${newItem.name} (SKU: ${newItem.sku})` : (inventoryStatus === 'loading' ? 'Syncing Catalog...' : 'Select Item from Catalog...')}
+                    </span>
+                    {inventoryStatus === 'loading' ? <Loader2 size={14} className="text-brand-gold animate-spin" /> : <ChevronDown size={14} className="text-slate-400" />}
+                  </div>
+
+                  <AnimatePresence>
+                    {isInventoryDropdownOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -5 }}
+                        className="absolute z-[100] w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
+                      >
+                        <div className="p-2 border-b border-slate-100 flex items-center gap-2">
+                          <Search size={14} className="text-slate-400 shrink-0" />
+                          <input
+                            autoFocus
+                            className="w-full text-xs outline-none font-medium text-slate-700"
+                            placeholder="Search by name or SKU..."
+                            value={inventorySearch}
+                            onChange={(e) => setInventorySearch(e.target.value)}
+                          />
+                        </div>
+                        <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                          {filteredInventories.length > 0 ? (
+                            filteredInventories.map(inv => (
+                              <div
+                                key={inv.id}
+                                className={`px-3 py-2.5 text-xs font-medium transition-colors flex flex-col ${inv.stock > 0 ? 'text-slate-700 hover:bg-slate-50 cursor-pointer' : 'text-slate-400 bg-slate-50 cursor-not-allowed'}`}
+                                onClick={() => {
+                                  if (inv.stock > 0) {
+                                    setNewItem({ ...newItem, name: inv.name, sku: inv.sku, price: inv.price, weight: inv.weight });
+                                    setIsInventoryDropdownOpen(false);
+                                    setInventorySearch('');
+                                  }
+                                }}
+                              >
+                                <div className="flex justify-between items-center">
+                                  <span className="font-bold">{inv.name}</span>
+                                  <span className={`text-[10px] font-bold ${inv.stock > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                    {inv.stock} in stock
+                                  </span>
+                                </div>
+                                <span className="text-slate-400 text-[10px]">SKU: {inv.sku} {inv.corporateSku && `| NS: ${inv.corporateSku}`}</span>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="p-3 text-xs text-slate-400 text-center">No items found</div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
 
-                <AnimatePresence>
-                  {isInventoryDropdownOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -5 }}
-                      className="absolute z-[100] w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
+                <div className="flex gap-2">
+                    <input 
+                        type="number" 
+                        min="1" 
+                        className="w-20 bg-white p-2.5 rounded-lg text-xs font-bold border border-slate-200 text-center outline-none focus:border-brand-gold shadow-sm" 
+                        value={newItem.qty} 
+                        onChange={(e) => setNewItem({...newItem, qty: e.target.value})} 
+                    />
+                    <div className="flex-1 bg-slate-100 p-2.5 rounded-lg text-xs font-black border border-slate-200 flex items-center justify-end text-slate-400 shadow-inner cursor-not-allowed">
+                        {newItem.price ? `$${Number(newItem.price).toFixed(2)}` : '$0.00'}
+                    </div>
+                    <button 
+                        onClick={handleAddItem} 
+                        className="bg-slate-900 text-white px-4 rounded-lg hover:bg-slate-800 transition-all shadow-md active:scale-95 flex items-center justify-center"
                     >
-                      <div className="p-2 border-b border-slate-100 flex items-center gap-2">
-                        <Search size={14} className="text-slate-400 shrink-0" />
-                        <input
-                          autoFocus
-                          className="w-full text-xs outline-none font-medium text-slate-700"
-                          placeholder="Search by name or SKU..."
-                          value={inventorySearch}
-                          onChange={(e) => setInventorySearch(e.target.value)}
-                        />
-                      </div>
-                      <div className="max-h-48 overflow-y-auto custom-scrollbar">
-                        {filteredInventories.length > 0 ? (
-                          filteredInventories.map(inv => (
-                            <div
-                              key={inv.id}
-                              className={`px-3 py-2.5 text-xs font-medium transition-colors flex flex-col ${inv.stock > 0 ? 'text-slate-700 hover:bg-slate-50 cursor-pointer' : 'text-slate-400 bg-slate-50 cursor-not-allowed'}`}
-                              onClick={() => {
-                                if (inv.stock > 0) {
-                                  setNewItem({ ...newItem, name: inv.name, sku: inv.sku, price: inv.price, weight: inv.weight });
-                                  setIsInventoryDropdownOpen(false);
-                                  setInventorySearch('');
-                                }
-                              }}
-                            >
-                              <div className="flex justify-between items-center">
-                                <span className="font-bold">{inv.name}</span>
-                                <span className={`text-[10px] font-bold ${inv.stock > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                                  {inv.stock} in stock
-                                </span>
-                              </div>
-                              <span className="text-slate-400 text-[10px]">SKU: {inv.sku}</span>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="p-3 text-xs text-slate-400 text-center">No items found</div>
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              <div className="flex gap-2">
-                  <input 
-                      type="number" 
-                      min="1" 
-                      className="w-20 bg-white p-2.5 rounded-lg text-xs font-bold border border-slate-200 text-center outline-none focus:border-brand-gold shadow-sm" 
-                      value={newItem.qty} 
-                      onChange={(e) => setNewItem({...newItem, qty: e.target.value})} 
-                  />
-                  <div className="flex-1 bg-slate-100 p-2.5 rounded-lg text-xs font-black border border-slate-200 flex items-center justify-end text-slate-400 shadow-inner cursor-not-allowed">
-                      {newItem.price ? `$${Number(newItem.price).toFixed(2)}` : '$0.00'}
-                  </div>
-                  <button 
-                      onClick={handleAddItem} 
-                      className="bg-slate-900 text-white px-4 rounded-lg hover:bg-slate-800 transition-all shadow-md active:scale-95 flex items-center justify-center"
-                  >
-                      <Plus size={16}/>
-                  </button>
-              </div>
-          </div>
-      </div>
+                        <Plus size={16}/>
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
     </div>
   );
 }

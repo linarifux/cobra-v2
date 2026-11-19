@@ -4,7 +4,8 @@ import {
   getAllInventory,
   getInventoryById,
   updateInventory,
-  deleteInventory
+  deleteInventory,
+  getInventoryByDivisionAndCorporateSku // <-- NEW EXPORT ADDED
 } from '../controllers/inventoryController.js';
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
@@ -18,14 +19,18 @@ router.route('/')
   .get(restrictTo('super_admin','admin', 'staff', 'manager','standard', 'super_user'), getAllInventory)
   .post(restrictTo('super_admin','admin', 'staff', 'manager','standard', 'super_user'), createInventory);
   
+  
+// --- NEW LOOKUP ROUTE ---
+router.route('/lookup/division/:divisionId/sku/:corporateSku')
+  .get(restrictTo('super_admin','admin', 'staff', 'manager','standard', 'super_user'), getInventoryByDivisionAndCorporateSku);
+
+
 
 router.route('/:id')
   .get(restrictTo('super_admin','admin', 'staff', 'manager','standard', 'super_user'), getInventoryById)
   // Warehouse staff can adjust stock; admins/staff can edit full details
   .put(restrictTo('super_admin','admin', 'staff', 'manager','standard', 'super_user'), updateInventory)
-  // .put(updateInventory)
   // Only admins and staff can permanently delete inventory records
   .delete(restrictTo('super_admin','admin', 'staff', 'manager','standard', 'super_user'), deleteInventory);
-  // .delete(deleteInventory);
 
 export default router;

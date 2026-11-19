@@ -97,6 +97,7 @@ export const executeShipmentCreation = async (
 ) => {
   const displayId = order.orderNumber || order._id.toString();
   const {
+    companyName,
     recipientName,
     line1,
     line2,
@@ -178,7 +179,7 @@ export const executeShipmentCreation = async (
           name: recipientName,
           phone: phone || "",
           email: email || order.customer?.contactEmail || "",
-          company_name: "",
+          company_name: companyName || "",
           address_line1: line1,
           address_line2: line2 || "",
           city_locality: city,

@@ -27,6 +27,19 @@ export const fetchInventoryById = createAsyncThunk(
   }
 );
 
+// NEW: Fetch Single Inventory Item by Division and Corporate SKU
+export const fetchInventoryByLookup = createAsyncThunk(
+  'inventory/fetchInventoryByLookup',
+  async ({ divisionId, corporateSku }, { rejectWithValue }) => {
+    try {
+      const response = await api.get(`/inventory/lookup/division/${divisionId}/sku/${corporateSku}`);
+      return response.data.data.inventory;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to find matching inventory item');
+    }
+  }
+);
+
 // 3. Create Inventory
 export const createInventory = createAsyncThunk(
   'inventory/createInventory',
@@ -91,11 +104,25 @@ const inventorySlice = createSlice({
         state.status = 'failed';
         state.error = action.payload;
       })
-      // Fetch Single
+      // Fetch Single by ID
       .addCase(fetchInventoryById.pending, (state) => { state.status = 'loading'; })
       .addCase(fetchInventoryById.fulfilled, (state, action) => {
         state.status = 'succeeded';
         state.currentItem = action.payload;
+      })
+      .addCase(fetchInventoryById.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload;
+      })
+      // Fetch Single by Lookup (Division/SKU)
+      .addCase(fetchInventoryByLookup.pending, (state) => { state.status = 'loading'; })
+      .addCase(fetchInventoryByLookup.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+        state.currentItem = action.payload;
+      })
+      .addCase(fetchInventoryByLookup.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload;
       })
       // Create
       .addCase(createInventory.fulfilled, (state, action) => {

@@ -14,7 +14,6 @@ export default function OrderHeaderActions({
   handleCancelOrder,
   handlePrintDocsAndPick,
   handleSaveOrder,
-  
   setCreateShipmentModalOpen,
   setFulfillOpen
 }) {

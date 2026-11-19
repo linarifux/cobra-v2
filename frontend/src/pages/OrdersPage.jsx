@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link, useNavigate } from 'react-router-dom';
-import { Download, Loader2, AlertCircle, Search, ClipboardList, Unlock, Plus, Package, Briefcase, Building2, User, Calendar, Layers, MapPin, Edit2, FileText, Trash2, CheckSquare, Printer, X, Save, AlertTriangle } from 'lucide-react';
+import { Download, Loader2, AlertCircle, Search, ClipboardList, Unlock, Plus, Package, Briefcase, Building2, User, Calendar, Layers, MapPin, Edit2, FileText, Trash2, CheckSquare, Printer, X, Save, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 
-// --- PDF LIBRARIES ---
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-
 import PageHeader from '../components/PageHeader';
 import OrdersSidebar from '../components/order/OrdersSidebar';
 import { useConfirm } from '../providers/ConfirmProvider';
@@ -18,13 +16,19 @@ import { fetchOrders, updateOrder, deleteOrder } from '../store/slices/orderSlic
 import { fetchCustomers } from '../store/slices/customerSlice';
 import { fetchDivisions } from '../store/slices/divisionSlice';
 import { fetchInventory } from '../store/slices/inventorySlice';
+import { fetchNetSuiteRecords } from '../store/slices/netSuiteSlice';
 
 export default function OrdersPage() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const confirm = useConfirm();
   
-  const { items: ordersData = [], status: ordersStatus, error: ordersError } = useSelector((state) => state.orders || {});
+  // --- 1. Fetch from BOTH stores ---
+  const { items: cobraOrders = [], status: ordersStatus, error: ordersError } = useSelector((state) => state.orders || {});
+  
+  const { recordsByRecordType = {}, status: nsStatus } = useSelector((state) => state.netsuite || {});
+  const rawNsOrders = recordsByRecordType['orders'] || [];
+
   const { items: customersData = [] } = useSelector((state) => state.customers || {});
   const { items: divisionsData = [] } = useSelector((state) => state.divisions || {});
   const { items: inventoryData = [], status: inventoryStatus } = useSelector((state) => state.inventory || {});
@@ -34,7 +38,6 @@ export default function OrdersPage() {
   const [selectedOrders, setSelectedOrders] = useState([]);
   const [isReleasing, setIsReleasing] = useState(null);
   
-  // Start with 'New' so it doesn't flash the entire database while loading
   const [filters, setFilters] = useState({
     status: 'New',
     orderType: 'All', 
@@ -45,34 +48,92 @@ export default function OrdersPage() {
     dateEnd: ''
   });
 
+  // --- PAGINATION STATE ---
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 50;
+
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // --- Bulk Fulfillment Modal State ---
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [isGeneratingDocs, setIsGeneratingDocs] = useState(false);
 
-  // --- RBAC CHECKS ---
   const canReleaseOrder = ['super_user', 'super_admin', 'admin'].includes(currentUser?.role) || currentUser?.portal === 'admin' || currentUser?.releasePendingOrders === true;
   const canViewCosts = currentUser?.showCostsInCp === true || ['admin', 'super_admin'].includes(currentUser?.role);
 
-  // --- SMART DEFAULT FILTER LOGIC ---
   const filterInitialized = useRef(false);
 
   useEffect(() => {
     dispatch(fetchOrders({})); 
+    dispatch(fetchNetSuiteRecords({ recordType: 'orders', forceRefresh: false }));
     
     if (customersData.length === 0) dispatch(fetchCustomers());
     if (divisionsData.length === 0) dispatch(fetchDivisions());
     if (inventoryStatus === 'idle') dispatch(fetchInventory());
     
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch]);
 
-  // Evaluates database payload to determine optimal default status view
+  // --- 2. Combine, Deduplicate, Map, and Sort Data ---
+  const ordersData = useMemo(() => {
+    // Prevent duplicate rows for NetSuite orders already imported into COBRA
+    const importedLegacyNumbers = new Set(
+      cobraOrders
+        .map(o => String(o.legacyNumber || '').trim().toLowerCase())
+        .filter(Boolean)
+    );
+
+    const mappedNsOrders = rawNsOrders
+      .filter(ns => !importedLegacyNumbers.has(String(ns.tranid || '').trim().toLowerCase()))
+      .map(ns => {
+        const isTransfer = ns.recordtype === 'transferorder';
+        
+        const rawStatus = (ns.status_name || '').toLowerCase();
+        let cobraStatus = 'New';
+        if (rawStatus.includes('pending')) cobraStatus = 'New';
+        if (rawStatus.includes('picked')) cobraStatus = 'Picked';
+        if (rawStatus.includes('shipped')) cobraStatus = 'Shipped';
+        if (rawStatus.includes('billed') || rawStatus.includes('closed')) cobraStatus = 'Billed';
+
+        let nsShopperName = ns.entity_name || ns.email || 'NetSuite Shopper';
+        if (String(ns.employee) === '129856') nsShopperName = 'Leah Mockridge';
+        else if (String(ns.employee) === '72236') nsShopperName = 'Ryan Smith';
+
+        return {
+          _id: ns.id, 
+          isNetSuite: true, 
+          orderSource: 'NETSUITE',
+          orderNumber: '', // Empty until processed into COBRA
+          legacyNumber: ns.tranid, // E.g., SO16317959
+          orderType: isTransfer ? 'TRANSFER' : 'WEBORD',
+          status: cobraStatus,
+          createdAt: ns.createddate,
+          totalAmount: 0, 
+          customer: { _id: '6a85c4d6f9743a6adff9cac3', customerName: 'Gateway' },
+          division: { _id: '6a970ae2a05720738c1318ab', divisionName: 'Corporate' },
+          user: { name: nsShopperName },
+          shippingAddress: {
+            recipientName: ns.entity_name || 'N/A',
+            city: '', // Empty to hide from UI
+            state: '' // Empty to hide from UI
+          }
+        };
+      });
+
+    const combined = [...cobraOrders, ...mappedNsOrders];
+    
+    // Sort descending by date/time (newest first)
+    combined.sort((a, b) => {
+      const dateA = new Date(a.createdAt || 0).getTime();
+      const dateB = new Date(b.createdAt || 0).getTime();
+      return dateB - dateA;
+    });
+
+    return combined;
+  }, [cobraOrders, rawNsOrders]);
+
   useEffect(() => {
-    if (ordersStatus === 'succeeded' && !filterInitialized.current) {
+    if ((ordersStatus === 'succeeded' || nsStatus === 'succeeded') && !filterInitialized.current) {
       const hasNewOrders = ordersData.some(o => (o.status || 'New') === 'New');
       const hasPendingOrders = ordersData.some(o => (o.status || 'New') === 'Pending');
       
@@ -82,7 +143,13 @@ export default function OrdersPage() {
       }));
       filterInitialized.current = true;
     }
-  }, [ordersStatus, ordersData]);
+  }, [ordersStatus, nsStatus, ordersData]);
+
+  // Reset pagination to page 1 when filters or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedOrders([]);
+  }, [searchQuery, filters]);
 
   // --- Cascading Filter Logic ---
   const availableDivisions = useMemo(() => {
@@ -158,6 +225,8 @@ export default function OrdersPage() {
     
     if (!Array.isArray(ordersData)) return counts;
 
+    const queryLower = searchQuery.toLowerCase();
+
     ordersData.forEach(order => {
       const orderCustomerId = String(order.customer?._id || order.customer || '');
       const orderDivisionId = String(order.division?._id || order.division || ''); 
@@ -165,20 +234,24 @@ export default function OrdersPage() {
 
       const customerName = order.customer?.customerName || '';
       const orderNumber = order.orderNumber || '';
+      const legacyNumber = order.legacyNumber || '';
       const recipientName = order.shippingAddress?.recipientName || '';
       const companyName = order.shippingAddress?.companyName || '';
       const orderType = order.orderType || 'WEBORD';
+      const orderSource = order.orderSource || (order.isNetSuite ? 'NETSUITE' : 'COBRA');
       
       let orderDate = '';
       try {
         if (order.createdAt) orderDate = new Date(order.createdAt).toISOString().split('T')[0];
       } catch (e) {}
 
-      const matchSearch = customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          recipientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          companyName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          orderType.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchSearch = customerName.toLowerCase().includes(queryLower) || 
+                          orderNumber.toLowerCase().includes(queryLower) ||
+                          legacyNumber.toLowerCase().includes(queryLower) ||
+                          recipientName.toLowerCase().includes(queryLower) ||
+                          companyName.toLowerCase().includes(queryLower) ||
+                          orderType.toLowerCase().includes(queryLower) ||
+                          orderSource.toLowerCase().includes(queryLower);
                           
       const matchOrderType = filters.orderType === 'All' || orderType === filters.orderType;
       const matchCustomer = filters.customer === 'All' || orderCustomerId === String(filters.customer);
@@ -188,7 +261,6 @@ export default function OrdersPage() {
       const matchDateStart = !filters.dateStart || orderDate >= filters.dateStart;
       const matchDateEnd = !filters.dateEnd || orderDate <= filters.dateEnd;
       
-      // Only tally orders that pass the current top-bar filters (ignores the sidebar status filter itself)
       if (matchSearch && matchOrderType && matchCustomer && matchDivision && matchUser && matchDateStart && matchDateEnd) {
         const exactStatus = order.status || 'New';
         counts.All++;
@@ -201,9 +273,11 @@ export default function OrdersPage() {
     return counts;
   }, [searchQuery, filters.orderType, filters.customer, filters.division, filters.user, filters.dateStart, filters.dateEnd, ordersData]);
 
-  // --- Data Processing ---
+  // --- Data Processing & Filtering ---
   const filteredOrders = useMemo(() => {
     if (!Array.isArray(ordersData)) return [];
+
+    const queryLower = searchQuery.toLowerCase();
 
     return ordersData.filter(order => {
       const orderCustomerId = String(order.customer?._id || order.customer || '');
@@ -212,9 +286,11 @@ export default function OrdersPage() {
 
       const customerName = order.customer?.customerName || '';
       const orderNumber = order.orderNumber || '';
+      const legacyNumber = order.legacyNumber || '';
       const recipientName = order.shippingAddress?.recipientName || '';
       const companyName = order.shippingAddress?.companyName || '';
       const orderType = order.orderType || 'WEBORD';
+      const orderSource = order.orderSource || (order.isNetSuite ? 'NETSUITE' : 'COBRA');
       
       let orderDate = '';
       try {
@@ -223,11 +299,13 @@ export default function OrdersPage() {
 
       const exactStatus = order.status || 'New';
 
-      const matchSearch = customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          recipientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          companyName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          orderType.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchSearch = customerName.toLowerCase().includes(queryLower) || 
+                          orderNumber.toLowerCase().includes(queryLower) ||
+                          legacyNumber.toLowerCase().includes(queryLower) ||
+                          recipientName.toLowerCase().includes(queryLower) ||
+                          companyName.toLowerCase().includes(queryLower) ||
+                          orderType.toLowerCase().includes(queryLower) ||
+                          orderSource.toLowerCase().includes(queryLower);
                           
       const matchStatus = filters.status === 'All' || exactStatus === filters.status;
       const matchOrderType = filters.orderType === 'All' || orderType === filters.orderType;
@@ -242,16 +320,23 @@ export default function OrdersPage() {
     });
   }, [searchQuery, filters, ordersData]);
 
-  // --- Selection Handlers ---
+  // --- Pagination Slice ---
+  const totalPages = Math.ceil(filteredOrders.length / ITEMS_PER_PAGE);
+  const paginatedOrders = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredOrders.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredOrders, currentPage]);
+
   const toggleSelect = (id) => {
     setSelectedOrders(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
 
   const handleSelectAll = () => {
-    if (selectedOrders.length === filteredOrders.length) {
+    // Only select the orders visible on the CURRENT page
+    if (selectedOrders.length === paginatedOrders.length) {
       setSelectedOrders([]); 
     } else {
-      setSelectedOrders(filteredOrders.map(o => o._id)); 
+      setSelectedOrders(paginatedOrders.map(o => o._id)); 
     }
   };
 
@@ -259,39 +344,20 @@ export default function OrdersPage() {
     if (filteredOrders.length === 0) {
       return toast.warning("No orders to export.");
     }
-
     try {
-      // Define CSV Headers
       const headers = [
-        "Order Number",
-        "Date",
-        "Status",
-        "Customer/Brand",
-        "Division",
-        "Shopper Email",
-        "Recipient Name",
-        "Recipient Company",
-        "Address",
-        "City",
-        "State",
-        "Zip",
-        "Country",
-        "Carrier",
-        "Service",
-        "Tracking",
-        "Item Quantity",
-        "Subtotal",
-        "Shipping Cost",
-        "Processing Fees",
-        "Total Amount"
+        "Order Number", "Legacy Ref", "Order Source", "Date", "Status", "Customer/Brand", "Division", "Shopper Email", 
+        "Recipient Name", "Recipient Company", "Address", "City", "State", "Zip", 
+        "Country", "Carrier", "Service", "Tracking", "Item Quantity", "Subtotal", 
+        "Shipping Cost", "Processing Fees", "Total Amount"
       ];
-
-      // Map Order Data to CSV Rows
       const csvRows = filteredOrders.map(o => {
         const itemQtyCount = o.items ? o.items.reduce((sum, i) => sum + (Number(i.quantity) || 0), 0) : 0;
-        
+        const orderSource = o.orderSource || (o.isNetSuite ? 'NETSUITE' : 'COBRA');
         return [
           o.orderNumber || '',
+          o.legacyNumber || '',
+          orderSource,
           new Date(o.createdAt).toLocaleDateString('en-US'),
           o.status || '',
           o.customer?.customerName || '',
@@ -299,7 +365,7 @@ export default function OrdersPage() {
           o.user?.email || '',
           o.shippingAddress?.recipientName || '',
           o.shippingAddress?.companyName || '',
-          `"${o.shippingAddress?.line1 || ''} ${o.shippingAddress?.line2 || ''}"`, // Quotes to handle commas in addresses
+          `"${o.shippingAddress?.line1 || ''} ${o.shippingAddress?.line2 || ''}"`, 
           o.shippingAddress?.city || '',
           o.shippingAddress?.state || '',
           o.shippingAddress?.zip || '',
@@ -314,14 +380,7 @@ export default function OrdersPage() {
           (o.totalAmount || 0).toFixed(2)
         ];
       });
-
-      // Combine Headers and Rows
-      const csvContent = [
-        headers.join(','),
-        ...csvRows.map(row => row.join(','))
-      ].join('\n');
-
-      // Create a Blob and Download
+      const csvContent = [headers.join(','), ...csvRows.map(row => row.join(','))].join('\n');
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -331,15 +390,12 @@ export default function OrdersPage() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      
       toast.success("Spreadsheet exported successfully.");
     } catch (err) {
-      console.error(err);
       toast.error("Failed to generate CSV spreadsheet.");
     }
   };
 
-  // --- Inline Action Handlers ---
   const openQuickEdit = (order) => {
     setEditingOrder({
       _id: order._id,
@@ -363,7 +419,7 @@ export default function OrdersPage() {
         updateData: { 
           status: editingOrder.status, 
           notes: editingOrder.notes,
-          orderType: editingOrder.orderType // Syncing updated Order Type to the DB
+          orderType: editingOrder.orderType 
         } 
       })).unwrap();
       
@@ -374,12 +430,8 @@ export default function OrdersPage() {
       });
       
       await actionPromise;
-      
-      // Force UI to sync with the database immediately after successful mutation
       dispatch(fetchOrders({})); 
-      if (isChangingToCancelled) {
-         dispatch(fetchInventory()); 
-      }
+      if (isChangingToCancelled) dispatch(fetchInventory()); 
 
       setIsEditModalOpen(false);
       setEditingOrder(null);
@@ -407,15 +459,10 @@ export default function OrdersPage() {
           success: 'Order successfully deleted and stock adjusted.',
           error: 'Failed to delete order.'
         });
-        
         await actionPromise;
-
-        // Force UI to sync with the database immediately after successful deletion
         dispatch(fetchOrders({}));
-        dispatch(fetchInventory()); // Always pull fresh stock records
-
+        dispatch(fetchInventory()); 
       } catch (err) {
-        console.error(err);
         toast.error(`Failed to delete order: ${err.message || 'Unknown error'}`);
       }
     }
@@ -434,22 +481,17 @@ export default function OrdersPage() {
     }
   };
 
-  // --- BULK FULFILLMENT & PRINTING LOGIC ---
   const handleBulkPrintAndFulfill = async () => {
     setIsGeneratingDocs(true);
     try {
       const selectedOrderObjects = ordersData.filter(o => selectedOrders.includes(o._id));
       const doc = new jsPDF();
       
-      // ==========================================
-      // 1. MASTER PICKING LIST (Page 1)
-      // ==========================================
       doc.setFontSize(18);
       doc.setTextColor(15, 23, 42);
       doc.setFont('helvetica', 'bold');
       doc.text("MASTER PICKING LIST", 14, 20);
       
-      // Header underline
       doc.setLineWidth(0.5);
       doc.setDrawColor(0, 0, 0);
       doc.line(14, 22, 196, 22);
@@ -460,18 +502,14 @@ export default function OrdersPage() {
       doc.text(`Orders Count: ${selectedOrderObjects.length}`, 14, 28);
       doc.text(`Date Printed: ${new Date().toLocaleDateString('en-GB', {day: '2-digit', month: 'short', year: 'numeric'})}`, 14, 33);
 
-      // Aggregate items across all selected orders & find bin locations
       const itemMap = {};
       selectedOrderObjects.forEach(order => {
         order.items?.forEach(item => {
           if (!itemMap[item.sku]) {
-            // Locate the item in inventory data (Robust match for case-sensitivity & productCode)
             const invItem = inventoryData.find(inv => 
               String(inv.sku || '').trim().toLowerCase() === String(item.sku || '').trim().toLowerCase() ||
               String(inv.productCode || '').trim().toLowerCase() === String(item.sku || '').trim().toLowerCase()
             );
-
-            // Extract location(s) based on structural assignment
             let locationStr = '';
             if (invItem?.locations && Array.isArray(invItem.locations) && invItem.locations.length > 0) {
                locationStr = invItem.locations.map(loc => typeof loc === 'object' ? (loc.designation || loc.name || '') : String(loc)).filter(Boolean).join(', ');
@@ -479,13 +517,7 @@ export default function OrdersPage() {
             if (!locationStr && invItem?.location) {
                locationStr = typeof invItem.location === 'object' ? (invItem.location.designation || invItem.location.name || '') : String(invItem.location);
             }
-
-            itemMap[item.sku] = { 
-              name: item.name, 
-              sku: item.sku, 
-              qty: 0, 
-              location: locationStr || '' 
-            };
+            itemMap[item.sku] = { name: item.name, sku: item.sku, qty: 0, location: locationStr || '' };
           }
           itemMap[item.sku].qty += Number(item.quantity || 0); 
         });
@@ -513,32 +545,22 @@ export default function OrdersPage() {
         styles: { fontSize: 9, cellPadding: 4, textColor: 20, font: 'helvetica' },
       });
 
-      // ==========================================
-      // 2. INDIVIDUAL PACKING SLIPS (Iterate through orders)
-      // ==========================================
       selectedOrderObjects.forEach((order) => {
         doc.addPage();
-        
         const customerName = order.customer?.customerName || 'Customer Order';
         const divisionName = order.division?.divisionName || 'custom division';
         const orderNo = order.orderNumber || 'N/A';
         const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-GB', {day: '2-digit', month: 'short', year: 'numeric'}) : 'N/A';
         const shipVia = `${order.shippingDetails?.carrierType || ''} ${order.shippingDetails?.serviceCode || ''}`.trim() || 'UPS - Ground';
-        
         const address = order.shippingAddress || {};
         const phone = address.phone || order.customer?.contactNumber || '';
-        
-        // Use standard notes
         const notes = order.notes || '';
 
-        // --- TOP HEADER ---
-        // Top Left: Customer Name
         doc.setFontSize(14);
         doc.setTextColor(0, 0, 0);
         doc.setFont('helvetica', 'bold');
         doc.text(`${customerName.toUpperCase()}\n${divisionName}`, 14, 20);
 
-        // Top Right: Order Information block (Right-aligned keys, Left-aligned values)
         const rightColKeyX = 160;
         const rightColValX = 162;
         let rightY = 20;
@@ -550,7 +572,6 @@ export default function OrdersPage() {
         doc.text(orderNo, rightColValX, rightY);
         rightY += 5;
 
-        // Dynamically displaying Order Type onto the PDF slip
         doc.setFont('helvetica', 'bold');
         doc.text(`Order Type:`, rightColKeyX, rightY, { align: 'right' });
         doc.setFont('helvetica', 'normal');
@@ -568,11 +589,9 @@ export default function OrdersPage() {
         doc.setFont('helvetica', 'normal');
         doc.text(shipVia, rightColValX, rightY);
 
-        // --- SHIP FROM & SHIP TO ADDRESS BLOCKS ---
         const addressBlockY = 55;
         doc.setFontSize(10);
         
-        // SHIP FROM (Left Block)
         doc.setFont('helvetica', 'bold');
         doc.text("SHIP FROM:", 14, addressBlockY);
         doc.setFont('helvetica', 'normal');
@@ -582,12 +601,10 @@ export default function OrdersPage() {
         doc.text("Phone: 609-694-0521", 40, addressBlockY + 20);
         doc.text("Email: mike@mi-krologistics.com", 40, addressBlockY + 25);
 
-        // SHIP TO (Right Block)
         doc.setFont('helvetica', 'bold');
         doc.text("SHIP TO:", 110, addressBlockY);
         doc.setFont('helvetica', 'normal');
         
-        // Check for company name and include if present
         let currentYOffset = addressBlockY;
         if (address.companyName) {
            doc.text(address.companyName, 130, currentYOffset);
@@ -599,10 +616,8 @@ export default function OrdersPage() {
         
         currentYOffset += 5;
         doc.text(`${address.line1 || ''} ${address.line2 || ''}`.trim(), 130, currentYOffset);
-        
         currentYOffset += 5;
         doc.text(`${address.city || ''}, ${address.state || ''} ${address.zip || ''}`.trim(), 130, currentYOffset);
-        
         currentYOffset += 5;
         doc.text(address.country || 'US', 130, currentYOffset);
 
@@ -614,7 +629,6 @@ export default function OrdersPage() {
            doc.text(phone, 130, currentYOffset);
         }
 
-        // --- COMMENTS BLOCK ---
         let commentsY = 95;
         doc.setFontSize(9);
         doc.setFont('helvetica', 'bold');
@@ -626,19 +640,12 @@ export default function OrdersPage() {
             doc.text(splitNotes, 40, commentsY);
             commentsY += (splitNotes.length * 5);
         } else {
-            commentsY += 5; // minimal spacing if no notes
+            commentsY += 5;
         }
 
-        // --- ITEMS TABLE (No Loc Column) ---
         const tableRows = (order.items || []).map(item => {
             const qtyStr = (item.quantity || 0).toString();
-            return [
-                item.sku,
-                item.name,
-                " ",    // Qty Picked (Left blank for manual fill)
-                qtyStr, // Qty Ordered
-                " "  // Qty Shipped
-            ];
+            return [item.sku, item.name, " ", qtyStr, " "];
         });
 
         autoTable(doc, {
@@ -646,46 +653,26 @@ export default function OrdersPage() {
             head: [["Item Code / Lot(s) #", "Description", "Qty.\nPicked", "Qty.\nOrdered", "Qty.\nShipped"]],
             body: tableRows,
             theme: 'plain',
-            headStyles: { 
-              fontStyle: 'bold', 
-              textColor: 0, 
-              halign: 'left', 
-              borderBottomColor: 0, 
-              borderBottomWidth: 0.5 
-            },
+            headStyles: { fontStyle: 'bold', textColor: 0, halign: 'left', borderBottomColor: 0, borderBottomWidth: 0.5 },
             styles: { fontSize: 9, cellPadding: 3, textColor: 20, font: 'helvetica' },
-            columnStyles: {
-                0: { cellWidth: 45 },
-                1: { cellWidth: 'auto' },
-                2: { cellWidth: 20, halign: 'center' },
-                3: { cellWidth: 20, halign: 'center' },
-                4: { cellWidth: 20, halign: 'center' }
-            },
-            // Custom drawing to recreate the faint line separators
+            columnStyles: { 0: { cellWidth: 45 }, 1: { cellWidth: 'auto' }, 2: { cellWidth: 20, halign: 'center' }, 3: { cellWidth: 20, halign: 'center' }, 4: { cellWidth: 20, halign: 'center' } },
             willDrawCell: function(data) {
                 if (data.row.section === 'body') {
                     doc.setDrawColor(200, 200, 200);
                     doc.setLineWidth(0.1);
-                    doc.line(
-                        data.cell.x, 
-                        data.cell.y + data.cell.height, 
-                        data.cell.x + data.cell.width, 
-                        data.cell.y + data.cell.height
-                    );
+                    doc.line(data.cell.x, data.cell.y + data.cell.height, data.cell.x + data.cell.width, data.cell.y + data.cell.height);
                 }
             }
         });
 
-        // --- FOOTER BOX ---
         const finalY = doc.lastAutoTable.finalY + 15;
         doc.setDrawColor(0);
         doc.setLineWidth(0.5);
-        doc.rect(55, finalY, 100, 8); // Centered bounding box
+        doc.rect(55, finalY, 100, 8); 
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(10);
         doc.text("*** THANK YOU FOR YOUR ORDER! ***", 105, finalY + 5.5, { align: 'center' });
 
-        // Bottom heavy border line to mimic the document base
         doc.setLineWidth(1.5);
         doc.line(14, 280, 196, 280);
       });
@@ -694,7 +681,6 @@ export default function OrdersPage() {
       const blobUrl = doc.output('bloburl');
       window.open(blobUrl, '_blank');
 
-      // 3. BULK UPDATE STATUS TO "PICKED" FOR ELIGIBLE ORDERS ONLY
       const eligibleOrders = selectedOrderObjects.filter(order => {
         const st = order.status || 'New';
         return st === 'New' || st === 'Pending';
@@ -708,9 +694,7 @@ export default function OrdersPage() {
         );
       }
 
-      // Force UI to sync with the database immediately after bulk mutations
       dispatch(fetchOrders({}));
-
       toast.success(`Successfully processed ${selectedOrderObjects.length} orders. New/Pending orders marked as Picked.`);
       setSelectedOrders([]);
       setIsPrintModalOpen(false);
@@ -738,11 +722,15 @@ export default function OrdersPage() {
     return 'bg-slate-50 text-slate-600 border-slate-200';
   };
 
+  const getSourceBadgeStyle = (source) => {
+    if (source === 'NETSUITE') return 'bg-purple-50 text-purple-600 border-purple-200';
+    if (source === 'WOOCOMMERCE') return 'bg-sky-50 text-sky-600 border-sky-200';
+    return 'bg-slate-100 text-slate-500 border-slate-200';
+  };
+
   return (
-    // Adjusting height calculation safely to clear external navbars and letting it naturally fill the flex container
     <div className="relative p-4 sm:p-5 flex flex-col gap-4 animate-fade-in max-w-[1600px] mx-auto h-[calc(100vh-5rem)] min-h-[600px] overflow-hidden">
       
-      {/* Header Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 pb-1">
         <span></span>
         <button 
@@ -754,7 +742,6 @@ export default function OrdersPage() {
       </div>
 
       <div className="flex flex-col md:flex-row gap-5 flex-1 min-h-0 overflow-hidden">
-        {/* --- SIDEBAR --- */}
         <div className="shrink-0 overflow-y-auto custom-scrollbar md:w-64 pb-10">
           <OrdersSidebar
             activeStatus={filters.status}
@@ -763,7 +750,6 @@ export default function OrdersPage() {
           />
         </div>
 
-        {/* --- MAIN CONTENT --- */}
         <div className="flex-1 flex flex-col min-w-0 gap-4 overflow-hidden">
           
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
@@ -786,7 +772,7 @@ export default function OrdersPage() {
                 <Search className="absolute left-4 top-2.5 text-slate-400" size={14} />
                 <input 
                   className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 bg-white/70 text-sm font-bold outline-none focus:ring-2 focus:ring-brand-gold/50 transition-all shadow-sm"
-                  placeholder="Search by Brand, Shopper, Order #, or Type..."
+                  placeholder="Search by Brand, Shopper, Order #, Source, or Type..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
@@ -811,6 +797,7 @@ export default function OrdersPage() {
                   <option value="PRODUCTION">PRODUCTION</option>
                   <option value="SCRAP">SCRAP</option>
                   <option value="TRADESHOW">TRADESHOW</option>
+                  <option value="TRANSFER">TRANSFER</option>
                 </select>
               </div>
 
@@ -862,9 +849,8 @@ export default function OrdersPage() {
             </div>
           </div>
 
-          {/* TABLE CONTAINER - Forced to Expand */}
           <div className="flex-1 min-h-0 flex flex-col bg-white/60 backdrop-blur-2xl border border-white/80 rounded-[2rem] overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.04)] relative">
-            {ordersStatus === 'loading' && ordersData.length === 0 ? (
+            {(ordersStatus === 'loading' && cobraOrders.length === 0) || (nsStatus === 'loading' && rawNsOrders.length === 0) ? (
               <div className="flex justify-center items-center h-full text-slate-400 absolute inset-0 bg-white/40 backdrop-blur-sm z-50">
                 <Loader2 className="animate-spin text-brand-gold" size={32} />
               </div>
@@ -873,163 +859,205 @@ export default function OrdersPage() {
                 Failed to load orders: {ordersError}
               </div>
             ) : (
-              <div className="flex-1 overflow-y-auto custom-scrollbar pb-10">
-                <table className="w-full text-left border-collapse text-xs whitespace-nowrap min-w-[1000px]">
-                  <thead className="sticky top-0 bg-slate-50/90 backdrop-blur-xl z-10 shadow-[0_1px_2px_rgba(0,0,0,0.05)] border-b border-slate-200/60">
-                    <tr className="text-[10px] uppercase font-black text-slate-400 tracking-widest">
-                      <th className="p-4 w-12 text-center">
-                        <input 
-                          type="checkbox" 
-                          className="rounded border-slate-300 text-brand-gold focus:ring-brand-gold cursor-pointer"
-                          checked={filteredOrders.length > 0 && selectedOrders.length === filteredOrders.length}
-                          onChange={handleSelectAll} 
-                        />
-                      </th>
-                      <th className="p-4">Order Reference</th>
-                      <th className="p-4">Date Logged</th>
-                      <th className="p-4">Customer & Origin</th>
-                      <th className="p-4">Shopper & Dest.</th>
-                      <th className="p-4">Assets</th>
-                      {canViewCosts && <th className="p-4 text-right">Shipping</th>}
-                      {canViewCosts && <th className="p-4 text-right">Processing</th>}
-                      {canViewCosts && <th className="p-4 text-right">Total</th>}
-                      <th className="p-4">Status</th>
-                      <th className="p-4 text-right pr-6">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100/80">
-                    {filteredOrders.length > 0 ? (
-                      filteredOrders.map((order) => {
-                        const displayDate = order.createdAt 
-                          ? new Date(order.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) 
-                          : 'N/A';
-                        
-                        const location = [order.shippingAddress?.city, order.shippingAddress?.state]
-                          .filter(Boolean)
-                          .join(', ') || 'N/A';
-                        
-                        const grandTotal = (order.totalAmount || 0);
-                        const shippingCost = (order.shippingDetails?.shippingCost || 0);
-                        const processingCost = (order.processingFees?.totalProcessingFee || 0);
-
-                        const divRef = order.division;
-                        const divisionObj = divisionsData.find(d => d._id === (divRef?._id || divRef));
-                        const displayDivision = divisionObj ? divisionObj.divisionName : 'Unassigned Branch';
-
-                        const shopperName = order.user?.name || order.user?.firstName || order.shippingAddress?.recipientName || 'Unknown Shopper';
-                        
-                        const currentStatus = order.status || 'New';
-
-                        return (
-                          <tr key={order._id} className="hover:bg-white/80 transition-colors group cursor-pointer" onClick={() => navigate(`/orders/${order._id}`)}>
-                            <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
-                              <input 
-                                type="checkbox" 
-                                className="rounded border-slate-300 text-brand-gold focus:ring-brand-gold cursor-pointer"
-                                checked={selectedOrders.includes(order._id)}
-                                onChange={() => toggleSelect(order._id)} 
-                              />
-                            </td>
-                            <td className="p-4">
-                              <div className="font-black text-slate-800 text-sm group-hover:text-brand-gold transition-colors flex items-center gap-2">
-                                {order.orderNumber}
-                                <span className="text-[8px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase tracking-widest border border-slate-200">
-                                  {order.orderType || 'WEBORD'}
-                                </span>
-                              </div>
-                              <div className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 w-max mt-1 tracking-widest">
-                                {canViewCosts ? `$${grandTotal.toFixed(2)}` : '***'}
-                              </div>
-                            </td>
-                            <td className="p-4 text-slate-500 font-bold">{displayDate}</td>
-                            <td className="p-4">
-                              <div className="font-black text-slate-700">{order.customer?.customerName || 'Unknown Brand'}</div>
-                              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 flex items-center gap-1">
-                                 <Layers size={10}/> {displayDivision}
-                              </div>
-                            </td>
-                            <td className="p-4">
-                              <div className="font-black text-slate-700">{shopperName}</div>
-                              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 flex items-center gap-1">
-                                 <MapPin size={10} className="text-brand-gold"/> {location}
-                              </div>
-                            </td>
-                            <td className="p-4">
-                              <span className="bg-slate-100 border border-slate-200 px-2 py-1 rounded text-slate-600 font-black">{order.items?.length || 0}</span>
-                            </td>
-                            
-                            {canViewCosts && <td className="p-4 text-right font-medium text-slate-600">${shippingCost.toFixed(2)}</td>}
-                            {canViewCosts && <td className="p-4 text-right font-medium text-slate-600">${processingCost.toFixed(2)}</td>}
-                            {canViewCosts && <td className="p-4 text-right font-extrabold text-slate-900">${grandTotal.toFixed(2)}</td>}
-                            
-                            <td className="p-4">
-                              <span 
-                                className={`px-2.5 py-1 text-[9px] uppercase tracking-wider rounded border shadow-sm font-black flex items-center gap-1.5 w-max ${getStatusBadgeStyle(currentStatus)}`}
-                                title={order.qtyLimitExceeds ? "Quantity limit exceeded flag is active." : ""}
-                              >
-                                {currentStatus}
-                                {order.qtyLimitExceeds && <AlertTriangle size={10} className="shrink-0 text-amber-500" />}
-                              </span>
-                            </td>
-                            <td className="p-4 text-right pr-6" onClick={(e) => e.stopPropagation()}>
-                              <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                {(currentStatus === 'Pending' || order.qtyLimitExceeds) && canReleaseOrder && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      handleReleaseOrder(order._id);
-                                    }}
-                                    disabled={isReleasing === order._id}
-                                    className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50 shadow-sm transition-all"
-                                    title="Release Order"
-                                  >
-                                    {isReleasing === order._id ? <Loader2 size={14} className="animate-spin" /> : <Unlock size={14} />}
-                                  </button>
-                                )}
-                                <button 
-                                  onClick={() => openQuickEdit(order)}
-                                  className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 shadow-sm transition-all" 
-                                  title="Update Status"
-                                >
-                                  <Edit2 size={14} />
-                                </button>
-                                <button 
-                                  onClick={() => navigate(`/orders/edit/${order._id}`)}
-                                  className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-amber-600 hover:border-amber-200 hover:bg-amber-50 shadow-sm transition-all" 
-                                  title="Full Edit"
-                                >
-                                  <FileText size={14} />
-                                </button>
-                                <button 
-                                  onClick={() => handleDeleteOrder(order._id, order.orderNumber)}
-                                  className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-red-600 hover:border-red-200 hover:bg-red-50 shadow-sm transition-all" 
-                                  title="Delete Order"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    ) : (
-                      <tr>
-                        <td colSpan={canViewCosts ? 11 : 8} className="py-24 text-center text-slate-400 border-none">
-                          <Package className="mx-auto mb-4 text-slate-300" size={56} strokeWidth={1} />
-                          <p className="text-sm font-black uppercase tracking-widest mb-1 text-slate-500">No Orders Found</p>
-                          <p className="text-xs font-bold text-slate-400">Try adjusting your filters or search query.</p>
-                        </td>
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                  <table className="w-full text-left border-collapse text-xs whitespace-nowrap min-w-[1000px]">
+                    <thead className="sticky top-0 bg-slate-50/90 backdrop-blur-xl z-10 shadow-[0_1px_2px_rgba(0,0,0,0.05)] border-b border-slate-200/60">
+                      <tr className="text-[10px] uppercase font-black text-slate-400 tracking-widest">
+                        <th className="p-4 w-12 text-center">
+                          <input 
+                            type="checkbox" 
+                            className="rounded border-slate-300 text-brand-gold focus:ring-brand-gold cursor-pointer"
+                            checked={paginatedOrders.length > 0 && selectedOrders.length === paginatedOrders.length}
+                            onChange={handleSelectAll} 
+                          />
+                        </th>
+                        <th className="p-4">Order Reference</th>
+                        <th className="p-4">Date Logged</th>
+                        <th className="p-4">Customer & Origin</th>
+                        <th className="p-4">Shopper & Dest.</th>
+                        <th className="p-4">Assets</th>
+                        {canViewCosts && <th className="p-4 text-right">Shipping</th>}
+                        {canViewCosts && <th className="p-4 text-right">Processing</th>}
+                        {canViewCosts && <th className="p-4 text-right">Total</th>}
+                        <th className="p-4">Status</th>
+                        <th className="p-4 text-right pr-6">Actions</th>
                       </tr>
-                    )}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100/80">
+                      {paginatedOrders.length > 0 ? (
+                        paginatedOrders.map((order) => {
+                          const displayDate = order.createdAt 
+                            ? new Date(order.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) 
+                            : 'N/A';
+                          
+                          const location = [order.shippingAddress?.city, order.shippingAddress?.state]
+                            .filter(Boolean)
+                            .join(', ') || 'N/A';
+                          
+                          const grandTotal = (order.totalAmount || 0);
+                          const shippingCost = (order.shippingDetails?.shippingCost || 0);
+                          const processingCost = (order.processingFees?.totalProcessingFee || 0);
+
+                          const divRef = order.division;
+                          const divisionObj = divisionsData.find(d => d._id === (divRef?._id || divRef));
+                          const displayDivision = divisionObj ? divisionObj.divisionName : (order.division?.divisionName || 'Unassigned Branch');
+
+                          const shopperName = order.user?.name || order.user?.firstName || order.shippingAddress?.recipientName || 'Unknown Shopper';
+                          
+                          const currentStatus = order.status || 'New';
+                          const orderSource = order.orderSource || (order.isNetSuite ? 'NETSUITE' : 'COBRA');
+
+                          return (
+                            <tr key={order._id} className="hover:bg-white/80 transition-colors group cursor-pointer" onClick={() => navigate(order.isNetSuite ? `/netsuite/orders/${order._id}` : `/orders/${order._id}`)}>
+                              <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
+                                <input 
+                                  type="checkbox" 
+                                  className="rounded border-slate-300 text-brand-gold focus:ring-brand-gold cursor-pointer"
+                                  checked={selectedOrders.includes(order._id)}
+                                  onChange={() => toggleSelect(order._id)} 
+                                />
+                              </td>
+                              <td className="p-4">
+                                <div className="font-black text-slate-800 text-sm group-hover:text-brand-gold transition-colors flex items-center gap-2">
+                                  {order.orderNumber && order.orderNumber !== '-' ? (
+                                    <span>{order.orderNumber}</span>
+                                  ) : (
+                                    <span className="text-xs italic font-bold text-yellow-600">
+                                      TBA
+                                    </span>
+                                  )}
+                                  {orderSource !== 'COBRA' ? (
+                                    <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded uppercase tracking-widest border ${getSourceBadgeStyle(orderSource)}`}>
+                                      {orderSource}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[8px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase tracking-widest border border-slate-200">
+                                      {order.orderType}
+                                    </span>
+                                  )}
+                                </div>
+                                {order.legacyNumber && (
+                                  <div className="text-[10px] font-mono font-bold text-indigo-600 mt-0.5 flex items-center gap-1">
+                                    <span className="font-sans text-[9px] uppercase tracking-wider text-indigo-400">
+                                      Legacy:
+                                    </span>
+                                    {order.legacyNumber}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="p-4 text-slate-500 font-bold">{displayDate}</td>
+                              <td className="p-4">
+                                <div className="font-black text-slate-700">{order.customer?.customerName || 'Unknown Brand'}</div>
+                                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 flex items-center gap-1">
+                                   <Layers size={10}/> {displayDivision}
+                                </div>
+                              </td>
+                              <td className="p-4">
+                                <div className="font-black text-slate-700">{shopperName}</div>
+                                {!order.isNetSuite && (
+                                  <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 flex items-center gap-1">
+                                     <MapPin size={10} className="text-brand-gold"/> {location}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="p-4">
+                                <span className="bg-slate-100 border border-slate-200 px-2 py-1 rounded text-slate-600 font-black">{order.items?.length || 0}</span>
+                              </td>
+                              
+                              {canViewCosts && <td className="p-4 text-right font-medium text-slate-600">${shippingCost.toFixed(2)}</td>}
+                              {canViewCosts && <td className="p-4 text-right font-medium text-slate-600">${processingCost.toFixed(2)}</td>}
+                              {canViewCosts && <td className="p-4 text-right font-extrabold text-slate-900">${grandTotal.toFixed(2)}</td>}
+                              
+                              <td className="p-4">
+                                <span 
+                                  className={`px-2.5 py-1 text-[9px] uppercase tracking-wider rounded border shadow-sm font-black flex items-center gap-1.5 w-max ${getStatusBadgeStyle(currentStatus)}`}
+                                  title={order.qtyLimitExceeds ? "Quantity limit exceeded flag is active." : ""}
+                                >
+                                  {currentStatus}
+                                  {order.qtyLimitExceeds && <AlertTriangle size={10} className="shrink-0 text-amber-500" />}
+                                </span>
+                              </td>
+                              <td className="p-4 text-right pr-6" onClick={(e) => e.stopPropagation()}>
+                                {!order.isNetSuite ? (
+                                  <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {(currentStatus === 'Pending' || order.qtyLimitExceeds) && canReleaseOrder && (
+                                      <button
+                                        onClick={(e) => { e.preventDefault(); handleReleaseOrder(order._id); }}
+                                        disabled={isReleasing === order._id}
+                                        className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50 shadow-sm transition-all"
+                                        title="Release Order"
+                                      >
+                                        {isReleasing === order._id ? <Loader2 size={14} className="animate-spin" /> : <Unlock size={14} />}
+                                      </button>
+                                    )}
+                                    <button onClick={() => openQuickEdit(order)} className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 shadow-sm transition-all" title="Update Status">
+                                      <Edit2 size={14} />
+                                    </button>
+                                    <button onClick={() => navigate(`/orders/edit/${order._id}`)} className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-amber-600 hover:border-amber-200 hover:bg-amber-50 shadow-sm transition-all" title="Full Edit">
+                                      <FileText size={14} />
+                                    </button>
+                                    <button onClick={() => handleDeleteOrder(order._id, order.orderNumber)} className="p-1.5 text-slate-400 bg-white border border-slate-200 rounded-lg hover:text-red-600 hover:border-red-200 hover:bg-red-50 shadow-sm transition-all" title="Delete Order">
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button onClick={() => navigate(`/netsuite/orders/${order._id}`)} className="px-3 py-1.5 text-brand-gold bg-slate-900 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 shadow-sm transition-all whitespace-nowrap">
+                                      Process
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan={canViewCosts ? 11 : 8} className="py-24 text-center text-slate-400 border-none">
+                            <Package className="mx-auto mb-4 text-slate-300" size={56} strokeWidth={1} />
+                            <p className="text-sm font-black uppercase tracking-widest mb-1 text-slate-500">No Orders Found</p>
+                            <p className="text-xs font-bold text-slate-400">Try adjusting your filters or search query.</p>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* PAGINATION CONTROLS */}
+                {filteredOrders.length > 0 && (
+                  <div className="flex items-center justify-between p-4 border-t border-slate-200/60 bg-slate-50/50 shrink-0">
+                    <div className="text-xs font-medium text-slate-500">
+                      Showing <span className="font-bold text-slate-800">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to <span className="font-bold text-slate-800">{Math.min(currentPage * ITEMS_PER_PAGE, filteredOrders.length)}</span> of <span className="font-bold text-slate-800">{filteredOrders.length}</span> orders
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
+                        disabled={currentPage === 1} 
+                        className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-brand-gold disabled:opacity-30 transition-all"
+                      >
+                        <ChevronLeft size={16}/>
+                      </button>
+                      <span className="text-xs font-bold text-slate-700">
+                        Page {currentPage} of {totalPages || 1}
+                      </span>
+                      <button 
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
+                        disabled={currentPage === totalPages || totalPages === 0} 
+                        className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-brand-gold disabled:opacity-30 transition-all"
+                      >
+                        <ChevronRight size={16}/>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
         </div>
       </div>
-
-      {/* Floating Bulk Actions Bar */}
+      
       <AnimatePresence>
         {selectedOrders.length > 0 && !isPrintModalOpen && (
           <motion.div 
@@ -1067,7 +1095,6 @@ export default function OrdersPage() {
         )}
       </AnimatePresence>
 
-      {/* Bulk Print & Fulfill Modal */}
       <AnimatePresence>
         {isPrintModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -1118,7 +1145,6 @@ export default function OrdersPage() {
         )}
       </AnimatePresence>
 
-      {/* Quick Edit Modal */}
       <AnimatePresence>
         {isEditModalOpen && editingOrder && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -1180,7 +1206,7 @@ export default function OrdersPage() {
                     disabled={isSubmitting}
                   />
                 </div>
-
+                
                 <div className="pt-4 flex gap-3">
                   <button type="button" onClick={() => setIsEditModalOpen(false)} disabled={isSubmitting} className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50">Cancel</button>
                   <button type="submit" disabled={isSubmitting} className="flex-[2] flex justify-center items-center gap-2 px-4 py-3 bg-brand-gold hover:bg-amber-500 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-brand-gold/20 transition-all disabled:opacity-70">

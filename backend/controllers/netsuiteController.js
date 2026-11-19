@@ -219,7 +219,9 @@ export const getAllOrders = async (req, res) => {
           t.status,
           BUILTIN.DF(t.status) AS status_name,
           t.externalid,
-          tl.location
+          tl.location,
+          t.employee,
+          BUILTIN.DF(t.employee) AS ref_name,
       FROM 
           transaction t
       INNER JOIN 
