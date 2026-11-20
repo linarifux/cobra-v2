@@ -1,64 +1,98 @@
 import Order from '../models/Order.js';
 import Customer from '../models/Customer.js';
 import Inventory from '../models/Inventory.js';
-import ProcessingCharge from '../models/ProcessingCharge.js'; 
+import ProcessingCharge from '../models/ProcessingCharge.js';
 import User from '../models/User.js';
 import { catchAsync } from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 import { cancelShipment, voidLabel } from '../services/shipStationService.js';
-
-import { sendPendingOrderEmail, sendOrderConfirmationEmail } from '../utils/emailService.js'; // Using your custom email service
+import {
+  sendPendingOrderEmail,
+  sendOrderConfirmationEmail,
+} from '../utils/emailService.js';
 
 // Helper to determine the user's access tier
 const getAccessLevel = (user) => {
   if (!user) return 'guest';
-  if (['super_admin', 'admin'].includes(user.role) || user.portal === 'admin') return 'global_admin';
+  if (['super_admin', 'admin'].includes(user.role) || user.portal === 'admin') {
+    return 'global_admin';
+  }
   if (user.role === 'super_user') return 'division_admin';
   return 'standard_user';
 };
 
 // Helper to reliably determine if an order is international based on the country string
 const checkIfInternational = (countryStr) => {
-  if (!countryStr) return false; // Default to domestic if missing
+  if (!countryStr) return false;
   const normalizedCountry = countryStr.trim().toUpperCase();
-  const domesticVariants = ['US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'];
+  const domesticVariants = [
+    'US',
+    'USA',
+    'UNITED STATES',
+    'UNITED STATES OF AMERICA',
+  ];
   return !domesticVariants.includes(normalizedCountry);
 };
 
 // Helper to calculate the Subtotal of line items
 const calculateSubtotal = (orderData) => {
-  return orderData.items ? orderData.items.reduce((sum, item) => sum + (Number(item.totalPrice) || 0), 0) : 0;
+  if (!Array.isArray(orderData.items)) return 0;
+  return orderData.items.reduce((sum, item) => {
+    const lineTotal =
+      item.totalPrice !== undefined && item.totalPrice !== null
+        ? Number(item.totalPrice) || 0
+        : (Number(item.unitPrice) || 0) * (Number(item.quantity) || 0);
+    return sum + lineTotal;
+  }, 0);
 };
 
 // Helper to calculate the grand total of the order
 const calculateTotalAmount = (orderData, calculatedFees, subtotal) => {
   const shippingCost = Number(orderData.shippingDetails?.shippingCost) || 0;
   const processingTotal = Number(calculatedFees?.totalProcessingFee) || 0;
-  
-  // Return Grand Total (Rounded to 2 decimals)
+
   return Math.round((subtotal + shippingCost + processingTotal) * 100) / 100;
 };
 
 // --- DYNAMIC FEE CALCULATION ENGINE ---
 const calculateProcessingFees = async (orderData) => {
-  // Fetch active charge configuration specific to the customer
   let config = {};
-  if (orderData.customer) {
-     const dbConfig = await ProcessingCharge.findOne({ customer: orderData.customer, isActive: true });
-     if (dbConfig) config = dbConfig;
+  const customerId = orderData.customer?._id || orderData.customer;
+
+  if (customerId) {
+    const dbConfig = await ProcessingCharge.findOne({
+      customer: customerId,
+      isActive: true,
+    });
+    if (dbConfig) config = dbConfig;
   }
-  
-  // Extract specific values, defaulting to 0 if none exist
-  const cfgBaseUpTo10 = config.baseFeeUpTo10lbs !== undefined ? Number(config.baseFeeUpTo10lbs) : 0;
-  const cfgBase11To20 = config.baseFee11To20lbs !== undefined ? Number(config.baseFee11To20lbs) : 0;
-  const cfgWeight = config.weightSurcharge !== undefined ? Number(config.weightSurcharge) : 0;
-  const cfgLineItem = config.lineItemSurcharge !== undefined ? Number(config.lineItemSurcharge) : 0;
-  const cfgPackage = config.packageSurcharge !== undefined ? Number(config.packageSurcharge) : 0;
-  const cfgPiece = config.pieceSurcharge !== undefined ? Number(config.pieceSurcharge) : 0;
-  const cfgCarton = config.cartonSurcharge !== undefined ? Number(config.cartonSurcharge) : 0;
-  const cfgPallet = config.palletProcessingFee !== undefined ? Number(config.palletProcessingFee) : 0;
-  const cfgRush = config.rushSurcharge !== undefined ? Number(config.rushSurcharge) : 0;
-  const cfgIntl = config.internationalSurcharge !== undefined ? Number(config.internationalSurcharge) : 0;
+
+  const cfgBaseUpTo10 =
+    config.baseFeeUpTo10lbs !== undefined ? Number(config.baseFeeUpTo10lbs) : 0;
+  const cfgBase11To20 =
+    config.baseFee11To20lbs !== undefined ? Number(config.baseFee11To20lbs) : 0;
+  const cfgWeight =
+    config.weightSurcharge !== undefined ? Number(config.weightSurcharge) : 0;
+  const cfgLineItem =
+    config.lineItemSurcharge !== undefined
+      ? Number(config.lineItemSurcharge)
+      : 0;
+  const cfgPackage =
+    config.packageSurcharge !== undefined ? Number(config.packageSurcharge) : 0;
+  const cfgPiece =
+    config.pieceSurcharge !== undefined ? Number(config.pieceSurcharge) : 0;
+  const cfgCarton =
+    config.cartonSurcharge !== undefined ? Number(config.cartonSurcharge) : 0;
+  const cfgPallet =
+    config.palletProcessingFee !== undefined
+      ? Number(config.palletProcessingFee)
+      : 0;
+  const cfgRush =
+    config.rushSurcharge !== undefined ? Number(config.rushSurcharge) : 0;
+  const cfgIntl =
+    config.internationalSurcharge !== undefined
+      ? Number(config.internationalSurcharge)
+      : 0;
 
   const fees = {
     baseFee: 0,
@@ -70,16 +104,16 @@ const calculateProcessingFees = async (orderData) => {
     rushFee: 0,
     internationalFee: 0,
     palletFee: 0,
-    totalProcessingFee: 0
+    totalProcessingFee: 0,
   };
 
-  // 1. Weight & Base Fee 
+  // 1. Weight & Base Fee
   const weightLbs = (orderData.shippingDetails?.totalWeightOunces || 0) / 16;
   fees.baseFee = weightLbs <= 10 ? cfgBaseUpTo10 : cfgBase11To20;
-  
+
   // 2. Weight Surcharge (Over 20 lbs)
   if (weightLbs > 20) {
-    fees.weightSurcharge = (weightLbs - 20) * cfgWeight; 
+    fees.weightSurcharge = (weightLbs - 20) * cfgWeight;
   }
 
   // 3. Line Items (Over 3 lines)
@@ -89,18 +123,26 @@ const calculateProcessingFees = async (orderData) => {
   }
 
   // 4. Packages (Over 1 package)
-  const packageCount = orderData.shippingDetails?.totalBoxes || 
-                      (orderData.shippingDetails?.packages ? orderData.shippingDetails.packages.length : 1);
+  const packageCount =
+    orderData.shippingDetails?.totalBoxes ||
+    (orderData.shippingDetails?.packages
+      ? orderData.shippingDetails.packages.length
+      : 1);
   if (packageCount > 1) {
     fees.packageSurcharge = (packageCount - 1) * cfgPackage;
   }
 
   // 5. Pieces
-  const totalPieces = orderData.items ? orderData.items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0) : 0;
+  const totalPieces = orderData.items
+    ? orderData.items.reduce(
+        (sum, item) => sum + (Number(item.quantity) || 0),
+        0,
+      )
+    : 0;
   fees.pieceSurcharge = totalPieces * cfgPiece;
 
   // 6. Cartons
-  const cartonCount = orderData.shippingDetails?.cartoons || 0; 
+  const cartonCount = orderData.shippingDetails?.cartoons || 0;
   fees.cartonSurcharge = cartonCount * cfgCarton;
 
   // 7. Pallets
@@ -111,7 +153,6 @@ const calculateProcessingFees = async (orderData) => {
   fees.rushFee = orderData.isRushOrder ? cfgRush : 0;
   fees.internationalFee = orderData.isInternational ? cfgIntl : 0;
 
-  // Rounding utility to prevent floating-point precision issues
   const round2 = (num) => Math.round(num * 100) / 100;
 
   fees.baseFee = round2(fees.baseFee);
@@ -123,70 +164,88 @@ const calculateProcessingFees = async (orderData) => {
   fees.palletFee = round2(fees.palletFee);
   fees.rushFee = round2(fees.rushFee);
   fees.internationalFee = round2(fees.internationalFee);
-  
+
   fees.totalProcessingFee = round2(
-    fees.baseFee + fees.weightSurcharge + fees.lineItemSurcharge + 
-    fees.packageSurcharge + fees.pieceSurcharge + fees.cartonSurcharge + 
-    fees.rushFee + fees.internationalFee + fees.palletFee
+    fees.baseFee +
+      fees.weightSurcharge +
+      fees.lineItemSurcharge +
+      fees.packageSurcharge +
+      fees.pieceSurcharge +
+      fees.cartonSurcharge +
+      fees.rushFee +
+      fees.internationalFee +
+      fees.palletFee,
   );
 
   return fees;
 };
 
-
-// @desc    Create a new order
-
 // Helper function to generate the sequential order number
 const generateOrderNumber = async (OrderModel) => {
   const currentYear = new Date().getFullYear();
-  
-  // Find the absolute latest order created in the current year
+
   const latestOrder = await OrderModel.findOne({
-    createdAt: { 
+    createdAt: {
       $gte: new Date(`${currentYear}-01-01T00:00:00.000Z`),
-      $lt: new Date(`${currentYear + 1}-01-01T00:00:00.000Z`)
+      $lt: new Date(`${currentYear + 1}-01-01T00:00:00.000Z`),
     },
-    orderNumber: { $regex: `^COB-${currentYear}-` } // Ensure we only look at orders matching this format
+    orderNumber: { $regex: `^COB-${currentYear}-` },
   }).sort({ createdAt: -1 });
 
-  // Default starting point for a brand new database
   let nextSequence = 135051;
 
   if (latestOrder && latestOrder.orderNumber) {
-    // Extract the last digits of the latest order number (e.g. "000045" or "135045")
     const latestSequenceStr = latestOrder.orderNumber.split('-')[2];
-    
+
     if (latestSequenceStr && !isNaN(latestSequenceStr)) {
       const currentSerial = parseInt(latestSequenceStr, 10);
-      
+
       if (currentSerial < 135000) {
-        // Jump existing small serials up to the 135k range (e.g., 45 becomes 135046)
         nextSequence = 135000 + currentSerial + 1;
       } else {
-        // If already in the 135k range, just increment by 1
         nextSequence = currentSerial + 1;
       }
     }
   }
 
-  // Pad the sequence with leading zeroes (though it will naturally be at least 6 digits now)
   const paddedSequence = String(nextSequence).padStart(6, '0');
-  
   return `COB-${currentYear}-${paddedSequence}`;
 };
 
+// Helper to match both native COBRA SKU and NetSuite corporateSku
+const buildInventorySkuFilter = (sku, customer) => ({
+  $or: [{ sku }, { corporateSku: sku }],
+  customer: customer?._id || customer,
+});
+
+// @desc    Create a new order
 export const createOrder = catchAsync(async (req, res, next) => {
+  if (!req.body.customer && req.params.customerId) {
+    req.body.customer = req.params.customerId;
+  }
+  if (!req.body.division && req.params.divisionId) {
+    req.body.division = req.params.divisionId;
+  }
+  if (!req.body.user && req.params.userId) {
+    req.body.user = req.params.userId;
+  }
 
-  if (!req.body.customer && req.params.customerId) req.body.customer = req.params.customerId;
-  if (!req.body.division && req.params.divisionId) req.body.division = req.params.divisionId;
-  if (!req.body.user && req.params.userId) req.body.user = req.params.userId;
-
-  if (!req.body.shippingDetails?.carrierType || !req.body.shippingDetails?.serviceCode) {
-    return next(new AppError('Shipping carrier and service code are required to process the order.', 400));
+  if (
+    !req.body.shippingDetails?.carrierType ||
+    !req.body.shippingDetails?.serviceCode
+  ) {
+    return next(
+      new AppError(
+        'Shipping carrier and service code are required to process the order.',
+        400,
+      ),
+    );
   }
 
   const customer = await Customer.findById(req.body.customer);
   if (!customer) return next(new AppError('Customer not found.', 404));
+
+  const isNetSuiteOrder = req.body.orderSource === 'NETSUITE';
 
   // --- AUTOMATED INTERNATIONAL DETECTION ---
   const orderCountry = req.body.shippingAddress?.country;
@@ -195,12 +254,16 @@ export const createOrder = catchAsync(async (req, res, next) => {
   // --- CALCULATE SUBTOTAL & PROCESSING FEES ---
   req.body.subtotal = calculateSubtotal(req.body);
   const calculatedProcessingFees = await calculateProcessingFees(req.body);
-  
+
   // EXPLICIT ASSIGNMENT: Ensure processing fees are written to the payload before DB Save
-  req.body.processingFees = calculatedProcessingFees; 
+  req.body.processingFees = calculatedProcessingFees;
 
   // --- CALCULATE GRAND TOTAL ---
-  req.body.totalAmount = calculateTotalAmount(req.body, req.body.processingFees, req.body.subtotal);
+  req.body.totalAmount = calculateTotalAmount(
+    req.body,
+    req.body.processingFees,
+    req.body.subtotal,
+  );
 
   // --- GENERATE SEQUENTIAL ORDER NUMBER ---
   req.body.orderNumber = await generateOrderNumber(Order);
@@ -212,26 +275,35 @@ export const createOrder = catchAsync(async (req, res, next) => {
     order.status = 'Pending';
   }
 
-  if (req.body?.shippingDetails?.serviceCode) {
+  // Only enforce UPS Ground pending approval rule on native COBRA orders
+  if (!isNetSuiteOrder && req.body?.shippingDetails?.serviceCode) {
     if (req.body.shippingDetails.serviceCode.toLowerCase() !== 'ups_ground') {
       order.status = 'Pending';
     }
   }
 
-  // --- MONTHLY ORDER LIMIT CHECK ---
+  // --- MONTHLY ORDER LIMIT CHECK (Skip for NetSuite imports) ---
   let orderUser = null;
   const targetUserId = req.body.user || (req.user ? req.user._id : null);
-  
-  if (targetUserId) {
+
+  if (!isNetSuiteOrder && targetUserId) {
     orderUser = await User.findById(targetUserId);
     if (orderUser && typeof orderUser.orderLimit === 'number') {
       const now = new Date();
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      const endOfMonth = new Date(
+        now.getFullYear(),
+        now.getMonth() + 1,
+        0,
+        23,
+        59,
+        59,
+        999,
+      );
 
       const monthlyOrderCount = await Order.countDocuments({
         user: targetUserId,
-        createdAt: { $gte: startOfMonth,$lte: endOfMonth }
+        createdAt: { $gte: startOfMonth, $lte: endOfMonth },
       });
 
       if (monthlyOrderCount >= orderUser.orderLimit) {
@@ -250,22 +322,33 @@ export const createOrder = catchAsync(async (req, res, next) => {
     try {
       if (order.status === 'Pending') {
         // ALWAYS send alert to the operations team
-        await sendPendingOrderEmail('orders@mi-kro.com', recipientName, order.orderNumber, order.subtotal);
+        await sendPendingOrderEmail(
+          'orders@mi-kro.com',
+          recipientName,
+          order.orderNumber,
+          order.subtotal,
+        );
 
-        // send alert to the user placed the order
-        await sendPendingOrderEmail(orderUser.email, recipientName, order.orderNumber, order.subtotal);
-        
+        // Send alert to the user who placed the order (guarded when orderUser is null)
+        if (orderUser?.email) {
+          await sendPendingOrderEmail(
+            orderUser.email,
+            recipientName,
+            order.orderNumber,
+            order.subtotal,
+          );
+        }
+
         // Privilege Check: If current user cannot release orders, find an admin/super_user who can
         let notifyEmail = null;
 
         if (orderUser && orderUser.releasePendingOrders === true) {
           notifyEmail = orderUser.email;
         } else {
-          // Find the first active user under this specific customer who possesses release permissions
-          const privilegedUser = await User.findOne({ 
-            customer: order.customer, 
+          const privilegedUser = await User.findOne({
+            customer: order.customer?._id || order.customer,
             releasePendingOrders: true,
-            isActive: true 
+            isActive: true,
           }).select('email');
 
           if (privilegedUser) {
@@ -273,48 +356,62 @@ export const createOrder = catchAsync(async (req, res, next) => {
           }
         }
 
-        // Dispatch alert if a valid target was identified
-        if (notifyEmail) {
-          await sendPendingOrderEmail(notifyEmail, recipientName, order.orderNumber, order.subtotal);
+        // Dispatch alert if a distinct valid target was identified
+        if (notifyEmail && notifyEmail !== orderUser?.email) {
+          await sendPendingOrderEmail(
+            notifyEmail,
+            recipientName,
+            order.orderNumber,
+            order.subtotal,
+          );
         }
-
       } else {
         // Standard Confirmation
         await sendOrderConfirmationEmail(fallbackEmail, order);
         await sendOrderConfirmationEmail('orders@mi-kro.com', order);
       }
     } catch (emailError) {
-      console.error(`Failed to send email for order ${order.orderNumber}:`, emailError);
+      console.error(
+        `Failed to send email for order ${order.orderNumber}:`,
+        emailError,
+      );
     }
   }
 
+  // --- INVENTORY DEDUCTION (Matches both COBRA sku and NetSuite corporateSku) ---
   if (order.items && order.items.length > 0) {
     try {
-      await Promise.all(order.items.map(async (item) => {
-        const deduction = Number(item.quantity) || 1;
-        await Inventory.findOneAndUpdate(
-          { sku: item.sku, customer: order.customer },
-          {
-            $inc: { available: -deduction },$push: {
-              auditLedger: {
-                event: 'Order Placed',
-                referenceId: order.orderNumber, // Safely records the auto-generated number
-                quantityDelta: -deduction
-              }
-            }
-          },
-          { new: true, runValidators: true }
-        );
-      }));
+      await Promise.all(
+        order.items.map(async (item) => {
+          const deduction = Number(item.quantity) || 1;
+          await Inventory.findOneAndUpdate(
+            buildInventorySkuFilter(item.sku, order.customer),
+            {
+              $inc: { available: -deduction },
+              $push: {
+                auditLedger: {
+                  event: 'Order Placed',
+                  referenceId: order.orderNumber,
+                  quantityDelta: -deduction,
+                },
+              },
+            },
+            { new: true, runValidators: true },
+          );
+        }),
+      );
     } catch (invError) {
-      console.error(`[Inventory Sync Warning] Failed to deduct stock:`, invError.message);
+      console.error(
+        `[Inventory Sync Warning] Failed to deduct stock:`,
+        invError.message,
+      );
     }
   }
 
   await order.populate([
     { path: 'customer', select: 'customerName contactEmail' },
     { path: 'division', select: 'divisionName divisionCode' },
-    { path: 'user', select: 'name firstName lastName email' }
+    { path: 'user', select: 'name firstName lastName email' },
   ]);
 
   res.status(201).json({ status: 'success', data: { order } });
@@ -326,28 +423,57 @@ export const getAllOrders = catchAsync(async (req, res, next) => {
 
   if (req.params.customerId) filter.customer = req.params.customerId;
   if (req.params.divisionId) filter.division = req.params.divisionId;
-  if (req.query.customer && req.query.customer !== 'All') filter.customer = req.query.customer;
-  if (req.query.division && req.query.division !== 'All') filter.division = req.query.division;
-  if (req.query.user && req.query.user !== 'All') filter.user = req.query.user;
-  if (req.query.status && req.query.status !== 'All') filter.status = req.query.status;
+  if (req.query.customer && req.query.customer !== 'All') {
+    filter.customer = req.query.customer;
+  }
+  if (req.query.division && req.query.division !== 'All') {
+    filter.division = req.query.division;
+  }
+  if (req.query.user && req.query.user !== 'All') {
+    filter.user = req.query.user;
+  }
+  if (req.query.status && req.query.status !== 'All') {
+    filter.status = req.query.status;
+  }
+  if (req.query.orderSource && req.query.orderSource !== 'All') {
+    filter.orderSource = req.query.orderSource;
+  }
 
   if (req.query.search) {
     filter.$or = [
       { orderNumber: { $regex: req.query.search, $options: 'i' } },
-      { 'shippingAddress.recipientName': { $regex: req.query.search, $options: 'i' } },
-      { 'shippingAddress.companyName': { $regex: req.query.search, $options: 'i' } } 
+      { legacyNumber: { $regex: req.query.search, $options: 'i' } },
+      {
+        'shippingAddress.recipientName': {
+          $regex: req.query.search,
+          $options: 'i',
+        },
+      },
+      {
+        'shippingAddress.companyName': {
+          $regex: req.query.search,
+          $options: 'i',
+        },
+      },
     ];
   }
-  
+
   const accessLevel = getAccessLevel(req.user);
 
   if (accessLevel === 'standard_user') {
     filter.user = req.user._id;
   } else if (accessLevel === 'division_admin') {
-    const userDivisions = req.user.divisions ? req.user.divisions.map(d => String(d._id || d)) : [];
+    const userDivisions = req.user.divisions
+      ? req.user.divisions.map((d) => String(d._id || d))
+      : [];
     if (filter.division) {
       if (!userDivisions.includes(String(filter.division))) {
-        return next(new AppError('You do not have permission to view orders for this division', 403));
+        return next(
+          new AppError(
+            'You do not have permission to view orders for this division',
+            403,
+          ),
+        );
       }
     } else {
       filter.division = { $in: userDivisions };
@@ -361,13 +487,18 @@ export const getAllOrders = catchAsync(async (req, res, next) => {
     .populate('shippingDetails.carrierId', 'carrierType accountName')
     .sort('-createdAt');
 
-  res.status(200).json({ status: 'success', results: orders.length, data: { orders } });
+  res
+    .status(200)
+    .json({ status: 'success', results: orders.length, data: { orders } });
 });
 
 // @desc    Get a single order by ID
 export const getOrder = catchAsync(async (req, res, next) => {
   const order = await Order.findById(req.params.id)
-    .populate('customer', '_id carrierConfigurations customerName contactEmail contactNumber address')
+    .populate(
+      'customer',
+      '_id carrierConfigurations customerName contactEmail contactNumber address',
+    )
     .populate('division', 'divisionName divisionCode address')
     .populate('user', 'name firstName lastName email phone')
     .populate('shippingDetails.carrierId', 'carrierType accountName');
@@ -381,13 +512,22 @@ export const getOrder = catchAsync(async (req, res, next) => {
     const orderDivisionId = String(order.division?._id || order.division);
 
     if (accessLevel === 'division_admin') {
-      const userDivisions = req.user.divisions ? req.user.divisions.map(d => String(d._id || d)) : [];
+      const userDivisions = req.user.divisions
+        ? req.user.divisions.map((d) => String(d._id || d))
+        : [];
       if (!userDivisions.includes(orderDivisionId)) {
-        return next(new AppError('You do not have permission to view orders outside your assigned divisions', 403));
+        return next(
+          new AppError(
+            'You do not have permission to view orders outside your assigned divisions',
+            403,
+          ),
+        );
       }
     } else {
       if (orderUserId !== String(req.user._id)) {
-        return next(new AppError('You do not have permission to view this order', 403));
+        return next(
+          new AppError('You do not have permission to view this order', 403),
+        );
       }
     }
   }
@@ -396,9 +536,11 @@ export const getOrder = catchAsync(async (req, res, next) => {
 });
 
 // @desc    Update an order
-export const updateOrder = catchAsync(async (req, res, next) => {  
-  let order = await Order.findById(req.params.id)
-    .populate('user', 'email name releasePendingOrders');
+export const updateOrder = catchAsync(async (req, res, next) => {
+  let order = await Order.findById(req.params.id).populate(
+    'user',
+    'email name releasePendingOrders',
+  );
 
   if (!order) return next(new AppError('No order found with that ID', 404));
 
@@ -408,57 +550,79 @@ export const updateOrder = catchAsync(async (req, res, next) => {
     const orderDivisionId = String(order.division?._id || order.division);
 
     if (accessLevel === 'division_admin') {
-      const userDivisions = req.user.divisions ? req.user.divisions.map(d => String(d._id || d)) : [];
+      const userDivisions = req.user.divisions
+        ? req.user.divisions.map((d) => String(d._id || d))
+        : [];
       if (!userDivisions.includes(orderDivisionId)) {
-        return next(new AppError('You do not have permission to update orders outside your assigned divisions', 403));
+        return next(
+          new AppError(
+            'You do not have permission to update orders outside your assigned divisions',
+            403,
+          ),
+        );
       }
     } else {
       if (orderUserId !== String(req.user._id)) {
-        return next(new AppError('You do not have permission to update this order', 403));
+        return next(
+          new AppError('You do not have permission to update this order', 403),
+        );
       }
     }
   }
 
-  // --- FORCE PENDING STATUS FOR NON-UPS-GROUND SERVICES ---
-  // We check if serviceCode is actively being updated in this request to prevent 
-  // reverting already 'Shipped' or 'Delivered' orders just because a note was added.
-  if (req.body?.status === 'New' && req.body.shippingDetails?.serviceCode) {
+  const isNetSuiteOrder =
+    (req.body.orderSource || order.orderSource) === 'NETSUITE';
+
+  // --- FORCE PENDING STATUS FOR NON-UPS-GROUND SERVICES (Native COBRA orders only) ---
+  if (
+    !isNetSuiteOrder &&
+    req.body?.status === 'New' &&
+    req.body.shippingDetails?.serviceCode
+  ) {
     if (req.body.shippingDetails.serviceCode.toLowerCase() !== 'ups_ground') {
       req.body.status = 'Pending';
     }
   }
 
   // --- EVENT CATCH: DETECT STATUS CHANGE TO PENDING ---
-  const isChangingToPending = req.body.status === 'Pending' && order.status !== 'Pending';
-  
-  // --- EVENT CATCH: DETECT ANY UPDATE ON A NEW ORDER ---
-  const isStandardUpdate = !isChangingToPending && req.body.status !== 'Cancelled';
+  const isChangingToPending =
+    req.body.status === 'Pending' && order.status !== 'Pending';
 
-  const mergedData = { 
-    ...order.toObject(), 
+  // --- EVENT CATCH: DETECT ANY UPDATE ON A NEW ORDER ---
+  const isStandardUpdate =
+    !isChangingToPending && req.body.status !== 'Cancelled';
+
+  const mergedData = {
+    ...order.toObject(),
     ...req.body,
     shippingDetails: {
       ...(order.shippingDetails ? order.shippingDetails.toObject() : {}),
-      ...(req.body.shippingDetails || {})
+      ...(req.body.shippingDetails || {}),
     },
     shippingAddress: {
       ...(order.shippingAddress ? order.shippingAddress.toObject() : {}),
-      ...(req.body.shippingAddress || {})
+      ...(req.body.shippingAddress || {}),
     },
-    items: req.body.items || order.items
+    items: req.body.items || order.items,
   };
-  
-  req.body.isInternational = checkIfInternational(mergedData.shippingAddress?.country);
-  mergedData.isInternational = req.body.isInternational; 
+
+  req.body.isInternational = checkIfInternational(
+    mergedData.shippingAddress?.country,
+  );
+  mergedData.isInternational = req.body.isInternational;
 
   // --- RE-CALCULATE SUBTOTAL, FEES & TOTAL ON UPDATE ---
   req.body.subtotal = calculateSubtotal(mergedData);
   const calculatedProcessingFees = await calculateProcessingFees(mergedData);
-  
+
   // EXPLICIT ASSIGNMENT: Ensure processing fees are written to the payload before DB Save
-  req.body.processingFees = calculatedProcessingFees; 
-  
-  req.body.totalAmount = calculateTotalAmount(mergedData, req.body.processingFees, req.body.subtotal);
+  req.body.processingFees = calculatedProcessingFees;
+
+  req.body.totalAmount = calculateTotalAmount(
+    mergedData,
+    req.body.processingFees,
+    req.body.subtotal,
+  );
 
   if (req.body.status === 'Cancelled' && order.status !== 'Cancelled') {
     const labelId = order.shipstationDetails?.labelId;
@@ -473,29 +637,38 @@ export const updateOrder = catchAsync(async (req, res, next) => {
 
     if (order.items && order.items.length > 0) {
       try {
-        await Promise.all(order.items.map(async (item) => {
-          const restockQty = Number(item.quantity) || 1;
-          await Inventory.findOneAndUpdate(
-            { sku: item.sku, customer: order.customer },
-            {
-              $inc: { available: restockQty },$push: {
-                auditLedger: {
-                  event: 'Order Cancellation Restock',
-                  referenceId: order.orderNumber,
-                  quantityDelta: restockQty
-                }
-              }
-            },
-            { new: true, runValidators: true }
-          );
-        }));
+        await Promise.all(
+          order.items.map(async (item) => {
+            const restockQty = Number(item.quantity) || 1;
+            await Inventory.findOneAndUpdate(
+              buildInventorySkuFilter(item.sku, order.customer),
+              {
+                $inc: { available: restockQty },
+                $push: {
+                  auditLedger: {
+                    event: 'Order Cancellation Restock',
+                    referenceId: order.orderNumber,
+                    quantityDelta: restockQty,
+                  },
+                },
+              },
+              { new: true, runValidators: true },
+            );
+          }),
+        );
       } catch (invError) {
-        console.error(`[Inventory Sync Warning] Failed to restock:`, invError.message);
+        console.error(
+          `[Inventory Sync Warning] Failed to restock:`,
+          invError.message,
+        );
       }
     }
   }
 
-  order = await Order.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true })
+  order = await Order.findByIdAndUpdate(req.params.id, req.body, {
+    new: true,
+    runValidators: true,
+  })
     .populate('customer', 'customerName')
     .populate('division', 'divisionName divisionCode')
     .populate('user', 'name firstName lastName email releasePendingOrders')
@@ -509,22 +682,31 @@ export const updateOrder = catchAsync(async (req, res, next) => {
   if (recipientEmail) {
     try {
       if (isChangingToPending) {
-        // ALWAYS send alert to the operations team
-        await sendPendingOrderEmail('orders@mi-kro.com', recipientName, order.orderNumber, order.subtotal);
+        await sendPendingOrderEmail(
+          'orders@mi-kro.com',
+          recipientName,
+          order.orderNumber,
+          order.subtotal,
+        );
 
-        await sendPendingOrderEmail(orderUser?.email, recipientName, order.orderNumber, order.subtotal);
-        
-        // Privilege Check: If current user cannot release orders, find an admin/super_user who can
+        if (orderUser?.email) {
+          await sendPendingOrderEmail(
+            orderUser.email,
+            recipientName,
+            order.orderNumber,
+            order.subtotal,
+          );
+        }
+
         let notifyEmail = null;
 
         if (orderUser && orderUser.releasePendingOrders === true) {
           notifyEmail = orderUser.email;
         } else {
-          // Find the first active user under this specific customer who possesses release permissions
-          const privilegedUser = await User.findOne({ 
-            customer: order.customer, 
+          const privilegedUser = await User.findOne({
+            customer: order.customer?._id || order.customer,
             releasePendingOrders: true,
-            isActive: true 
+            isActive: true,
           }).select('email');
 
           if (privilegedUser) {
@@ -532,23 +714,27 @@ export const updateOrder = catchAsync(async (req, res, next) => {
           }
         }
 
-        // Dispatch alert if a valid target was identified
-        if (notifyEmail) {
-          await sendPendingOrderEmail(notifyEmail, recipientName, order.orderNumber, order.subtotal);
+        if (notifyEmail && notifyEmail !== orderUser?.email) {
+          await sendPendingOrderEmail(
+            notifyEmail,
+            recipientName,
+            order.orderNumber,
+            order.subtotal,
+          );
         }
-
       } else if (isStandardUpdate) {
-        // Standard Update Confirmation
         await sendOrderConfirmationEmail(recipientEmail, order);
       }
     } catch (emailError) {
-      console.error(`Failed to send email update for order ${order.orderNumber}:`, emailError);
+      console.error(
+        `Failed to send email update for order ${order.orderNumber}:`,
+        emailError,
+      );
     }
   }
 
   res.status(200).json({ status: 'success', data: { order } });
 });
-
 
 // @desc    Delete an order
 export const deleteOrder = catchAsync(async (req, res, next) => {
@@ -562,13 +748,22 @@ export const deleteOrder = catchAsync(async (req, res, next) => {
     const orderDivisionId = String(order.division?._id || order.division);
 
     if (accessLevel === 'division_admin') {
-      const userDivisions = req.user.divisions ? req.user.divisions.map(d => String(d._id || d)) : [];
+      const userDivisions = req.user.divisions
+        ? req.user.divisions.map((d) => String(d._id || d))
+        : [];
       if (!userDivisions.includes(orderDivisionId)) {
-        return next(new AppError('You do not have permission to delete orders outside your assigned divisions', 403));
+        return next(
+          new AppError(
+            'You do not have permission to delete orders outside your assigned divisions',
+            403,
+          ),
+        );
       }
     } else {
       if (orderUserId !== String(req.user._id)) {
-        return next(new AppError('You do not have permission to delete this order', 403));
+        return next(
+          new AppError('You do not have permission to delete this order', 403),
+        );
       }
     }
   }
@@ -589,27 +784,33 @@ export const deleteOrder = catchAsync(async (req, res, next) => {
 
   if (needsRestock && order.items && order.items.length > 0) {
     try {
-      await Promise.all(order.items.map(async (item) => {
-        const restockQty = Number(item.quantity) || 1;
-        await Inventory.findOneAndUpdate(
-          { sku: item.sku, customer: order.customer },
-          {
-            $inc: { available: restockQty },$push: {
-              auditLedger: {
-                event: 'Order Deletion Restock',
-                referenceId: order.orderNumber,
-                quantityDelta: restockQty
-              }
-            }
-          },
-          { new: true, runValidators: true }
-        );
-      }));
+      await Promise.all(
+        order.items.map(async (item) => {
+          const restockQty = Number(item.quantity) || 1;
+          await Inventory.findOneAndUpdate(
+            buildInventorySkuFilter(item.sku, order.customer),
+            {
+              $inc: { available: restockQty },
+              $push: {
+                auditLedger: {
+                  event: 'Order Deletion Restock',
+                  referenceId: order.orderNumber,
+                  quantityDelta: restockQty,
+                },
+              },
+            },
+            { new: true, runValidators: true },
+          );
+        }),
+      );
     } catch (invError) {
-      console.error(`[Inventory Sync Warning] Failed to restock:`, invError.message);
+      console.error(
+        `[Inventory Sync Warning] Failed to restock:`,
+        invError.message,
+      );
     }
   }
-  
+
   await Order.findByIdAndDelete(req.params.id);
   res.status(204).json({ status: 'success', data: null });
 });
@@ -625,16 +826,24 @@ export const getOrdersByUserId = catchAsync(async (req, res, next) => {
 
   const accessLevel = getAccessLevel(req.user);
 
-  // Security Check: Standard users can ONLY request their own orders
-  if (accessLevel === 'standard_user' && String(req.user._id) !== String(userId)) {
-    return next(new AppError('You do not have permission to view orders for this user.', 403));
+  if (
+    accessLevel === 'standard_user' &&
+    String(req.user._id) !== String(userId)
+  ) {
+    return next(
+      new AppError(
+        'You do not have permission to view orders for this user.',
+        403,
+      ),
+    );
   }
 
   const filter = { user: userId };
 
-  // Security Check: Division admins can only see this user's orders if they belong to their assigned divisions
   if (accessLevel === 'division_admin') {
-    const userDivisions = req.user.divisions ? req.user.divisions.map(d => String(d._id || d)) : [];
+    const userDivisions = req.user.divisions
+      ? req.user.divisions.map((d) => String(d._id || d))
+      : [];
     filter.division = { $in: userDivisions };
   }
 
@@ -643,12 +852,11 @@ export const getOrdersByUserId = catchAsync(async (req, res, next) => {
     .populate('division', 'divisionName divisionCode')
     .populate('user', 'name firstName lastName email')
     .populate('shippingDetails.carrierId', 'carrierType accountName')
-    .sort('-createdAt'); // Sorts newest first
+    .sort('-createdAt');
 
-  res.status(200).json({ 
-    status: 'success', 
-    results: orders.length, 
-    data: { orders } 
+  res.status(200).json({
+    status: 'success',
+    results: orders.length,
+    data: { orders },
   });
 });
-

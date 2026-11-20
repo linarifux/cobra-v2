@@ -1,3 +1,4 @@
+import { executeNetSuiteOrderFulfillment } from "./netsuiteController.js";
 import Order from "../models/Order.js";
 import Inventory from "../models/Inventory.js";
 import Carrier from "../models/Carrier.js";
@@ -708,12 +709,12 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
   let totalWeight = weightInOunces;
   if (packages && packages.length > 0) {
     totalWeight = packages.reduce(
-      (acc, p) => acc + Number(p.weightInOunces),
+      (acc, p) => acc + Number(p.weightInOunces || 0),
       0,
     );
   }
 
-  // 2. USE THE EXACT SNIPPET PAYLOAD (With Carrier/Weight overrides included to ensure UI changes sync)
+  // 2. SHIPSTATION LABEL PAYLOAD
   const labelPayload = {
     carrier_id: finalCarrierType,
     service_code: finalServiceCode,
@@ -721,7 +722,6 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
       value: totalWeight,
       units: "ounces",
     },
-    // Restored the missing packages parameter required for ShipStation API v2 dimension extraction
     packages: mapPackages(packages, totalWeight),
     validate_address: "no_validation",
     label_layout: "4x6",
@@ -745,9 +745,57 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
       return next(new AppError(`ShipStation Error: ${errorMsg}`, 400));
     }
 
+    // Extract all tracking numbers & per-package weights (supports multi-box ShipStation labels)
+    const ssLabelPackages = Array.isArray(labelResponse.packages)
+      ? labelResponse.packages
+      : [];
+
+    const netSuitePackages = ssLabelPackages
+      .filter((pkg) => pkg.tracking_number || pkg.trackingNumber)
+      .map((pkg, idx) => {
+        const weightVal = Number(pkg.weight?.value || 0);
+        const weightUnit = String(pkg.weight?.unit || "").toLowerCase();
+        let weightLbs = 0;
+
+        if (weightUnit.startsWith("pound") || weightUnit === "lb") {
+          weightLbs = weightVal;
+        } else if (weightUnit.startsWith("ounce") || weightUnit === "oz") {
+          weightLbs = weightVal / 16;
+        } else {
+          weightLbs = Number(packages?.[idx]?.weightInOunces || 0) / 16;
+        }
+
+        return {
+          trackingNumber: String(
+            pkg.tracking_number || pkg.trackingNumber,
+          ).trim(),
+          weightLbs: Number(Math.max(weightLbs, 0.1).toFixed(2)),
+          description: `Box ${idx + 1}`,
+        };
+      });
+
+    const primaryTrackingNumber =
+      labelResponse.tracking_number ||
+      labelResponse.trackingNumber ||
+      netSuitePackages[0]?.trackingNumber ||
+      "";
+
+    const allTrackingNumbers =
+      netSuitePackages.length > 0
+        ? netSuitePackages.map((p) => p.trackingNumber)
+        : primaryTrackingNumber
+          ? [primaryTrackingNumber]
+          : [];
+
+    const resolvedShippingCost = Number(
+      labelResponse.shipment_cost?.amount ??
+        order.shippingDetails?.shippingCost ??
+        0,
+    );
+
     order.status = "Shipped";
-    order.shippingDetails.trackingNumber = labelResponse.tracking_number ;
-    order.shippingDetails.shippingCost = labelResponse.shipment_cost?.amount
+    order.shippingDetails.trackingNumber = allTrackingNumbers.join(", ");
+    order.shippingDetails.shippingCost = resolvedShippingCost;
 
     // Update internal metrics payload
     if (cartoons !== undefined) order.shippingDetails.cartoons = cartoons;
@@ -756,7 +804,7 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
     if (totalWeightOunces !== undefined)
       order.shippingDetails.totalWeightOunces = totalWeightOunces;
 
-    // FIX: Sync frontend processing fees explicitly
+    // Sync frontend processing fees explicitly
     if (processingFees) order.processingFees = processingFees;
 
     if (packages && packages.length > 0) {
@@ -773,7 +821,16 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
       ...order.shipstationDetails,
       labelId: labelResponse.label_id || labelResponse.labelId,
     };
-    order.totalAmount = Number(order.processingFees.totalProcessingFee + order.shippingDetails?.shippingCost);
+
+    // Include subtotal + processing fees + shipping cost cleanly
+    const subtotalVal = Number(order.subtotal || 0);
+    const processingFeeVal = Number(
+      order.processingFees?.totalProcessingFee || 0,
+    );
+    order.totalAmount =
+      Math.round((subtotalVal + processingFeeVal + resolvedShippingCost) * 100) /
+      100;
+
     await order.save();
 
     let shipmentTracker = await Shipment.findOne({ order: order._id });
@@ -803,6 +860,74 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
         notes: `Label generated via ${finalCarrierType}.`,
       });
     }
+
+    // 3. NETSUITE SYNC: Transform order into Shipped Item Fulfillment with tracking
+    let netSuiteSync = {
+      attempted: false,
+      synced: false,
+      data: null,
+      error: null,
+    };
+
+    if (
+      order.orderSource === "NETSUITE" &&
+      order.legacyNumber &&
+      allTrackingNumbers.length > 0
+    ) {
+      netSuiteSync.attempted = true;
+      try {
+        const shipDateStr = String(
+          labelResponse.ship_date || new Date().toISOString(),
+        ).split("T")[0];
+
+        const nsResult = await executeNetSuiteOrderFulfillment(
+          order.legacyNumber,
+          {
+            trackingNumber: primaryTrackingNumber,
+            trackingNumbers: allTrackingNumbers,
+            packages: netSuitePackages,
+            totalWeightOunces:
+              Number(totalWeightOunces) ||
+              Number(totalWeight) ||
+              Number(order.shippingDetails?.totalWeightOunces || 0),
+            shippingCost: resolvedShippingCost,
+            shipDate: shipDateStr,
+            carrierType:
+              labelResponse.carrier_code ||
+              order.shippingDetails?.carrierType ||
+              finalCarrierType ||
+              "",
+            memo: `Shipped via COBRA (${order.orderNumber})`,
+            locationId: 586,
+          },
+        );
+
+        netSuiteSync.synced = true;
+        netSuiteSync.data = nsResult;
+
+        shipmentTracker.statusHistory.push({
+          status: "NetSuite Synced",
+          notes: `NetSuite ${nsResult.tranId} marked Shipped (Tracking: ${allTrackingNumbers.join(", ")}).`,
+        });
+      } catch (nsError) {
+        const nsErrMsg =
+          nsError.response?.data?.["o:errorDetails"]?.[0]?.detail ||
+          nsError.message ||
+          "NetSuite fulfillment sync failed.";
+
+        console.error(
+          `[NetSuite Sync Error] Order ${order.orderNumber} (${order.legacyNumber}):`,
+          nsErrMsg,
+        );
+
+        netSuiteSync.error = nsErrMsg;
+        shipmentTracker.statusHistory.push({
+          status: "NetSuite Sync Failed",
+          notes: `Label purchased, but NetSuite update failed: ${nsErrMsg}`,
+        });
+      }
+    }
+
     await shipmentTracker.save();
 
     let labelData = labelResponse.label_data || labelResponse.labelData;
@@ -812,7 +937,7 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
       labelResponse.download_url ||
       labelResponse.label_url;
 
-    // 3. SECURE PROXY: Intercept authenticated API links to bypass frontend 404s
+    // 4. SECURE PROXY: Intercept authenticated API links to bypass frontend 404s
     if (!labelData && labelUrl && labelUrl.includes("api.shipstation.com")) {
       const proxyBase64 = await fetchLabelBufferAsBase64(labelUrl);
       if (proxyBase64) {
@@ -825,16 +950,18 @@ export const generateOrderLabel = catchAsync(async (req, res, next) => {
       status: "success",
       data: {
         order,
-        labelData: labelData,
-        labelUrl: labelUrl,
-        trackingNumber:
-          labelResponse.tracking_number || labelResponse.trackingNumber,
+        labelData,
+        labelUrl,
+        trackingNumber: primaryTrackingNumber,
+        trackingNumbers: allTrackingNumbers,
+        netSuiteSync,
       },
     });
   } catch (error) {
     return next(new AppError(`ShipStation Label Error: ${error.message}`, 502));
   }
 });
+
 
 export const downloadOrderLabel = catchAsync(async (req, res, next) => {
   const { orderId } = req.params;

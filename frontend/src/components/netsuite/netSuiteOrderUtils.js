@@ -215,6 +215,7 @@ export const buildMockCurrentOrder = ({
   shipping,
   cartoonsCount,
   palletsCount,
+  finalPayloadWeightOz = 0,
   items,
   computedSubtotal,
   grandTotal,
@@ -244,9 +245,11 @@ export const buildMockCurrentOrder = ({
     carrierType: shipping.carrierType,
     serviceCode: shipping.serviceCode,
     trackingNumber: shipping.trackingNumber,
-    shippingCost: shipping.shippingCost,
+    shippingCost: Number(shipping.shippingCost || 0),
     cartoons: cartoonsCount,
     pallets: palletsCount,
+    totalWeightOunces: finalPayloadWeightOz,
+    manuallyAdjustedWeightOunces: 0,
   },
   items,
   subtotal: computedSubtotal,
@@ -296,7 +299,7 @@ export const buildCobraCreationPayload = ({
     carrierType: shipping.carrierType,
     serviceCode: shipping.serviceCode,
     trackingNumber: shipping.trackingNumber,
-    shippingCost: shipping.shippingCost,
+    shippingCost: Number(shipping.shippingCost || 0),
     cartoons: cartoonsCount,
     pallets: palletsCount,
     totalBoxes: packages.length,
@@ -316,3 +319,83 @@ export const buildCobraCreationPayload = ({
   totalAmount: grandTotal,
   processingFees: processingFeesPreview,
 });
+
+
+
+export const buildNetSuiteFulfillmentPayload = ({
+  order,
+  labelResponse = {},
+  shipping = {},
+  packages = [],
+  totalWeightOunces = 0,
+  locationId = 586,
+}) => {
+  // Support single tracking number, comma-separated list, or multi-box packages from ShipStation
+  const labelPackages = Array.isArray(labelResponse.packages)
+    ? labelResponse.packages
+    : [];
+
+  const mergedPackages =
+    labelPackages.length > 0
+      ? labelPackages
+          .filter((p) => p.trackingNumber || p.tracking_number)
+          .map((p, idx) => ({
+            trackingNumber: String(
+              p.trackingNumber || p.tracking_number,
+            ).trim(),
+            weightInOunces:
+              Number(p.weightInOunces || p.weight?.value || 0) ||
+              Number(packages[idx]?.weightInOunces || 0),
+            description: p.description || `Box ${idx + 1}`,
+          }))
+      : packages
+          .filter((p) => p.trackingNumber)
+          .map((p, idx) => ({
+            trackingNumber: String(p.trackingNumber).trim(),
+            weightInOunces: Number(p.weightInOunces || 0),
+            description: p.description || `Box ${idx + 1}`,
+          }));
+
+  const primaryTracking =
+    labelResponse.trackingNumber ||
+    labelResponse.tracking_number ||
+    shipping.trackingNumber ||
+    order?.shippingDetails?.trackingNumber ||
+    "";
+
+  const trackingList = Array.isArray(labelResponse.trackingNumbers)
+    ? labelResponse.trackingNumbers
+    : undefined;
+
+  const resolvedShippingCost =
+    labelResponse.shipmentCost ??
+    labelResponse.shippingCost ??
+    labelResponse.cost ??
+    shipping.shippingCost ??
+    order?.shippingDetails?.shippingCost;
+
+  const rawShipDate = labelResponse.shipDate || new Date().toISOString();
+  const shipDate = String(rawShipDate).split("T")[0]; // YYYY-MM-DD
+
+  return {
+    trackingNumber: primaryTracking,
+    ...(trackingList ? { trackingNumbers: trackingList } : {}),
+    ...(mergedPackages.length > 0 ? { packages: mergedPackages } : {}),
+    totalWeightOunces:
+      Number(totalWeightOunces) ||
+      Number(order?.shippingDetails?.totalWeightOunces || 0),
+    shippingCost:
+      resolvedShippingCost !== undefined && resolvedShippingCost !== ""
+        ? Number(resolvedShippingCost)
+        : undefined,
+    shipDate,
+    carrierType:
+      labelResponse.carrierCode ||
+      shipping.carrierType ||
+      order?.shippingDetails?.carrierType ||
+      "",
+    memo: `Shipped via COBRA (${order?.orderNumber || "N/A"})`,
+    locationId,
+  };
+};
+

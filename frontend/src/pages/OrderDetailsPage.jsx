@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
+import { Loader2, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -13,11 +13,15 @@ import {
   generateOrderLabel, downloadPurchasedLabel,
   voidOrderLabel, cancelOrderShipment, createOrderShipment
 } from '../store/slices/orderSlice';
+import {
+  fulfillNetSuiteOrder,
+  invalidateNetSuiteCache
+} from '../store/slices/netSuiteSlice';
 import { fetchInventory, updateInventory } from '../store/slices/inventorySlice';
 import { fetchUsers } from '../store/slices/userSlice';
 import { fetchCarriers, fetchCarrierPackages } from '../store/slices/carrierSlice';
 
-// NEW: Freight Provider Slice
+// Freight Provider Slice
 import { fetchConfiguredFreightProviders } from '../store/slices/freightProviderSlice';
 
 // ProcessingCharge system
@@ -36,10 +40,22 @@ import NotesAndFeesPanel from '../components/order-details/NotesAndFeesPanel';
 import ManifestPanel from '../components/order-details/ManifestPanel';
 import InvoicePanel from '../components/order-details/InvoicePanel';
 import LabelDrawer from '../components/order-details/LabelDrawer';
+import NetSuiteOrderMetadataBar from '../components/netsuite/NetSuiteOrderMetadataBar';
 
 import LifecycleTimestampsPanel from '../components/division-detail/LifecycleTimestampsPanel';
 
 const generateLocalId = () => `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+// Helper to match both native COBRA SKU and NetSuite corporateSku
+const findMatchingInventoryItem = (inventoryData, sku) => {
+  if (!sku || !Array.isArray(inventoryData)) return null;
+  const normalized = String(sku).trim().toLowerCase();
+  return inventoryData.find(
+    (inv) =>
+      String(inv.sku || '').trim().toLowerCase() === normalized ||
+      String(inv.corporateSku || '').trim().toLowerCase() === normalized
+  );
+};
 
 // Helper to safely parse MongoDB ISO Dates into local datetime-local input formats
 const formatDatetimeLocal = (dateString) => {
@@ -88,12 +104,13 @@ export default function OrderDetailsPage() {
 
   // Access core Redux state
   const { currentOrder, status: orderLoadStatus, error: orderError } = useSelector((state) => state.orders || {});
+  const { fulfillmentStatus: nsFulfillmentStatus } = useSelector((state) => state.netsuite || {});
   const { items: inventoryData = [], status: inventoryStatus } = useSelector((state) => state.inventory || {});
   const { items: usersData = [], status: usersStatus } = useSelector((state) => state.users || {});
   const { items: carriersData = [], packageTypes = [] } = useSelector((state) => state.carriers || {});
 
   // Connect to the freight providers state
-  const { items: freightProvidersData = [], status: freightProvidersStatus } = useSelector((state) => state.freightProviders || {});
+  const { items: freightProvidersData = [] } = useSelector((state) => state.freightProviders || {});
 
   // Connect to the processingCharges state
   const { items: customerCharges = [], status: processingStatus } = useSelector((state) => state.processingCharges || {});
@@ -112,6 +129,9 @@ export default function OrderDetailsPage() {
   const [shippedAt, setShippedAt] = useState('');
   const [deliveredAt, setDeliveredAt] = useState('');
   const [cancelledAt, setCancelledAt] = useState('');
+
+  // --- NetSuite Fulfillment Sync State ---
+  const [netSuiteSyncState, setNetSuiteSyncState] = useState({ synced: false, error: null });
 
   const [fulfillOpen, setFulfillOpen] = useState(false);
   const [cartoonsCount, setCartoonsCount] = useState(0);
@@ -145,6 +165,8 @@ export default function OrderDetailsPage() {
 
   const isLabelPurchased = !!ssLabelId || !!shipping.trackingNumber;
   const isShipmentCreated = !!ssOrderId;
+  const isNetSuiteOrder = currentOrder?.orderSource === 'NETSUITE';
+  const isSyncingNetSuite = nsFulfillmentStatus === 'loading';
 
   // --- TOP LEVEL CALCULATIONS ---
   const derivedItemWeightOz = items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
@@ -161,7 +183,9 @@ export default function OrderDetailsPage() {
     return usersData.find(u => u._id === orderUserId);
   }, [orderUserId, usersData]);
 
-  const orderCreatorName = orderCreator ? (orderCreator.name || orderCreator.firstName || orderCreator.email) : null;
+  const orderCreatorName = orderCreator
+    ? (orderCreator.name || orderCreator.firstName || orderCreator.email)
+    : (isNetSuiteOrder ? 'NetSuite Import' : null);
 
   useEffect(() => {
     const customerId = currentOrder?.customer?._id || currentOrder?.customer;
@@ -169,7 +193,6 @@ export default function OrderDetailsPage() {
       dispatch(fetchProcessingChargesByCustomer(customerId));
     }
   }, [currentOrder?.customer, dispatch]);
-
 
   const processingFeesPreview = useMemo(() => {
     const config = customerCharges.length > 0 ? customerCharges[0] : {};
@@ -218,6 +241,7 @@ export default function OrderDetailsPage() {
   }, [totalPackageWeightOz, derivedItemWeightOz, isWeightMismatched, items, packages.length, cartoonsCount, palletsCount, isRushOrder, address.country, customerCharges]);
 
   useEffect(() => {
+    setNetSuiteSyncState({ synced: false, error: null });
     if (isValidMongoId) dispatch(fetchOrderById(id));
     return () => { dispatch(clearCurrentOrder()); };
   }, [id, isValidMongoId, dispatch]);
@@ -285,11 +309,11 @@ export default function OrderDetailsPage() {
 
       setShipping({
         carrierId: currentOrder.shippingDetails?.carrierId?._id || currentOrder.shippingDetails?.carrierId || '',
-        carrierType: currentOrder.shippingDetails?.carrierType,
-        serviceCode: currentOrder.shippingDetails?.serviceCode,
-        trackingNumber: currentOrder.shippingDetails?.trackingNumber,
+        carrierType: currentOrder.shippingDetails?.carrierType || '',
+        serviceCode: currentOrder.shippingDetails?.serviceCode || '',
+        trackingNumber: currentOrder.shippingDetails?.trackingNumber || '',
         shippingCost: currentOrder.shippingDetails?.shippingCost || 0,
-        shipStationId: currentOrder.shippingDetails?.shipStationId
+        shipStationId: currentOrder.shippingDetails?.shipStationId || ''
       });
 
       setAddress({
@@ -308,14 +332,14 @@ export default function OrderDetailsPage() {
       setNotes(currentOrder.notes || '');
 
       const mappedItems = currentOrder.items?.map((i) => {
-        const matchedStock = inventoryData.find(inv => inv.sku === i.sku);
+        const matchedStock = findMatchingInventoryItem(inventoryData, i.sku);
         return {
           id: generateLocalId(),
           name: i.name,
           sku: i.sku,
           qty: i.quantity,
           price: i.unitPrice,
-          weight: matchedStock?.weight || 0
+          weight: matchedStock?.weight ?? i.weight ?? 0
         };
       }) || [];
 
@@ -332,19 +356,16 @@ export default function OrderDetailsPage() {
         })));
       } else {
         const calculatedOz = currentOrder.shippingDetails?.totalWeightOunces || mappedItems.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
-        if (packages.length === 1 && packages[0].weightInOunces === 16) {
-          setPackages([{ id: generateLocalId(), packageCode: 'package', weightInOunces: calculatedOz > 0 ? calculatedOz : 16, length: 10, width: 10, height: 10 }]);
-        }
+        setPackages([{ id: generateLocalId(), packageCode: 'package', weightInOunces: calculatedOz > 0 ? calculatedOz : 16, length: 10, width: 10, height: 10 }]);
       }
     }
   }, [currentOrder, inventoryData]);
 
-
   const addPackage = () => setPackages(prev => [...prev, { id: generateLocalId(), packageCode: 'package', weightInOunces: 16, length: 10, width: 10, height: 10 }]);
-  const updatePackage = (id, field, value) => setPackages(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
-  const removePackage = (id) => setPackages(prev => prev.filter(p => p.id !== id));
+  const updatePackage = (pkgId, field, value) => setPackages(prev => prev.map(p => p.id === pkgId ? { ...p, [field]: value } : p));
+  const removePackage = (pkgId) => setPackages(prev => prev.filter(p => p.id !== pkgId));
 
-  const handleWeightChange = (id, currentTotalOz, type, value) => {
+  const handleWeightChange = (pkgId, currentTotalOz, type, value) => {
     const numVal = value === '' ? '' : Number(value);
     const currentLbs = Math.floor((Number(currentTotalOz) || 0) / 16);
     const currentOz = (Number(currentTotalOz) || 0) % 16;
@@ -356,7 +377,51 @@ export default function OrderDetailsPage() {
       newTotal = (currentLbs * 16) + (numVal === '' ? 0 : numVal);
     }
 
-    updatePackage(id, 'weightInOunces', newTotal);
+    updatePackage(pkgId, 'weightInOunces', newTotal);
+  };
+
+  // Manual retry / push fulfillment to NetSuite (e.g., after a sync error or manual tracking entry)
+  const handleSyncToNetSuite = async () => {
+    const orderIdOrTranId = currentOrder?.netSuiteId || currentOrder?.legacyNumber;
+    const trackingStr = String(shipping.trackingNumber || currentOrder?.shippingDetails?.trackingNumber || '').trim();
+
+    if (!isNetSuiteOrder || !orderIdOrTranId) {
+      return toast.warning("This order is not linked to a NetSuite reference.");
+    }
+    if (!trackingStr) {
+      return toast.warning("Add a tracking number before syncing to NetSuite.");
+    }
+
+    const fulfillmentPayload = {
+      trackingNumber: trackingStr,
+      totalWeightOunces: Number(finalPayloadWeightOz) || Number(currentOrder?.shippingDetails?.totalWeightOunces || 0),
+      shippingCost: Number(shipping.shippingCost ?? currentOrder?.shippingDetails?.shippingCost ?? 0),
+      shipDate: (shippedAt ? new Date(shippedAt) : new Date()).toISOString().split('T')[0],
+      carrierType: shipping.carrierType || currentOrder?.shippingDetails?.carrierType || '',
+      memo: `Shipped via COBRA (${currentOrder?.orderNumber || 'N/A'})`,
+      locationId: 586,
+    };
+
+    try {
+      const syncPromise = dispatch(
+        fulfillNetSuiteOrder({ orderIdOrTranId, fulfillmentPayload })
+      ).unwrap();
+
+      toast.promise(syncPromise, {
+        loading: `Syncing tracking to NetSuite (${orderIdOrTranId})...`,
+        success: `NetSuite order ${orderIdOrTranId} marked Shipped with tracking!`,
+        error: (err) => `NetSuite sync failed: ${err}`
+      });
+
+      await syncPromise;
+      setNetSuiteSyncState({ synced: true, error: null });
+      dispatch(invalidateNetSuiteCache());
+    } catch (err) {
+      setNetSuiteSyncState({
+        synced: false,
+        error: typeof err === 'string' ? err : (err?.message || 'NetSuite fulfillment sync failed.')
+      });
+    }
   };
 
   // Fires instantly when the "Save Metrics" button is pressed inside the ShippingPanel modal
@@ -435,10 +500,10 @@ export default function OrderDetailsPage() {
       doc.text(`Date Printed: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`, 14, 33);
 
       const pickingRows = items.map(item => {
-        const invItem = inventoryData.find(inv => inv.sku === item.sku);
+        const invItem = findMatchingInventoryItem(inventoryData, item.sku);
         let locationStr = '';
         if (invItem?.locations && Array.isArray(invItem.locations) && invItem.locations.length > 0) {
-          locationStr = invItem.locations.map(loc => loc.designation).filter(Boolean).join(', ');
+          locationStr = invItem.locations.map(loc => loc.designation || loc.name || '').filter(Boolean).join(', ');
         }
         if (!locationStr && invItem?.locationString) {
           locationStr = invItem.locationString;
@@ -479,10 +544,7 @@ export default function OrderDetailsPage() {
       doc.setFontSize(14);
       doc.setTextColor(0, 0, 0);
       doc.setFont('helvetica', 'bold');
-
-
       doc.text(`${customerName.toUpperCase()} - ${divisionName}`, 14, 20);
-
 
       const rightColKeyX = 160;
       const rightColValX = 162;
@@ -498,7 +560,7 @@ export default function OrderDetailsPage() {
       doc.setFont('helvetica', 'bold');
       doc.text(`Order Type:`, rightColKeyX, rightY, { align: 'right' });
       doc.setFont('helvetica', 'normal');
-      doc.text('WEBORD', rightColValX, rightY);
+      doc.text(currentOrder.orderType || 'WEBORD', rightColValX, rightY);
       rightY += 5;
 
       doc.setFont('helvetica', 'bold');
@@ -528,24 +590,23 @@ export default function OrderDetailsPage() {
       doc.text("SHIP TO:", 110, addressBlockY);
       doc.setFont('helvetica', 'normal');
 
-      
       let currentYOffset = addressBlockY;
-      const recipientName = address.name;    
+      const recipientName = address.name;
       const companyName = address.companyName;
 
-      if(companyName){
+      if (companyName) {
         doc.text(`${companyName}`, 130, currentYOffset);
         currentYOffset += 5;
       }
-      doc.text(`${companyName? 'c/o ' : ''}${recipientName}`, 130, currentYOffset);
+      doc.text(`${companyName ? 'c/o ' : ''}${recipientName}`, 130, currentYOffset);
       currentYOffset += 5;
 
       doc.text(`${address.street || ''} ${address.line2 || ''}`.trim(), 130, currentYOffset);
-
       currentYOffset += 5;
+
       doc.text(`${address.city || ''}, ${address.state || ''} ${address.zip || ''}`.trim(), 130, currentYOffset);
-
       currentYOffset += 5;
+
       doc.text(address.country || 'US', 130, currentYOffset);
 
       if (phone) {
@@ -615,6 +676,7 @@ export default function OrderDetailsPage() {
       const blobUrl = doc.output('bloburl');
       window.open(blobUrl, '_blank');
 
+      // COBRA DB only — no NetSuite sync until shipped with tracking
       if (!shipping.trackingNumber) {
         await dispatch(updateOrder({ id: currentOrder._id, updateData: { status: 'Picked' } })).unwrap();
         setOrderStatus('Picked');
@@ -629,20 +691,6 @@ export default function OrderDetailsPage() {
     } finally {
       setIsGeneratingDocs(false);
     }
-  };
-
-  const restoreInventoryStock = async () => {
-    try {
-      await Promise.all(items.map(async (item) => {
-        const stockItem = inventoryData.find(inv => inv.sku === item.sku);
-        if (stockItem) {
-          const currentStock = Number(stockItem.available) || 0;
-          const restoredStock = currentStock + Number(item.quantity);
-          const updatedData = { ...stockItem, available: restoredStock };
-          await dispatch(updateInventory({ id: stockItem._id, inventoryData: updatedData })).unwrap();
-        }
-      }));
-    } catch (err) { console.error("Failed to restore inventory:", err); }
   };
 
   const handleSaveOrder = async () => {
@@ -665,7 +713,7 @@ export default function OrderDetailsPage() {
         const newQty = Number(currentItem.qty);
 
         if (newQty !== originalQty) {
-          const matchedStockItem = inventoryData.find(inv => inv.sku === currentItem.sku);
+          const matchedStockItem = findMatchingInventoryItem(inventoryData, currentItem.sku);
           if (matchedStockItem) {
             const currentStock = Number(matchedStockItem.available) || 0;
             const diff = newQty - originalQty;
@@ -684,7 +732,7 @@ export default function OrderDetailsPage() {
       for (const originalItem of originalItems) {
         const stillExists = items.find(i => i.sku === originalItem.sku);
         if (!stillExists) {
-          const matchedStockItem = inventoryData.find(inv => inv.sku === originalItem.sku);
+          const matchedStockItem = findMatchingInventoryItem(inventoryData, originalItem.sku);
           if (matchedStockItem) {
             const currentStock = Number(matchedStockItem.available) || 0;
             const restoredStockLevel = currentStock + Number(originalItem.quantity);
@@ -744,8 +792,10 @@ export default function OrderDetailsPage() {
       },
       shippingDetails: {
         ...currentOrder.shippingDetails,
-        carrierType: shipping.carrierType, serviceCode: shipping.serviceCode,
-        trackingNumber: shipping.trackingNumber, shippingCost: Number(shipping.shippingCost),
+        carrierType: shipping.carrierType,
+        serviceCode: shipping.serviceCode,
+        trackingNumber: shipping.trackingNumber,
+        shippingCost: Number(shipping.shippingCost || 0),
         cartoons: Number(cartoonsCount) || 0,
         pallets: Number(palletsCount) || 0,
         totalBoxes: payloadPackages.length,
@@ -761,8 +811,11 @@ export default function OrderDetailsPage() {
       },
       processingFees: processingFeesPreview,
       items: items.map(item => ({
-        sku: item.sku, name: item.name, quantity: Number(item.qty),
-        unitPrice: Number(item.price), totalPrice: Number(item.qty) * Number(item.price),
+        sku: item.sku,
+        name: item.name,
+        quantity: Number(item.qty),
+        unitPrice: Number(item.price),
+        totalPrice: Number(item.qty) * Number(item.price),
         weight: Number(item.weight)
       }))
     };
@@ -771,14 +824,13 @@ export default function OrderDetailsPage() {
       await dispatch(updateOrder({ id: currentOrder._id, updateData: payload })).unwrap();
 
       if (isChangingToCancelled) {
-        await restoreInventoryStock();
+        dispatch(fetchInventory());
         toast.success('Order cancelled. Items returned to stock and shipment reversed.');
       } else {
         toast.success('Order saved successfully.');
       }
 
       dispatch(fetchOrderById(currentOrder._id));
-
     } catch (error) {
       toast.error(`Failed to save order: ${error}`);
     } finally {
@@ -815,8 +867,10 @@ export default function OrderDetailsPage() {
       },
       shippingDetails: {
         ...currentOrder.shippingDetails,
-        carrierType: shipping.carrierType, serviceCode: shipping.serviceCode,
-        trackingNumber: shipping.trackingNumber, shippingCost: Number(shipping.shippingCost),
+        carrierType: shipping.carrierType,
+        serviceCode: shipping.serviceCode,
+        trackingNumber: shipping.trackingNumber,
+        shippingCost: Number(shipping.shippingCost || 0),
         cartoons: Number(cartoonsCount) || 0,
         pallets: Number(palletsCount) || 0,
         totalBoxes: packages.length,
@@ -832,15 +886,18 @@ export default function OrderDetailsPage() {
       },
       processingFees: processingFeesPreview,
       items: items.map(item => ({
-        sku: item.sku, name: item.name, quantity: Number(item.qty),
-        unitPrice: Number(item.price), totalPrice: Number(item.qty) * Number(item.price),
+        sku: item.sku,
+        name: item.name,
+        quantity: Number(item.qty),
+        unitPrice: Number(item.price),
+        totalPrice: Number(item.qty) * Number(item.price),
         weight: Number(item.weight)
       }))
     };
 
     try {
       await dispatch(updateOrder({ id: currentOrder._id, updateData: payload })).unwrap();
-      await restoreInventoryStock();
+      dispatch(fetchInventory());
       setOrderStatus('Cancelled');
       toast.success('Order cancelled. Items returned to stock.');
     } catch (error) {
@@ -859,8 +916,8 @@ export default function OrderDetailsPage() {
     const needsRestock = !safeToDeleteStatus.includes(currentStatus);
 
     try {
-      if (needsRestock) await restoreInventoryStock();
       await api.delete(`/orders/${currentOrder._id}`);
+      if (needsRestock) dispatch(fetchInventory());
 
       toast.success(needsRestock ? 'Order deleted and items returned to stock.' : 'Order deleted successfully.');
       navigate('/orders');
@@ -870,7 +927,6 @@ export default function OrderDetailsPage() {
       setIsDeleting(false);
     }
   };
-
 
   const handleCreateShipmentSubmit = async (modalCartoonsCount) => {
     if (orderStatus !== 'Picked') return toast.warning("Order status must be 'Picked' before you can create a shipment.");
@@ -918,7 +974,6 @@ export default function OrderDetailsPage() {
         }))
       }
     };
-    
 
     try {
       // Save modified metrics to database instantly
@@ -930,11 +985,10 @@ export default function OrderDetailsPage() {
       toast.success("Shipment successfully created in ShipStation.");
       setCreateShipmentModalOpen(false);
 
-      // Reload the page to ensure all fresh metrics and ShipStation IDs are rendered perfectly
       window.location.reload();
     } catch (error) {
       toast.error("Failed to create shipment", { description: typeof error === 'string' ? error : error.message });
-      setIsCreatingShipment(false); // Stop loader only on error, let the reload handle success state clearing
+      setIsCreatingShipment(false);
     }
   };
 
@@ -958,6 +1012,7 @@ export default function OrderDetailsPage() {
       pallets: Number(palletsCount) || 0,
       totalBoxes: packages.length,
       weightInOunces: finalPayloadWeightOz,
+      totalWeightOunces: finalPayloadWeightOz,
       processingFees: processingFeesPreview
     };
 
@@ -998,20 +1053,53 @@ export default function OrderDetailsPage() {
         }
       }
 
-      if (response.trackingNumber) {
-        setShipping(prev => ({ ...prev, trackingNumber: response.trackingNumber }));
+      const combinedTracking =
+        Array.isArray(response.trackingNumbers) && response.trackingNumbers.length > 0
+          ? response.trackingNumbers.join(', ')
+          : response.trackingNumber;
+
+      if (combinedTracking) {
+        setShipping(prev => ({
+          ...prev,
+          trackingNumber: combinedTracking,
+          shippingCost: response.order?.shippingDetails?.shippingCost ?? prev.shippingCost
+        }));
         setOrderStatus('Shipped');
       }
 
       if (labelDownloaded) {
-        toast.success('Label Purchased & Downloaded!', { description: `Tracking Number: ${response.trackingNumber || 'N/A'}` });
+        toast.success('Label Purchased & Downloaded!', {
+          description: `Tracking Number: ${combinedTracking || 'N/A'}`
+        });
       } else {
-        toast.warning('Label Purchased, but failed to automatically download.', { description: 'Try downloading manually using the button below.' });
+        toast.warning('Label Purchased, but failed to automatically download.', {
+          description: 'Try downloading manually using the button below.'
+        });
       }
 
+      // Surface server-side NetSuite fulfillment sync result
+      if (response.netSuiteSync?.attempted) {
+        if (response.netSuiteSync.synced) {
+          setNetSuiteSyncState({ synced: true, error: null });
+          dispatch(invalidateNetSuiteCache());
+          toast.success(
+            `NetSuite order ${response.netSuiteSync.data?.tranId || currentOrder.legacyNumber} marked Shipped with tracking.`
+          );
+        } else {
+          const syncErr = response.netSuiteSync.error || 'NetSuite fulfillment sync failed.';
+          setNetSuiteSyncState({ synced: false, error: syncErr });
+          toast.warning('Label created, but NetSuite sync failed', {
+            description: syncErr
+          });
+        }
+      }
+
+      dispatch(fetchOrderById(currentOrder._id));
     } catch (error) {
       toast.error(`Label Generation Failed`, { description: typeof error === 'string' ? error : error.message });
-    } finally { setIsGeneratingLabel(false); }
+    } finally {
+      setIsGeneratingLabel(false);
+    }
   };
 
   const handlePrintPurchasedLabel = async () => {
@@ -1045,8 +1133,10 @@ export default function OrderDetailsPage() {
       await dispatch(voidOrderLabel(currentOrder._id)).unwrap();
       toast.success("Label successfully voided.");
       setShipping(prev => ({ ...prev, trackingNumber: '', shippingCost: 0 }));
-      setOrderStatus('Processing');
+      setOrderStatus('Pending');
+      setNetSuiteSyncState({ synced: false, error: null });
       setFulfillOpen(false);
+      dispatch(fetchOrderById(currentOrder._id));
     } catch (err) {
       toast.error("Failed to void label", { description: typeof err === 'string' ? err : err.message });
     } finally {
@@ -1062,6 +1152,7 @@ export default function OrderDetailsPage() {
       toast.success("Shipment successfully cancelled.");
       setOrderStatus('New');
       setFulfillOpen(false);
+      dispatch(fetchOrderById(currentOrder._id));
     } catch (err) {
       toast.error("Failed to cancel shipment", { description: typeof err === 'string' ? err : err.message });
     } finally {
@@ -1102,6 +1193,7 @@ export default function OrderDetailsPage() {
         isGeneratingDocs={isGeneratingDocs}
         isShipmentCreated={isShipmentCreated}
         isLabelPurchased={isLabelPurchased}
+        isSyncingNetSuite={isSyncingNetSuite}
         handleDeleteOrder={handleDeleteOrder}
         handleCancelOrder={handleCancelOrder}
         handlePrintDocsAndPick={handlePrintDocsAndPick}
@@ -1109,6 +1201,57 @@ export default function OrderDetailsPage() {
         setCreateShipmentModalOpen={setCreateShipmentModalOpen}
         setFulfillOpen={setFulfillOpen}
       />
+
+      {/* NetSuite Fulfillment Sync Status / Manual Retry Bar */}
+      {isNetSuiteOrder && currentOrder.legacyNumber && (netSuiteSyncState.error || netSuiteSyncState.synced || shipping.trackingNumber) && (
+        <div
+          className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 rounded-2xl border backdrop-blur-xl shadow-sm ${
+            netSuiteSyncState.error
+              ? 'bg-amber-50/90 border-amber-200 text-amber-900'
+              : netSuiteSyncState.synced
+                ? 'bg-emerald-50/90 border-emerald-200 text-emerald-900'
+                : 'bg-purple-50/80 border-purple-200 text-purple-900'
+          }`}
+        >
+          <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+            {netSuiteSyncState.error ? (
+              <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
+            ) : (
+              <CheckCircle2 size={16} className={netSuiteSyncState.synced ? 'text-emerald-600 shrink-0' : 'text-purple-600 shrink-0'} />
+            )}
+            <div className="text-xs min-w-0">
+              <p className="font-black uppercase tracking-wider text-[10px]">
+                {netSuiteSyncState.error
+                  ? `NetSuite Sync Failed (${currentOrder.legacyNumber})`
+                  : netSuiteSyncState.synced
+                    ? `NetSuite Synced (${currentOrder.legacyNumber})`
+                    : `NetSuite Order Ready to Sync (${currentOrder.legacyNumber})`}
+              </p>
+              <p className="text-[11px] font-medium opacity-80 truncate">
+                {netSuiteSyncState.error
+                  ? netSuiteSyncState.error
+                  : netSuiteSyncState.synced
+                    ? `Marked as Shipped in NetSuite with tracking: ${shipping.trackingNumber}`
+                    : `Tracking ${shipping.trackingNumber} can be pushed to NetSuite as Shipped.`}
+              </p>
+            </div>
+          </div>
+
+          {!netSuiteSyncState.synced && (
+            <button
+              onClick={handleSyncToNetSuite}
+              disabled={isSyncingNetSuite}
+              className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 text-brand-gold text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-sm disabled:opacity-60 shrink-0"
+            >
+              {isSyncingNetSuite ? (
+                <><Loader2 size={12} className="animate-spin" /> Syncing...</>
+              ) : (
+                <><RefreshCw size={12} /> {netSuiteSyncState.error ? 'Retry NetSuite Sync' : 'Sync to NetSuite'}</>
+              )}
+            </button>
+          )}
+        </div>
+      )}
 
       <CreateShipmentModal
         isOpen={createShipmentModalOpen}
@@ -1155,6 +1298,15 @@ export default function OrderDetailsPage() {
             orderCreatorName={orderCreatorName}
             creationDate={creationDate}
           />
+
+          {isNetSuiteOrder && (
+            <NetSuiteOrderMetadataBar
+              legacyNumber={currentOrder.legacyNumber}
+              orderSource={currentOrder.orderSource}
+              customerName={currentOrder.customer?.customerName}
+              divisionName={currentOrder.division?.divisionName}
+            />
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <OrderStatusPanel
@@ -1224,6 +1376,8 @@ export default function OrderDetailsPage() {
             currentOrder={currentOrder}
             shipping={shipping}
             setShipping={setShipping}
+            processingFeesPreview={processingFeesPreview}
+            liveWeightOz={finalPayloadWeightOz}
           />
         </div>
       </div>

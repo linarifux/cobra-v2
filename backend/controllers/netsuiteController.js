@@ -433,202 +433,206 @@ export const updateOrderById = async (req, res) => {
   }
 };
 
-// POST /api/netsuite/orders/:id/fulfill
-// Accepts either numeric NetSuite internal ID (e.g. "123456") OR tranid/legacyNumber (e.g. "SO16317959")
-export const fulfillOrderById = async (req, res) => {
-  try {
-    const rawIdentifier = String(req.params.id || "").trim();
-    if (!rawIdentifier) {
-      return res.status(400).json({
-        success: false,
-        error: "Order ID or Legacy Number is required.",
-      });
-    }
+// Reusable core service used by both POST /api/netsuite/orders/:id/fulfill
+// and shipStationController.js (generateOrderLabel)
+export const executeNetSuiteOrderFulfillment = async (
+  rawIdentifier,
+  {
+    trackingNumber,
+    trackingNumbers,
+    packages = [],
+    totalWeightOunces = 0,
+    shippingCost,
+    shipDate, // Optional YYYY-MM-DD
+    memo,
+    carrierType = "",
+    locationId = 586, // Defaults to Hainsport Whs
+    items, // Optional: omit to fulfill all open lines
+  } = {},
+) => {
+  const identifier = String(rawIdentifier || "").trim();
+  if (!identifier) {
+    const err = new Error("Order ID or Legacy Number is required.");
+    err.status = 400;
+    throw err;
+  }
 
-    const {
-      trackingNumber,
-      trackingNumbers,
-      packages = [],
-      totalWeightOunces = 0,
-      shippingCost,
-      shipDate, // Optional YYYY-MM-DD
-      memo,
-      carrierType = "",
-      locationId = 586, // Defaults to Hainsport Whs
-      items, // Optional: omit to fulfill all open lines on the order
-    } = req.body || {};
+  // STEP 1: Normalize tracking numbers into package entries (NetSuite requires weight > 0 in lbs)
+  const totalWeightLbs = Math.max(Number(totalWeightOunces || 0) / 16, 0.1);
+  let normalizedPackages = [];
 
-    // STEP 1: Normalize tracking numbers into package entries (NetSuite requires weight > 0 in lbs)
-    const totalWeightLbs = Math.max(Number(totalWeightOunces || 0) / 16, 0.1);
-    let normalizedPackages = [];
-
-    if (Array.isArray(packages) && packages.some((p) => p.trackingNumber)) {
-      normalizedPackages = packages
-        .filter((p) => p.trackingNumber && String(p.trackingNumber).trim())
-        .map((p, idx) => ({
-          trackingNumber: String(p.trackingNumber).trim(),
-          weightLbs: Number(
-            Math.max(
-              p.weightLbs || Number(p.weightInOunces || 0) / 16 || 0.1,
-              0.1,
-            ).toFixed(2),
-          ),
-          description: p.description || `Box ${idx + 1}`,
-        }));
-    } else {
-      const rawTrackingList = Array.isArray(trackingNumbers)
-        ? trackingNumbers
-        : String(trackingNumber || "")
-            .split(",")
-            .map((t) => t.trim());
-
-      const validTrackings = rawTrackingList.filter(Boolean);
-      const perBoxWeight = Number(
-        Math.max(totalWeightLbs / (validTrackings.length || 1), 0.1).toFixed(2),
-      );
-
-      normalizedPackages = validTrackings.map((tn, idx) => ({
-        trackingNumber: String(tn).trim(),
-        weightLbs: perBoxWeight,
-        description: `Box ${idx + 1}`,
+  if (Array.isArray(packages) && packages.some((p) => p.trackingNumber)) {
+    normalizedPackages = packages
+      .filter((p) => p.trackingNumber && String(p.trackingNumber).trim())
+      .map((p, idx) => ({
+        trackingNumber: String(p.trackingNumber).trim(),
+        weightLbs: Number(
+          Math.max(
+            p.weightLbs || Number(p.weightInOunces || 0) / 16 || 0.1,
+            0.1,
+          ).toFixed(2),
+        ),
+        description: p.description || `Box ${idx + 1}`,
       }));
-    }
+  } else {
+    const rawTrackingList = Array.isArray(trackingNumbers)
+      ? trackingNumbers
+      : String(trackingNumber || "")
+          .split(",")
+          .map((t) => t.trim());
 
-    if (normalizedPackages.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: "At least one tracking number is required to fulfill the order.",
-      });
-    }
-
-    // STEP 2: Resolve NetSuite internal ID, recordType, and shipMethod via SuiteQL
-    const isNumericId = /^\d+$/.test(rawIdentifier);
-    const safeTranId = rawIdentifier.replace(/'/g, "''").toLowerCase();
-
-    const lookupSql = isNumericId
-      ? `SELECT id, tranid, recordtype, BUILTIN.DF(shipmethod) AS shipmethod_name FROM transaction WHERE id = ${parseInt(rawIdentifier, 10)}`
-      : `SELECT id, tranid, recordtype, BUILTIN.DF(shipmethod) AS shipmethod_name FROM transaction WHERE recordtype IN ('salesorder', 'transferorder') AND LOWER(tranid) = '${safeTranId}'`;
-
-    const suiteQlData = await netSuiteService.querySuiteQL(
-      lookupSql,
-      1,
-      0,
-      true,
+    const validTrackings = rawTrackingList.filter(Boolean);
+    const perBoxWeight = Number(
+      Math.max(totalWeightLbs / (validTrackings.length || 1), 0.1).toFixed(2),
     );
 
-    if (!suiteQlData.items || suiteQlData.items.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: `Order '${rawIdentifier}' not found in NetSuite.`,
-      });
-    }
+    normalizedPackages = validTrackings.map((tn, idx) => ({
+      trackingNumber: String(tn).trim(),
+      weightLbs: perBoxWeight,
+      description: `Box ${idx + 1}`,
+    }));
+  }
 
-    const nsTxn = suiteQlData.items[0];
-    const netSuiteOrderId = nsTxn.id;
-    const rawRecordType = nsTxn.recordtype;
+  if (normalizedPackages.length === 0) {
+    const err = new Error(
+      "At least one tracking number is required to fulfill the order.",
+    );
+    err.status = 400;
+    throw err;
+  }
 
-    let restEndpointType;
-    if (rawRecordType === "salesorder") restEndpointType = "salesOrder";
-    else if (rawRecordType === "transferorder")
-      restEndpointType = "transferOrder";
-    else {
-      return res.status(400).json({
-        success: false,
-        error: `Record ${netSuiteOrderId} is '${rawRecordType}', not a Sales Order or Transfer Order.`,
-      });
-    }
+  // STEP 2: Resolve NetSuite internal ID, recordType, and shipMethod via SuiteQL
+  const isNumericId = /^\d+$/.test(identifier);
+  const safeTranId = identifier.replace(/'/g, "''").toLowerCase();
 
-    // STEP 3: Build base Item Fulfillment transform payload
-    const basePayload = {
-      shipStatus: { id: "C" }, // A = Picked, B = Packed, C = Shipped
-      ...(shipDate ? { tranDate: shipDate } : {}),
-      ...(memo ? { memo } : {}),
-      ...(shippingCost !== undefined && shippingCost !== null
-        ? { shippingCost: Number(shippingCost) }
-        : {}),
+  const lookupSql = isNumericId
+    ? `SELECT id, tranid, recordtype, BUILTIN.DF(shipmethod) AS shipmethod_name FROM transaction WHERE id = ${parseInt(identifier, 10)}`
+    : `SELECT id, tranid, recordtype, BUILTIN.DF(shipmethod) AS shipmethod_name FROM transaction WHERE recordtype IN ('salesorder', 'transferorder') AND LOWER(tranid) = '${safeTranId}'`;
+
+  const suiteQlData = await netSuiteService.querySuiteQL(lookupSql, 1, 0, true);
+
+  if (!suiteQlData.items || suiteQlData.items.length === 0) {
+    const err = new Error(`Order '${identifier}' not found in NetSuite.`);
+    err.status = 404;
+    throw err;
+  }
+
+  const nsTxn = suiteQlData.items[0];
+  const netSuiteOrderId = nsTxn.id;
+  const rawRecordType = nsTxn.recordtype;
+
+  let restEndpointType;
+  if (rawRecordType === "salesorder") restEndpointType = "salesOrder";
+  else if (rawRecordType === "transferorder") restEndpointType = "transferOrder";
+  else {
+    const err = new Error(
+      `Record ${netSuiteOrderId} is '${rawRecordType}', not a Sales Order or Transfer Order.`,
+    );
+    err.status = 400;
+    throw err;
+  }
+
+  // STEP 3: Build base Item Fulfillment transform payload
+  const basePayload = {
+    shipStatus: { id: "C" }, // A = Picked, B = Packed, C = Shipped
+    ...(shipDate ? { tranDate: shipDate } : {}),
+    ...(memo ? { memo } : {}),
+    ...(shippingCost !== undefined && shippingCost !== null && !isNaN(Number(shippingCost))
+      ? { shippingCost: Number(shippingCost) }
+      : {}),
+  };
+
+  if (Array.isArray(items) && items.length > 0) {
+    basePayload.item = {
+      items: items.map((line) => ({
+        orderLine: Number(line.orderLine),
+        itemReceive: line.itemReceive !== false,
+        ...(line.itemReceive !== false
+          ? {
+              quantity: Number(line.quantity),
+              ...(restEndpointType === "salesOrder" && locationId
+                ? { location: { id: String(locationId) } }
+                : {}),
+            }
+          : {}),
+      })),
+    };
+  }
+
+  const transformQueryParams =
+    restEndpointType === "salesOrder" && locationId
+      ? { init: `inventorylocation:${locationId}` }
+      : {};
+
+  const transformEndpoint = `${restEndpointType}/${netSuiteOrderId}/!transform/itemFulfillment`;
+
+  // STEP 4: Transform into Item Fulfillment (auto-fallback for FedEx/UPS/USPS sublists)
+  let fulfillmentResponse;
+  try {
+    const payload = {
+      ...basePayload,
+      ...buildPackageSublist(normalizedPackages, "package"),
     };
 
-    if (Array.isArray(items) && items.length > 0) {
-      basePayload.item = {
-        items: items.map((line) => ({
-          orderLine: Number(line.orderLine),
-          itemReceive: line.itemReceive !== false,
-          ...(line.itemReceive !== false
-            ? {
-                quantity: Number(line.quantity),
-                ...(restEndpointType === "salesOrder" && locationId
-                  ? { location: { id: String(locationId) } }
-                  : {}),
-              }
-            : {}),
-        })),
-      };
-    }
+    fulfillmentResponse = await netSuiteService.request(
+      "POST",
+      transformEndpoint,
+      transformQueryParams,
+      payload,
+    );
+  } catch (firstError) {
+    const errDetail = JSON.stringify(
+      firstError.response?.data || firstError.message || "",
+    );
+    const fallbackSublist = detectCarrierSublist(
+      carrierType || nsTxn.shipmethod_name,
+    );
 
-    const transformQueryParams =
-      restEndpointType === "salesOrder" && locationId
-        ? { init: `inventorylocation:${locationId}` }
-        : {};
-
-    const transformEndpoint = `${restEndpointType}/${netSuiteOrderId}/!transform/itemFulfillment`;
-
-    // STEP 4: Transform into Item Fulfillment (with carrier-specific sublist fallback)
-    let fulfillmentResponse;
-    try {
-      const payload = {
+    if (
+      fallbackSublist &&
+      (errDetail.includes("Unknown field name 'package'") ||
+        errDetail.includes("NONEXISTENT_FIELD"))
+    ) {
+      const retryPayload = {
         ...basePayload,
-        ...buildPackageSublist(normalizedPackages, "package"),
+        ...buildPackageSublist(normalizedPackages, fallbackSublist),
       };
 
       fulfillmentResponse = await netSuiteService.request(
         "POST",
         transformEndpoint,
         transformQueryParams,
-        payload,
+        retryPayload,
       );
-    } catch (firstError) {
-      const errDetail = JSON.stringify(
-        firstError.response?.data || firstError.message || "",
-      );
-      const fallbackSublist = detectCarrierSublist(
-        carrierType || nsTxn.shipmethod_name,
-      );
-
-      // Retry with carrier-specific sublist if NetSuite's shipMethod uses native FedEx/UPS/USPS integration
-      if (
-        fallbackSublist &&
-        (errDetail.includes("Unknown field name 'package'") ||
-          errDetail.includes("NONEXISTENT_FIELD"))
-      ) {
-        const retryPayload = {
-          ...basePayload,
-          ...buildPackageSublist(normalizedPackages, fallbackSublist),
-        };
-
-        fulfillmentResponse = await netSuiteService.request(
-          "POST",
-          transformEndpoint,
-          transformQueryParams,
-          retryPayload,
-        );
-      } else {
-        throw firstError;
-      }
+    } else {
+      throw firstError;
     }
+  }
+
+  return {
+    netSuiteOrderId,
+    tranId: nsTxn.tranid,
+    recordType: restEndpointType,
+    trackingNumbers: normalizedPackages.map((p) => p.trackingNumber),
+    fulfillment: fulfillmentResponse || null,
+  };
+};
+
+// POST /api/netsuite/orders/:id/fulfill
+export const fulfillOrderById = async (req, res) => {
+  try {
+    const result = await executeNetSuiteOrderFulfillment(
+      req.params.id,
+      req.body || {},
+    );
 
     return res.status(200).json({
       success: true,
-      message: `${restEndpointType} ${nsTxn.tranid} marked as Shipped in NetSuite with ${normalizedPackages.length} tracking number(s).`,
-      data: {
-        netSuiteOrderId,
-        tranId: nsTxn.tranid,
-        recordType: restEndpointType,
-        trackingNumbers: normalizedPackages.map((p) => p.trackingNumber),
-        fulfillment: fulfillmentResponse || null,
-      },
+      message: `${result.recordType} ${result.tranId} marked as Shipped in NetSuite with ${result.trackingNumbers.length} tracking number(s).`,
+      data: result,
     });
   } catch (error) {
-    const statusCode = error.response?.status || 500;
+    const statusCode = error.status || error.response?.status || 500;
     return res.status(statusCode).json({
       success: false,
       error: error.response?.data || error.message || error,

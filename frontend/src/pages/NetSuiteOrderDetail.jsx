@@ -7,8 +7,13 @@ import { toast } from "sonner";
 import {
   fetchNetSuiteRecordById,
   clearSelectedRecord,
+  invalidateNetSuiteCache,
 } from "../store/slices/netSuiteSlice";
-import { createOrder, updateOrder } from "../store/slices/orderSlice";
+import {
+  createOrder,
+  updateOrder,
+  fetchOrders,
+} from "../store/slices/orderSlice";
 import { fetchInventory } from "../store/slices/inventorySlice";
 import { fetchProcessingChargesByCustomer } from "../store/slices/processingChargeSlice";
 import {
@@ -41,6 +46,17 @@ import {
   buildMockCurrentOrder,
   buildCobraCreationPayload,
 } from "../components/netsuite/netSuiteOrderUtils";
+
+const VALID_COBRA_STATUSES = [
+  "New",
+  "Pending",
+  "Picked",
+  "Shipped",
+  "Hold",
+  "Cancelled",
+  "Delivered",
+  "Billed",
+];
 
 export default function NetSuiteOrderDetail() {
   const { id } = useParams();
@@ -91,7 +107,7 @@ export default function NetSuiteOrderDetail() {
   const [cartoonsCount, setCartoonsCount] = useState(0);
   const [palletsCount, setPalletsCount] = useState(0);
   const [isRushOrder, setIsRushOrder] = useState(false);
-  const [packages] = useState(() => [createInitialPackage()]);
+  const [packages, setPackages] = useState(() => [createInitialPackage()]);
   const [isProcessing, setIsProcessing] = useState(false);
 
   const isMappedForCurrentId =
@@ -99,91 +115,46 @@ export default function NetSuiteOrderDetail() {
     String(mappedRecordId) === String(id) &&
     Boolean(loadedRecord);
 
-  // --- SINGLE COORDINATED PARALLEL FETCH + MAP ---
+  // --- SINGLE COORDINATED PARALLEL FETCH (ALWAYS FRESH) + MAP ---
   useEffect(() => {
     if (!id) return;
     let isCancelled = false;
 
     const loadOrderAndDependencies = async () => {
       setLoadError(null);
+      setMappedRecordId(null);
 
-      const state = store.getState();
-      const cachedRecord = state.netsuite?.recordDetailsCache?.[`orders:${id}`];
-      const invState = state.inventory || {};
-      const carrierState = state.carriers || {};
-      const chargesState = state.processingCharges || {};
+      let fetchedRecord = null;
 
-      let fetchedRecord = cachedRecord || null;
-      const tasks = [];
-
-      // 1. Fetch NetSuite order only if not already cached
-      if (!cachedRecord) {
-        tasks.push(
-          dispatch(fetchNetSuiteRecordById({ recordType: "orders", id }))
-            .unwrap()
-            .then((res) => {
-              fetchedRecord = res?.data || res?.record || res;
-            }),
-        );
-      }
-
-      // 2. Fetch Inventory only if not already loaded
-      if (invState.status !== "succeeded" || !invState.items?.length) {
-        tasks.push(dispatch(fetchInventory()).unwrap());
-      }
-
-      // 3. Fetch Gateway Processing Charges only if not already loaded for Gateway
-      const hasGatewayCharges =
-        chargesState.items?.length > 0 &&
-        String(
-          chargesState.items[0]?.customer?._id ||
-            chargesState.items[0]?.customer ||
-            "",
-        ) === GATEWAY_CUSTOMER_ID;
-
-      if (!hasGatewayCharges) {
-        tasks.push(
-          dispatch(
-            fetchProcessingChargesByCustomer(GATEWAY_CUSTOMER_ID),
-          ).unwrap(),
-        );
-      }
-
-      // 4. Fetch Gateway Carriers only if not already loaded for Gateway division
-      const hasGatewayCarriers =
-        carrierState.status === "succeeded" &&
-        carrierState.items?.length > 0 &&
-        carrierState.items.every(
-          (c) =>
-            !c.division ||
-            String(c.division?._id || c.division) === GATEWAY_DIVISION_ID,
-        );
-
-      if (!hasGatewayCarriers) {
-        tasks.push(dispatch(fetchCarriers(GATEWAY_DIVISION_ID)).unwrap());
-      }
-
-      // 5. Fetch Freight Providers only if not already loaded
-      if (
-        carrierState.freightStatus !== "succeeded" ||
-        !carrierState.freightProviders?.length
-      ) {
-        tasks.push(dispatch(fetchFreightProviders()).unwrap());
-      }
-
-      // Run all missing requests in parallel and wait once
-      if (tasks.length > 0) {
-        await Promise.allSettled(tasks);
-      }
+      // Fetch latest data for all dependencies in parallel within one loading cycle
+      await Promise.allSettled([
+        dispatch(
+          fetchNetSuiteRecordById({
+            recordType: "orders",
+            id,
+            forceRefresh: true,
+          }),
+        )
+          .unwrap()
+          .then((res) => {
+            fetchedRecord = res?.data || res?.record || res;
+          }),
+        dispatch(fetchInventory()).unwrap(),
+        dispatch(
+          fetchProcessingChargesByCustomer(GATEWAY_CUSTOMER_ID),
+        ).unwrap(),
+        dispatch(fetchCarriers(GATEWAY_DIVISION_ID)).unwrap(),
+        dispatch(fetchFreightProviders()).unwrap(),
+      ]);
 
       if (isCancelled) return;
 
-      // Read final settled state once and map everything in a single batched commit
+      // Prefer the freshly returned record, falling back to latest Redux store state
       const latestState = store.getState();
       const freshRecord =
-        latestState.netsuite?.recordDetailsCache?.[`orders:${id}`] ||
-        latestState.netsuite?.selectedRecord ||
         fetchedRecord ||
+        latestState.netsuite?.selectedRecord ||
+        latestState.netsuite?.recordDetailsCache?.[`orders:${id}`] ||
         null;
 
       const recordMatchesId =
@@ -206,12 +177,26 @@ export default function NetSuiteOrderDetail() {
         latestState.carriers?.freightProviders || [],
       );
 
+      const mappedItemsWeightOz = mapped.items.reduce(
+        (acc, item) => acc + Number(item.weight || 0) * Number(item.qty || 0),
+        0,
+      );
+
       setLoadedRecord(freshRecord);
       setOrderStatus(mapped.orderStatus);
       setAddress(mapped.address);
       setShipping(mapped.shipping);
       setNotes(mapped.notes);
       setItems(mapped.items);
+      setPackages([
+        {
+          ...createInitialPackage(),
+          weightInOunces:
+            mappedItemsWeightOz > 0
+              ? Number(mappedItemsWeightOz.toFixed(2))
+              : 0,
+        },
+      ]);
       setMappedRecordId(id);
     };
 
@@ -225,7 +210,7 @@ export default function NetSuiteOrderDetail() {
 
   // --- DERIVED CALCULATIONS ---
   const derivedItemWeightOz = items.reduce(
-    (acc, item) => acc + Number(item.weight) * Number(item.qty),
+    (acc, item) => acc + Number(item.weight || 0) * Number(item.qty || 0),
     0,
   );
   const totalPackageWeightOz = packages.reduce(
@@ -258,14 +243,20 @@ export default function NetSuiteOrderDetail() {
     ],
   );
 
-  const computedSubtotal = items.reduce(
-    (acc, item) => acc + item.qty * item.price,
-    0,
-  );
   const isTransfer = isTransferRecord(loadedRecord);
-  const grandTotal = isTransfer
+  const computedSubtotal = isTransfer
     ? 0
-    : loadedRecord?.total || computedSubtotal;
+    : items.reduce(
+        (acc, item) => acc + Number(item.qty || 0) * Number(item.price || 0),
+        0,
+      );
+  const grandTotal = Number(
+    (
+      computedSubtotal +
+      Number(processingFeesPreview.totalProcessingFee || 0) +
+      Number(shipping.shippingCost || 0)
+    ).toFixed(2),
+  );
 
   const mockCurrentOrder = buildMockCurrentOrder({
     record: loadedRecord,
@@ -275,6 +266,7 @@ export default function NetSuiteOrderDetail() {
     shipping,
     cartoonsCount,
     palletsCount,
+    finalPayloadWeightOz,
     items,
     computedSubtotal,
     grandTotal,
@@ -316,6 +308,12 @@ export default function NetSuiteOrderDetail() {
     if (!loadedRecord) return toast.error("No record data to process.");
     if (!validateShippingSelection()) return;
 
+    if (!VALID_COBRA_STATUSES.includes(orderStatus)) {
+      return toast.error("Select a COBRA Status Before Saving", {
+        description: `"${orderStatus}" is a NetSuite status. Please select a COBRA status (e.g., New, Picked, Hold) before saving.`,
+      });
+    }
+
     setIsProcessing(true);
     try {
       const actionPromise = dispatch(createOrder(getCreationPayload())).unwrap();
@@ -327,9 +325,12 @@ export default function NetSuiteOrderDetail() {
       });
 
       const newCobraOrder = await actionPromise;
+      dispatch(invalidateNetSuiteCache());
+      dispatch(fetchOrders({}));
       navigate(`/orders/${newCobraOrder._id}`);
     } catch (err) {
       console.error(err);
+    } finally {
       setIsProcessing(false);
     }
   };
@@ -342,7 +343,7 @@ export default function NetSuiteOrderDetail() {
     let newCobraOrder;
 
     try {
-      // COBRA DB only — no NetSuite sync until shipped with tracking
+      // COBRA DB only — NetSuite fulfillment sync triggers automatically upon ShipStation label creation
       const actionPromise = (async () => {
         let created = await dispatch(
           createOrder(getCreationPayload("Picked")),
@@ -369,6 +370,8 @@ export default function NetSuiteOrderDetail() {
 
       newCobraOrder = await actionPromise;
       setOrderStatus("Picked");
+      dispatch(invalidateNetSuiteCache());
+      dispatch(fetchOrders({}));
     } catch (err) {
       console.error(err);
       setIsProcessing(false);
@@ -441,6 +444,7 @@ export default function NetSuiteOrderDetail() {
         isGeneratingDocs={isProcessing}
         isShipmentCreated={false}
         isLabelPurchased={false}
+        isSyncingNetSuite={false}
         handleDeleteOrder={() =>
           toast.warning("Order has not been created in COBRA yet.")
         }
@@ -529,6 +533,8 @@ export default function NetSuiteOrderDetail() {
             currentOrder={mockCurrentOrder}
             shipping={shipping}
             setShipping={setShipping}
+            processingFeesPreview={processingFeesPreview}
+            liveWeightOz={finalPayloadWeightOz}
           />
         </div>
       </div>
