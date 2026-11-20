@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch, useSelector, useStore } from "react-redux";
 import { toast } from "sonner";
 
 // slices
@@ -15,7 +15,6 @@ import {
   fetchCarriers,
   fetchFreightProviders,
 } from "../store/slices/carrierSlice";
-
 
 // Native COBRA Panels
 import OrderHeaderActions from "../components/order-details/OrderHeaderActions";
@@ -47,13 +46,9 @@ export default function NetSuiteOrderDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const store = useStore();
 
   // --- STORE CONNECTIONS ---
-  const {
-    selectedRecord,
-    recordDetailsCache = {},
-    status: nsStatus,
-  } = useSelector((state) => state.netsuite || {});
   const { items: inventoryData = [], status: inventoryStatus } = useSelector(
     (state) => state.inventory || {},
   );
@@ -62,14 +57,15 @@ export default function NetSuiteOrderDetail() {
   );
   const {
     items: carriersData = [],
-    status: carrierStatus,
     freightProviders: freightProvidersData = [],
-    freightStatus,
   } = useSelector((state) => state.carriers || {});
 
-  const record = selectedRecord || recordDetailsCache[`orders:${id}`] || null;
-
   // --- STAGED LOCAL STATE ---
+  const [loadedRecord, setLoadedRecord] = useState(null);
+  const [mappedRecordId, setMappedRecordId] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [reloadCount, setReloadCount] = useState(0);
+
   const [orderStatus, setOrderStatus] = useState("New");
   const [shipping, setShipping] = useState({
     carrierId: "",
@@ -96,63 +92,136 @@ export default function NetSuiteOrderDetail() {
   const [palletsCount, setPalletsCount] = useState(0);
   const [isRushOrder, setIsRushOrder] = useState(false);
   const [packages] = useState(() => [createInitialPackage()]);
-
   const [isProcessing, setIsProcessing] = useState(false);
-  const [hasMappedInitialRecord, setHasMappedInitialRecord] = useState(false);
 
-  // --- DATA FETCHING ---
+  const isMappedForCurrentId =
+    Boolean(id) &&
+    String(mappedRecordId) === String(id) &&
+    Boolean(loadedRecord);
+
+  // --- SINGLE COORDINATED PARALLEL FETCH + MAP ---
   useEffect(() => {
-    if (id) {
-      setHasMappedInitialRecord(false);
-      dispatch(fetchNetSuiteRecordById({ recordType: "orders", id }));
-    }
-    return () => dispatch(clearSelectedRecord());
-  }, [dispatch, id]);
+    if (!id) return;
+    let isCancelled = false;
 
-  useEffect(() => {
-    if (inventoryStatus === "idle") dispatch(fetchInventory());
-  }, [dispatch, inventoryStatus]);
+    const loadOrderAndDependencies = async () => {
+      setLoadError(null);
 
-  useEffect(() => {
-    dispatch(fetchProcessingChargesByCustomer(GATEWAY_CUSTOMER_ID));
-    dispatch(fetchCarriers(GATEWAY_DIVISION_ID));
-    dispatch(fetchFreightProviders());
-  }, [dispatch]);
+      const state = store.getState();
+      const cachedRecord = state.netsuite?.recordDetailsCache?.[`orders:${id}`];
+      const invState = state.inventory || {};
+      const carrierState = state.carriers || {};
+      const chargesState = state.processingCharges || {};
 
-  // --- INITIAL RECORD MAPPING ---
-  useEffect(() => {
-    const isReadyToMap =
-      record &&
-      !hasMappedInitialRecord &&
-      inventoryStatus === "succeeded" &&
-      carrierStatus === "succeeded" &&
-      freightStatus === "succeeded";
+      let fetchedRecord = cachedRecord || null;
+      const tasks = [];
 
-    if (!isReadyToMap) return;
+      // 1. Fetch NetSuite order only if not already cached
+      if (!cachedRecord) {
+        tasks.push(
+          dispatch(fetchNetSuiteRecordById({ recordType: "orders", id }))
+            .unwrap()
+            .then((res) => {
+              fetchedRecord = res?.data || res?.record || res;
+            }),
+        );
+      }
 
-    const mapped = mapNetSuiteRecordToState(
-      record,
-      inventoryData,
-      carriersData,
-      freightProvidersData,
-    );
+      // 2. Fetch Inventory only if not already loaded
+      if (invState.status !== "succeeded" || !invState.items?.length) {
+        tasks.push(dispatch(fetchInventory()).unwrap());
+      }
 
-    setOrderStatus(mapped.orderStatus);
-    setAddress(mapped.address);
-    setShipping(mapped.shipping);
-    setNotes(mapped.notes);
-    setItems(mapped.items);
-    setHasMappedInitialRecord(true);
-  }, [
-    record,
-    inventoryData,
-    carriersData,
-    freightProvidersData,
-    hasMappedInitialRecord,
-    inventoryStatus,
-    carrierStatus,
-    freightStatus,
-  ]);
+      // 3. Fetch Gateway Processing Charges only if not already loaded for Gateway
+      const hasGatewayCharges =
+        chargesState.items?.length > 0 &&
+        String(
+          chargesState.items[0]?.customer?._id ||
+            chargesState.items[0]?.customer ||
+            "",
+        ) === GATEWAY_CUSTOMER_ID;
+
+      if (!hasGatewayCharges) {
+        tasks.push(
+          dispatch(
+            fetchProcessingChargesByCustomer(GATEWAY_CUSTOMER_ID),
+          ).unwrap(),
+        );
+      }
+
+      // 4. Fetch Gateway Carriers only if not already loaded for Gateway division
+      const hasGatewayCarriers =
+        carrierState.status === "succeeded" &&
+        carrierState.items?.length > 0 &&
+        carrierState.items.every(
+          (c) =>
+            !c.division ||
+            String(c.division?._id || c.division) === GATEWAY_DIVISION_ID,
+        );
+
+      if (!hasGatewayCarriers) {
+        tasks.push(dispatch(fetchCarriers(GATEWAY_DIVISION_ID)).unwrap());
+      }
+
+      // 5. Fetch Freight Providers only if not already loaded
+      if (
+        carrierState.freightStatus !== "succeeded" ||
+        !carrierState.freightProviders?.length
+      ) {
+        tasks.push(dispatch(fetchFreightProviders()).unwrap());
+      }
+
+      // Run all missing requests in parallel and wait once
+      if (tasks.length > 0) {
+        await Promise.allSettled(tasks);
+      }
+
+      if (isCancelled) return;
+
+      // Read final settled state once and map everything in a single batched commit
+      const latestState = store.getState();
+      const freshRecord =
+        latestState.netsuite?.recordDetailsCache?.[`orders:${id}`] ||
+        latestState.netsuite?.selectedRecord ||
+        fetchedRecord ||
+        null;
+
+      const recordMatchesId =
+        Boolean(freshRecord) &&
+        (!freshRecord.id || String(freshRecord.id) === String(id));
+
+      if (!recordMatchesId) {
+        const errMsg =
+          typeof latestState.netsuite?.error === "string"
+            ? latestState.netsuite.error
+            : "Could not retrieve the order record from NetSuite.";
+        setLoadError(errMsg);
+        return;
+      }
+
+      const mapped = mapNetSuiteRecordToState(
+        freshRecord,
+        latestState.inventory?.items || [],
+        latestState.carriers?.items || [],
+        latestState.carriers?.freightProviders || [],
+      );
+
+      setLoadedRecord(freshRecord);
+      setOrderStatus(mapped.orderStatus);
+      setAddress(mapped.address);
+      setShipping(mapped.shipping);
+      setNotes(mapped.notes);
+      setItems(mapped.items);
+      setMappedRecordId(id);
+    };
+
+    loadOrderAndDependencies();
+
+    return () => {
+      isCancelled = true;
+      dispatch(clearSelectedRecord());
+    };
+  }, [id, reloadCount, dispatch, store]);
 
   // --- DERIVED CALCULATIONS ---
   const derivedItemWeightOz = items.reduce(
@@ -193,11 +262,13 @@ export default function NetSuiteOrderDetail() {
     (acc, item) => acc + item.qty * item.price,
     0,
   );
-  const isTransfer = isTransferRecord(record);
-  const grandTotal = isTransfer ? 0 : record?.total || computedSubtotal;
+  const isTransfer = isTransferRecord(loadedRecord);
+  const grandTotal = isTransfer
+    ? 0
+    : loadedRecord?.total || computedSubtotal;
 
   const mockCurrentOrder = buildMockCurrentOrder({
-    record,
+    record: loadedRecord,
     isTransfer,
     orderStatus,
     address,
@@ -222,12 +293,11 @@ export default function NetSuiteOrderDetail() {
     return true;
   };
 
-  const getCreationPayload = () =>
+  const getCreationPayload = (statusOverride) =>
     buildCobraCreationPayload({
-      record,
+      record: loadedRecord,
       isTransfer,
       orderStatus: statusOverride || orderStatus,
-      orderStatus,
       isRushOrder,
       notes,
       address,
@@ -243,7 +313,7 @@ export default function NetSuiteOrderDetail() {
     });
 
   const handleSaveOrderOnly = async () => {
-    if (!record) return toast.error("No record data to process.");
+    if (!loadedRecord) return toast.error("No record data to process.");
     if (!validateShippingSelection()) return;
 
     setIsProcessing(true);
@@ -265,7 +335,7 @@ export default function NetSuiteOrderDetail() {
   };
 
   const handlePrintDocsAndPick = async () => {
-    if (!record) return toast.error("No record data to process.");
+    if (!loadedRecord) return toast.error("No record data to process.");
     if (!validateShippingSelection()) return;
 
     setIsProcessing(true);
@@ -324,8 +394,41 @@ export default function NetSuiteOrderDetail() {
     }
   };
 
-  if (nsStatus === "loading" || !record) {
-    return <NetSuiteOrderLoader isProcessing={isProcessing} />;
+  // --- SINGLE LOADING & ERROR GATE ---
+  if (loadError) {
+    return (
+      <div className="h-full flex items-center justify-center min-h-[600px] px-4">
+        <div className="bg-red-50 border border-red-200 text-red-700 p-6 rounded-3xl max-w-md w-full text-center space-y-4">
+          <p className="text-xs font-black uppercase tracking-widest">
+            Failed to Load NetSuite Order
+          </p>
+          <p className="text-xs font-medium text-red-600">{loadError}</p>
+          <div className="flex justify-center gap-2">
+            <button
+              onClick={() => setReloadCount((c) => c + 1)}
+              className="px-4 py-2 bg-white border border-red-200 text-red-700 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-100 transition-all"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => navigate("/orders")}
+              className="px-4 py-2 bg-slate-900 text-brand-gold rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all"
+            >
+              Back to Orders
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isMappedForCurrentId) {
+    return (
+      <NetSuiteOrderLoader
+        isProcessing={isProcessing}
+        message="Loading NetSuite Order..."
+      />
+    );
   }
 
   return (

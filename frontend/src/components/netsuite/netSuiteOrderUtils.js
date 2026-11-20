@@ -82,19 +82,16 @@ export const mapNetSuiteRecordToState = (
 ) => {
   const isTransfer = isTransferRecord(record);
 
-  const rawStatus = (
-    record.status?.refName ||
-    record.status_name ||
-    ""
-  ).toLowerCase();
+  const originalStatus = record.status?.refName || record.status_name || "";
+  const rawStatus = originalStatus.toLowerCase().trim();
 
-  let orderStatus = "New";
-  if (rawStatus.includes("pending")) orderStatus = "New";
-  if (rawStatus.includes("picked")) orderStatus = "Picked";
-  if (rawStatus.includes("shipped")) orderStatus = "Shipped";
-  if (rawStatus.includes("billed") || rawStatus.includes("closed")) {
-    orderStatus = "Billed";
-  }
+  const isPendingStatus =
+    rawStatus === "pending" ||
+    rawStatus.includes("pending fulfillment") ||
+    rawStatus.includes("pending approval");
+
+  // Only map to "New" if NetSuite status is Pending; otherwise keep original status
+  const orderStatus = isPendingStatus ? "New" : originalStatus || "New";
 
   let nsShopperName =
     record.entity?.refName ||
@@ -165,6 +162,7 @@ export const mapNetSuiteRecordToState = (
 
   return {
     orderStatus,
+    originalStatus,
     address,
     shipping,
     notes: record.memo || "",

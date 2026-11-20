@@ -37,8 +37,8 @@ class NetSuiteClient {
         this.queue = [];
 
         this.cache = new Map();
-        this.freshTTL = 5 * 60 * 1000;  
-        this.staleTTL = 30 * 60 * 1000; 
+        this.freshTTL = 5 * 60 * 1000;
+        this.staleTTL = 30 * 60 * 1000;
         this.inFlight = new Map();
     }
 
@@ -102,11 +102,24 @@ class NetSuiteClient {
                 headers: {
                     ...authHeader,
                     'Content-Type': 'application/json',
-                    'Prefer': 'transient',
                     ...customHeaders
                 },
                 data
             });
+
+            // NetSuite returns 204 No Content with a Location header on POST / !transform writes
+            if (response.status === 204 || response.data === '' || response.data === undefined) {
+                const location = response.headers?.location || null;
+                if (location) {
+                    const idMatch = location.match(/\/(\d+)(?:\?|$)/);
+                    return {
+                        id: idMatch ? idMatch[1] : null,
+                        location
+                    };
+                }
+                return null;
+            }
+
             return response.data;
         } catch (error) {
             const statusCode = error.response?.status;
@@ -117,11 +130,26 @@ class NetSuiteClient {
                 return this._executeAxios(method, fullUrl, data, customHeaders, retries - 1);
             }
 
-            console.error('NetSuite API Error:', error.response?.data || error.message);
-            throw error.response?.data || new Error('NetSuite Request Failed');
+            const nsData = error.response?.data;
+            const detailedMessage =
+                nsData?.['o:errorDetails']?.[0]?.detail ||
+                nsData?.detail ||
+                nsData?.title ||
+                error.message ||
+                'NetSuite Request Failed';
+
+            console.error('NetSuite API Error:', nsData || error.message);
+
+            // Preserve response/status on the Error object for controller status codes & retry logic
+            const wrappedError = new Error(detailedMessage);
+            wrappedError.status = statusCode || 500;
+            wrappedError.response = error.response;
+            wrappedError.details = nsData || null;
+            throw wrappedError;
         }
     }
 
+    // Used for cacheable reads (REST GET & SuiteQL)
     _enqueueWithDeduplication(cacheKey, method, fullUrl, data, customHeaders) {
         if (this.inFlight.has(cacheKey)) {
             return this.inFlight.get(cacheKey);
@@ -151,9 +179,28 @@ class NetSuiteClient {
         return promise;
     }
 
+    // Used for mutating REST calls (POST, PATCH, PUT, DELETE) — never cached or deduplicated
+    _enqueueWrite(method, fullUrl, data, customHeaders) {
+        return new Promise((resolve, reject) => {
+            this.queue.push({
+                method,
+                fullUrl,
+                data,
+                customHeaders,
+                retries: 3,
+                resolve: (resData) => {
+                    this.clearCache();
+                    resolve(resData);
+                },
+                reject
+            });
+            this._processQueue();
+        });
+    }
+
     async request(method, endpoint, params = {}, data = null, customHeaders = {}, forceRefresh = false) {
-        // FIX: Point this to the standard REST Record API, NOT the SuiteQL URL
         const restApiUrl = process.env.NETSUITE_URL;
+        const normalizedMethod = String(method || 'GET').toUpperCase();
 
         const baseUrl = `${restApiUrl.replace(/\/+$/, '')}/${(endpoint || '').replace(/^\/+/, '')}`;
         const urlObj = new URL(baseUrl);
@@ -164,31 +211,32 @@ class NetSuiteClient {
             });
         }
 
-        // Keep the strict URL encoding fix for NetSuite OAuth spaces
+        // Keep strict URL encoding for NetSuite OAuth spaces
         const fullUrl = urlObj.toString().replace(/\+/g, '%20');
 
-        const cacheKey = `REST:${method}:${fullUrl}`;
+        if (normalizedMethod !== 'GET') {
+            return this._enqueueWrite(normalizedMethod, fullUrl, data, customHeaders);
+        }
 
-        if (method === 'GET' && !forceRefresh) {
+        const cacheKey = `REST:GET:${fullUrl}`;
+
+        if (!forceRefresh) {
             const { status, data: cachedData } = this._getCacheState(cacheKey);
             if (status === 'FRESH') return cachedData;
             if (status === 'STALE') {
-                this._enqueueWithDeduplication(cacheKey, method, fullUrl, data, customHeaders).catch(() => {});
+                this._enqueueWithDeduplication(cacheKey, 'GET', fullUrl, null, customHeaders).catch(() => {});
                 return cachedData;
             }
-        } else if (method !== 'GET') {
-            this.clearCache();
         }
 
-        return this._enqueueWithDeduplication(cacheKey, method, fullUrl, data, customHeaders);
+        return this._enqueueWithDeduplication(cacheKey, 'GET', fullUrl, null, customHeaders);
     }
 
-    // You can keep querySuiteQL here natively in case you need it later for fast reporting!
     async querySuiteQL(sqlQuery, limit = 1000, offset = 0, forceRefresh = false) {
         if (!process.env.NETSUITE_SUITEQL_URL) {
             throw new Error("CRITICAL SERVER ERROR: NETSUITE_SUITEQL_URL is missing from environment variables.");
         }
-        
+
         const suiteQlBase = process.env.NETSUITE_SUITEQL_URL;
         const urlObj = new URL(suiteQlBase);
         urlObj.searchParams.append('limit', limit);
@@ -209,11 +257,6 @@ class NetSuiteClient {
 
         return this._enqueueWithDeduplication(cacheKey, 'POST', fullUrl, { q: normalizedSql }, { Prefer: 'transient' });
     }
-
-
-    
-
-
 }
 
 const netSuiteService = new NetSuiteClient();

@@ -4,50 +4,66 @@ import {
     getRecordMetadata,
     getSalesOrdersByLocation,
     getAllOrders,
-    getOrderById, // <-- Import the new function
+    getOrderById,
+    updateOrderById,
+    fulfillOrderById,
     getAllRecords,
     getRecordById,
     createRecord,
     updateRecord,
-    deleteRecord
+    deleteRecord,
 } from '../controllers/netsuiteController.js';
 
 const router = express.Router();
 
 /**
- * @route   GET /api/netsuite/sync/sales-orders
- * @desc    Triggers a background process to sync all NetSuite Sales Orders to MongoDB
- * @access  Private
+- @route   GET /api/netsuite/sync/sales-orders
+- @desc    Triggers a background process to sync all NetSuite Sales Orders to MongoDB
+- @access  Private
  */
 router.get('/sync/sales-orders', syncAllOrdersBackground);
 
 /**
- * @route   GET /api/netsuite/metadata/:recordType
- * @desc    Get OpenAPI/Swagger Schema mapping for a record type
- * @access  Private
+- @route   GET /api/netsuite/metadata/:recordType
+- @desc    Get OpenAPI/Swagger Schema mapping for a record type
+- @access  Private
  */
 router.get('/metadata/:recordType', getRecordMetadata);
 
 /**
- * @route   GET /api/netsuite/salesOrder/location/:locationId
- * @desc    Get all Sales Orders strictly filtered by a location/warehouse ID
- * @access  Private
+- @route   GET /api/netsuite/salesOrder/location/:locationId
+- @desc    Get all Sales Orders strictly filtered by a location/warehouse ID
+- @access  Private
  */
 router.get('/salesOrder/location/:locationId', getSalesOrdersByLocation);
 
 /**
- * @route   GET /api/netsuite/orders
- * @desc    Get combined Sales Orders and Transfer Orders (SuiteQL)
- * @access  Private
+- @route   GET /api/netsuite/orders
+- @desc    Get combined Sales Orders and Transfer Orders (SuiteQL)
+- @access  Private
  */
 router.get('/orders', getAllOrders);
 
 /**
- * @route   GET /api/netsuite/orders/:id
- * @desc    Dynamically determine order type and fetch full expanded REST record
- * @access  Private
+- @route   GET /api/netsuite/orders/:id
+- @desc    Dynamically determine order type and fetch full expanded REST record
+- @access  Private
  */
-router.get('/orders/:id', getOrderById); // <-- Add this route here!
+router.get('/orders/:id', getOrderById);
+
+/**
+- @route   PATCH /api/netsuite/orders/:id
+- @desc    Update an existing Sales Order or Transfer Order by its ID
+- @access  Private
+ */
+router.patch('/orders/:id', updateOrderById);
+
+/**
+- @route   POST /api/netsuite/orders/:id/fulfill
+- @desc    Transform a Sales Order or Transfer Order into a Shipped Item Fulfillment with tracking numbers
+- @access  Private
+ */
+router.post('/orders/:id/fulfill', fulfillOrderById);
 
 
 // =====================================================================
@@ -55,37 +71,37 @@ router.get('/orders/:id', getOrderById); // <-- Add this route here!
 // =====================================================================
 
 /**
- * @route   GET /api/netsuite/:recordType
- * @desc    Get all records of a generic REST type (e.g., customer)
- * @access  Private
+- @route   GET /api/netsuite/:recordType
+- @desc    Get all records of a generic REST type (e.g., customer)
+- @access  Private
  */
 router.get('/:recordType', getAllRecords);
 
 /**
- * @route   GET /api/netsuite/:recordType/:id
- * @desc    Get a single record by its NetSuite Internal ID
- * @access  Private
+- @route   GET /api/netsuite/:recordType/:id
+- @desc    Get a single record by its NetSuite Internal ID
+- @access  Private
  */
 router.get('/:recordType/:id', getRecordById);
 
 /**
- * @route   POST /api/netsuite/:recordType
- * @desc    Create a new record in NetSuite
- * @access  Private
+- @route   POST /api/netsuite/:recordType
+- @desc    Create a new record in NetSuite
+- @access  Private
  */
 router.post('/:recordType', createRecord);
 
 /**
- * @route   PATCH /api/netsuite/:recordType/:id
- * @desc    Update an existing record (Partial update)
- * @access  Private
+- @route   PATCH /api/netsuite/:recordType/:id
+- @desc    Update an existing record (Partial update)
+- @access  Private
  */
 router.patch('/:recordType/:id', updateRecord);
 
 /**
- * @route   DELETE /api/netsuite/:recordType/:id
- * @desc    Delete a record from NetSuite
- * @access  Private
+- @route   DELETE /api/netsuite/:recordType/:id
+- @desc    Delete a record from NetSuite
+- @access  Private
  */
 router.delete('/:recordType/:id', deleteRecord);
 
