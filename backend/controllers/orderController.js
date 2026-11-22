@@ -34,6 +34,69 @@ const checkIfInternational = (countryStr) => {
   return !domesticVariants.includes(normalizedCountry);
 };
 
+// Helper to normalize incoming date inputs (valid ISO/Date -> Date, empty/invalid -> null)
+const parseOptionalDate = (val) => {
+  if (val === undefined) return undefined;
+  if (val === null || val === '') return null;
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+// Helper to keep lifecycle timeline fields accurate on create & status transitions
+const syncLifecycleTimestamps = (payload, existingOrder = null) => {
+  const fields = [
+    'shipmentCreatedAt',
+    'shippedAt',
+    'deliveredAt',
+    'cancelledAt',
+  ];
+
+  // Normalize any explicitly provided date values
+  for (const field of fields) {
+    if (Object.prototype.hasOwnProperty.call(payload, field)) {
+      payload[field] = parseOptionalDate(payload[field]);
+    }
+  }
+
+  const nextStatus = payload.status || existingOrder?.status;
+  if (!nextStatus) return;
+
+  const now = new Date();
+  const isTransition = !existingOrder || existingOrder.status !== nextStatus;
+
+  const ensureTimestamp = (field) => {
+    const incoming = payload[field];
+    const hasIncoming = incoming instanceof Date;
+
+    if (!hasIncoming) {
+      if (isTransition) {
+        payload[field] = existingOrder?.[field] || now;
+      } else if (incoming === undefined && !existingOrder?.[field]) {
+        payload[field] = now;
+      }
+    }
+  };
+
+  if (nextStatus === 'Picked') {
+    ensureTimestamp('shipmentCreatedAt');
+  } else if (nextStatus === 'Shipped') {
+    ensureTimestamp('shippedAt');
+    if (!existingOrder?.shipmentCreatedAt && !payload.shipmentCreatedAt) {
+      payload.shipmentCreatedAt = now;
+    }
+  } else if (nextStatus === 'Delivered') {
+    ensureTimestamp('deliveredAt');
+    if (!existingOrder?.shipmentCreatedAt && !payload.shipmentCreatedAt) {
+      payload.shipmentCreatedAt = now;
+    }
+    if (!existingOrder?.shippedAt && !payload.shippedAt) {
+      payload.shippedAt = now;
+    }
+  } else if (nextStatus === 'Cancelled') {
+    ensureTimestamp('cancelledAt');
+  }
+};
+
 // Helper to calculate the Subtotal of line items
 const calculateSubtotal = (orderData) => {
   if (!Array.isArray(orderData.items)) return 0;
@@ -255,7 +318,6 @@ export const createOrder = catchAsync(async (req, res, next) => {
   req.body.subtotal = calculateSubtotal(req.body);
   const calculatedProcessingFees = await calculateProcessingFees(req.body);
 
-  // EXPLICIT ASSIGNMENT: Ensure processing fees are written to the payload before DB Save
   req.body.processingFees = calculatedProcessingFees;
 
   // --- CALCULATE GRAND TOTAL ---
@@ -267,6 +329,9 @@ export const createOrder = catchAsync(async (req, res, next) => {
 
   // --- GENERATE SEQUENTIAL ORDER NUMBER ---
   req.body.orderNumber = await generateOrderNumber(Order);
+
+  // --- NORMALIZE & AUTO-STAMP LIFECYCLE TIMESTAMPS ---
+  syncLifecycleTimestamps(req.body);
 
   let order = new Order(req.body);
   order.customer = customer;
@@ -321,7 +386,6 @@ export const createOrder = catchAsync(async (req, res, next) => {
   if (fallbackEmail) {
     try {
       if (order.status === 'Pending') {
-        // ALWAYS send alert to the operations team
         await sendPendingOrderEmail(
           'orders@mi-kro.com',
           recipientName,
@@ -329,7 +393,6 @@ export const createOrder = catchAsync(async (req, res, next) => {
           order.subtotal,
         );
 
-        // Send alert to the user who placed the order (guarded when orderUser is null)
         if (orderUser?.email) {
           await sendPendingOrderEmail(
             orderUser.email,
@@ -339,7 +402,6 @@ export const createOrder = catchAsync(async (req, res, next) => {
           );
         }
 
-        // Privilege Check: If current user cannot release orders, find an admin/super_user who can
         let notifyEmail = null;
 
         if (orderUser && orderUser.releasePendingOrders === true) {
@@ -356,7 +418,6 @@ export const createOrder = catchAsync(async (req, res, next) => {
           }
         }
 
-        // Dispatch alert if a distinct valid target was identified
         if (notifyEmail && notifyEmail !== orderUser?.email) {
           await sendPendingOrderEmail(
             notifyEmail,
@@ -366,7 +427,6 @@ export const createOrder = catchAsync(async (req, res, next) => {
           );
         }
       } else {
-        // Standard Confirmation
         await sendOrderConfirmationEmail(fallbackEmail, order);
         await sendOrderConfirmationEmail('orders@mi-kro.com', order);
       }
@@ -584,6 +644,9 @@ export const updateOrder = catchAsync(async (req, res, next) => {
     }
   }
 
+  // --- NORMALIZE & AUTO-STAMP LIFECYCLE TIMESTAMPS ---
+  syncLifecycleTimestamps(req.body, order);
+
   // --- EVENT CATCH: DETECT STATUS CHANGE TO PENDING ---
   const isChangingToPending =
     req.body.status === 'Pending' && order.status !== 'Pending';
@@ -615,7 +678,6 @@ export const updateOrder = catchAsync(async (req, res, next) => {
   req.body.subtotal = calculateSubtotal(mergedData);
   const calculatedProcessingFees = await calculateProcessingFees(mergedData);
 
-  // EXPLICIT ASSIGNMENT: Ensure processing fees are written to the payload before DB Save
   req.body.processingFees = calculatedProcessingFees;
 
   req.body.totalAmount = calculateTotalAmount(

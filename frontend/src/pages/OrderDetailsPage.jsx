@@ -42,7 +42,9 @@ import InvoicePanel from '../components/order-details/InvoicePanel';
 import LabelDrawer from '../components/order-details/LabelDrawer';
 import NetSuiteOrderMetadataBar from '../components/netsuite/NetSuiteOrderMetadataBar';
 
-import LifecycleTimestampsPanel from '../components/division-detail/LifecycleTimestampsPanel';
+import LifecycleTimestampsPanel, {
+  formatDisplayDateTime
+} from '../components/division-detail/LifecycleTimestampsPanel';
 
 const generateLocalId = () => `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -361,6 +363,46 @@ export default function OrderDetailsPage() {
     }
   }, [currentOrder, inventoryData]);
 
+  // Helper: only send timestamps that are set, explicitly cleared, or overridden
+  // so untouched empty fields can be auto-stamped by the backend on status changes.
+  const buildLifecycleTimestampPayload = (overrides = {}) => {
+    const entries = [
+      ['shipmentCreatedAt', shipmentCreatedAt, currentOrder?.shipmentCreatedAt],
+      ['shippedAt', shippedAt, currentOrder?.shippedAt],
+      ['deliveredAt', deliveredAt, currentOrder?.deliveredAt],
+      ['cancelledAt', cancelledAt, currentOrder?.cancelledAt],
+    ];
+
+    const payload = {};
+    for (const [key, localVal, existingVal] of entries) {
+      if (Object.prototype.hasOwnProperty.call(overrides, key)) {
+        payload[key] = overrides[key];
+      } else if (localVal) {
+        payload[key] = new Date(localVal).toISOString();
+      } else if (existingVal) {
+        payload[key] = null;
+      }
+    }
+    return payload;
+  };
+
+  // Helper: sync local timeline state immediately from an updated order object
+  const applyOrderTimestamps = (updatedOrder) => {
+    if (!updatedOrder) return;
+    if (updatedOrder.shipmentCreatedAt !== undefined) {
+      setShipmentCreatedAt(formatDatetimeLocal(updatedOrder.shipmentCreatedAt));
+    }
+    if (updatedOrder.shippedAt !== undefined) {
+      setShippedAt(formatDatetimeLocal(updatedOrder.shippedAt));
+    }
+    if (updatedOrder.deliveredAt !== undefined) {
+      setDeliveredAt(formatDatetimeLocal(updatedOrder.deliveredAt));
+    }
+    if (updatedOrder.cancelledAt !== undefined) {
+      setCancelledAt(formatDatetimeLocal(updatedOrder.cancelledAt));
+    }
+  };
+
   const addPackage = () => setPackages(prev => [...prev, { id: generateLocalId(), packageCode: 'package', weightInOunces: 16, length: 10, width: 10, height: 10 }]);
   const updatePackage = (pkgId, field, value) => setPackages(prev => prev.map(p => p.id === pkgId ? { ...p, [field]: value } : p));
   const removePackage = (pkgId) => setPackages(prev => prev.filter(p => p.id !== pkgId));
@@ -678,8 +720,17 @@ export default function OrderDetailsPage() {
 
       // COBRA DB only — no NetSuite sync until shipped with tracking
       if (!shipping.trackingNumber) {
-        await dispatch(updateOrder({ id: currentOrder._id, updateData: { status: 'Picked' } })).unwrap();
+        const res = await dispatch(
+          updateOrder({ id: currentOrder._id, updateData: { status: 'Picked' } })
+        ).unwrap();
+        const updatedOrder = res?.data?.order || res?.order || res;
+
         setOrderStatus('Picked');
+        applyOrderTimestamps(updatedOrder);
+        if (!updatedOrder?.shipmentCreatedAt && !shipmentCreatedAt) {
+          setShipmentCreatedAt(formatDatetimeLocal(new Date().toISOString()));
+        }
+        dispatch(fetchOrderById(currentOrder._id));
         toast.success("Documents generated and order marked as Picked.");
       } else {
         toast.success("Documents generated successfully.");
@@ -771,11 +822,8 @@ export default function OrderDetailsPage() {
       isRushOrder: isRushOrder,
       ...(selectedUserId ? { user: selectedUserId } : { user: null }),
 
-      // Inject updated lifecycle timestamps
-      shipmentCreatedAt: shipmentCreatedAt ? new Date(shipmentCreatedAt).toISOString() : null,
-      shippedAt: shippedAt ? new Date(shippedAt).toISOString() : null,
-      deliveredAt: deliveredAt ? new Date(deliveredAt).toISOString() : null,
-      cancelledAt: cancelledAt ? new Date(cancelledAt).toISOString() : null,
+      // Only send set or explicitly cleared timestamps so backend auto-stamps status transitions
+      ...buildLifecycleTimestampPayload(),
 
       notes: notes,
       shippingAddress: {
@@ -821,7 +869,9 @@ export default function OrderDetailsPage() {
     };
 
     try {
-      await dispatch(updateOrder({ id: currentOrder._id, updateData: payload })).unwrap();
+      const res = await dispatch(updateOrder({ id: currentOrder._id, updateData: payload })).unwrap();
+      const updatedOrder = res?.data?.order || res?.order || res;
+      applyOrderTimestamps(updatedOrder);
 
       if (isChangingToCancelled) {
         dispatch(fetchInventory());
@@ -842,15 +892,14 @@ export default function OrderDetailsPage() {
     if (!window.confirm("Are you sure you want to cancel this entire order? This will restock items and void any labels.")) return;
     setIsCancellingOrder(true);
 
+    const nowIso = new Date().toISOString();
+
     const payload = {
       status: 'Cancelled',
       isRushOrder: isRushOrder,
       ...(selectedUserId ? { user: selectedUserId } : { user: null }),
 
-      cancelledAt: new Date().toISOString(),
-      shipmentCreatedAt: shipmentCreatedAt ? new Date(shipmentCreatedAt).toISOString() : null,
-      shippedAt: shippedAt ? new Date(shippedAt).toISOString() : null,
-      deliveredAt: deliveredAt ? new Date(deliveredAt).toISOString() : null,
+      ...buildLifecycleTimestampPayload({ cancelledAt: nowIso }),
 
       notes: notes,
       shippingAddress: {
@@ -896,9 +945,13 @@ export default function OrderDetailsPage() {
     };
 
     try {
-      await dispatch(updateOrder({ id: currentOrder._id, updateData: payload })).unwrap();
+      const res = await dispatch(updateOrder({ id: currentOrder._id, updateData: payload })).unwrap();
+      const updatedOrder = res?.data?.order || res?.order || res;
       dispatch(fetchInventory());
       setOrderStatus('Cancelled');
+      applyOrderTimestamps(updatedOrder);
+      setCancelledAt(formatDatetimeLocal(updatedOrder?.cancelledAt || nowIso));
+      dispatch(fetchOrderById(currentOrder._id));
       toast.success('Order cancelled. Items returned to stock.');
     } catch (error) {
       toast.error(`Failed to cancel order: ${error}`);
@@ -956,8 +1009,11 @@ export default function OrderDetailsPage() {
       processingFees: processingFeesPreview
     };
 
-    // 2. Prepare Database Update Payload
+    // 2. Prepare Database Update Payload (ensure shipmentCreatedAt is stamped)
     const updatePayload = {
+      shipmentCreatedAt: shipmentCreatedAt
+        ? new Date(shipmentCreatedAt).toISOString()
+        : new Date().toISOString(),
       shippingDetails: {
         ...currentOrder.shippingDetails,
         cartoons: activeCartons,
@@ -976,7 +1032,7 @@ export default function OrderDetailsPage() {
     };
 
     try {
-      // Save modified metrics to database instantly
+      // Save modified metrics & timeline timestamp to database instantly
       await dispatch(updateOrder({ id: currentOrder._id, updateData: updatePayload })).unwrap();
 
       // Push to ShipStation
@@ -1067,6 +1123,12 @@ export default function OrderDetailsPage() {
         setOrderStatus('Shipped');
       }
 
+      // Immediately reflect updated lifecycle timestamps from the saved order
+      applyOrderTimestamps(response.order);
+      if (!response.order?.shippedAt) {
+        setShippedAt(formatDatetimeLocal(new Date().toISOString()));
+      }
+
       if (labelDownloaded) {
         toast.success('Label Purchased & Downloaded!', {
           description: `Tracking Number: ${combinedTracking || 'N/A'}`
@@ -1134,6 +1196,7 @@ export default function OrderDetailsPage() {
       toast.success("Label successfully voided.");
       setShipping(prev => ({ ...prev, trackingNumber: '', shippingCost: 0 }));
       setOrderStatus('Pending');
+      setShippedAt('');
       setNetSuiteSyncState({ synced: false, error: null });
       setFulfillOpen(false);
       dispatch(fetchOrderById(currentOrder._id));
@@ -1151,6 +1214,8 @@ export default function OrderDetailsPage() {
       await dispatch(cancelOrderShipment(currentOrder._id)).unwrap();
       toast.success("Shipment successfully cancelled.");
       setOrderStatus('New');
+      setShipmentCreatedAt('');
+      setShippedAt('');
       setFulfillOpen(false);
       dispatch(fetchOrderById(currentOrder._id));
     } catch (err) {
@@ -1177,7 +1242,7 @@ export default function OrderDetailsPage() {
   }
 
   const creationDate = currentOrder.createdAt
-    ? new Date(currentOrder.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    ? formatDisplayDateTime(currentOrder.createdAt)
     : 'Unknown Date';
 
   const isCurrentlyInternational = currentOrder?.isInternational || false;
@@ -1337,7 +1402,7 @@ export default function OrderDetailsPage() {
           </div>
 
           <LifecycleTimestampsPanel
-            createdAt={creationDate}
+            createdAt={currentOrder.createdAt}
             shipmentCreatedAt={shipmentCreatedAt}
             setShipmentCreatedAt={setShipmentCreatedAt}
             shippedAt={shippedAt}

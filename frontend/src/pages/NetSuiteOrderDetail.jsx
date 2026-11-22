@@ -30,6 +30,9 @@ import AddressPanel from "../components/order-details/AddressPanel";
 import NotesAndFeesPanel from "../components/order-details/NotesAndFeesPanel";
 import ManifestPanel from "../components/order-details/ManifestPanel";
 import InvoicePanel from "../components/order-details/InvoicePanel";
+import LifecycleTimestampsPanel, {
+  formatDisplayDateTime,
+} from "../components/division-detail/LifecycleTimestampsPanel";
 
 // Extracted NetSuite Modules
 import NetSuiteOrderLoader from "../components/netsuite/NetSuiteOrderLoader";
@@ -110,6 +113,12 @@ export default function NetSuiteOrderDetail() {
   const [packages, setPackages] = useState(() => [createInitialPackage()]);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // --- Lifecycle Timestamp States ---
+  const [shipmentCreatedAt, setShipmentCreatedAt] = useState("");
+  const [shippedAt, setShippedAt] = useState("");
+  const [deliveredAt, setDeliveredAt] = useState("");
+  const [cancelledAt, setCancelledAt] = useState("");
+
   const isMappedForCurrentId =
     Boolean(id) &&
     String(mappedRecordId) === String(id) &&
@@ -123,6 +132,10 @@ export default function NetSuiteOrderDetail() {
     const loadOrderAndDependencies = async () => {
       setLoadError(null);
       setMappedRecordId(null);
+      setShipmentCreatedAt("");
+      setShippedAt("");
+      setDeliveredAt("");
+      setCancelledAt("");
 
       let fetchedRecord = null;
 
@@ -285,8 +298,27 @@ export default function NetSuiteOrderDetail() {
     return true;
   };
 
-  const getCreationPayload = (statusOverride) =>
-    buildCobraCreationPayload({
+  const buildLifecycleTimestampPayload = (overrides = {}) => {
+    const entries = [
+      ["shipmentCreatedAt", shipmentCreatedAt],
+      ["shippedAt", shippedAt],
+      ["deliveredAt", deliveredAt],
+      ["cancelledAt", cancelledAt],
+    ];
+
+    const timestamps = {};
+    for (const [key, localVal] of entries) {
+      if (Object.prototype.hasOwnProperty.call(overrides, key)) {
+        timestamps[key] = overrides[key];
+      } else if (localVal) {
+        timestamps[key] = new Date(localVal).toISOString();
+      }
+    }
+    return timestamps;
+  };
+
+  const getCreationPayload = (statusOverride, timestampOverrides = {}) => ({
+    ...buildCobraCreationPayload({
       record: loadedRecord,
       isTransfer,
       orderStatus: statusOverride || orderStatus,
@@ -302,7 +334,9 @@ export default function NetSuiteOrderDetail() {
       computedSubtotal,
       grandTotal,
       processingFeesPreview,
-    });
+    }),
+    ...buildLifecycleTimestampPayload(timestampOverrides),
+  });
 
   const handleSaveOrderOnly = async () => {
     if (!loadedRecord) return toast.error("No record data to process.");
@@ -344,9 +378,15 @@ export default function NetSuiteOrderDetail() {
 
     try {
       // COBRA DB only — NetSuite fulfillment sync triggers automatically upon ShipStation label creation
+      const pickedAtIso = shipmentCreatedAt
+        ? new Date(shipmentCreatedAt).toISOString()
+        : new Date().toISOString();
+
       const actionPromise = (async () => {
         let created = await dispatch(
-          createOrder(getCreationPayload("Picked")),
+          createOrder(
+            getCreationPayload("Picked", { shipmentCreatedAt: pickedAtIso }),
+          ),
         ).unwrap();
 
         // Safeguard if POST /orders defaults initial status to "New"
@@ -354,7 +394,10 @@ export default function NetSuiteOrderDetail() {
           created = await dispatch(
             updateOrder({
               id: created._id,
-              updateData: { status: "Picked" },
+              updateData: {
+                status: "Picked",
+                shipmentCreatedAt: pickedAtIso,
+              },
             }),
           ).unwrap();
         }
@@ -434,6 +477,10 @@ export default function NetSuiteOrderDetail() {
     );
   }
 
+  const creationDate = mockCurrentOrder.createdAt
+    ? formatDisplayDateTime(mockCurrentOrder.createdAt)
+    : "Unknown Date";
+
   return (
     <div className="h-full flex flex-col gap-5 animate-fade-in max-w-[1400px] mx-auto pb-10 px-4 box-border text-slate-900">
       <OrderHeaderActions
@@ -468,7 +515,7 @@ export default function NetSuiteOrderDetail() {
             isRushOrder={isRushOrder}
             isInternational={isCurrentlyInternational}
             orderCreatorName="NetSuite Import"
-            creationDate={new Date(mockCurrentOrder.createdAt).toLocaleString()}
+            creationDate={creationDate}
           />
 
           <NetSuiteOrderMetadataBar
@@ -509,6 +556,19 @@ export default function NetSuiteOrderDetail() {
               manuallyAdjustedWeightOunces={0}
             />
           </div>
+
+          <LifecycleTimestampsPanel
+            createdAt={mockCurrentOrder.createdAt}
+            shipmentCreatedAt={shipmentCreatedAt}
+            setShipmentCreatedAt={setShipmentCreatedAt}
+            shippedAt={shippedAt}
+            setShippedAt={setShippedAt}
+            deliveredAt={deliveredAt}
+            setDeliveredAt={setDeliveredAt}
+            cancelledAt={cancelledAt}
+            setCancelledAt={setCancelledAt}
+            isSaving={isProcessing}
+          />
 
           <AddressPanel address={address} setAddress={setAddress} />
 
