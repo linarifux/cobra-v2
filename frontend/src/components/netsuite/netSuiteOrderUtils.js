@@ -139,24 +139,36 @@ export const mapNetSuiteRecordToState = (
 
   const lineItems = record.item?.items || [];
   const items = lineItems.map((i) => {
-    const skuStr = String(i.item?.refName || i.item?.id || "UNKNOWN");
+    const netSuiteSku = String(i.item?.refName || i.item?.id || "UNKNOWN").trim();
     const rawName = i.description || i.name || "Unknown Item";
 
-    const matchedStock = inventoryData.find(
-      (inv) =>
-        String(inv.division) === GATEWAY_DIVISION_ID &&
-        String(inv.corporateSku || "").toLowerCase() === skuStr.toLowerCase(),
-    );
+    const matchedStock = inventoryData.find((inv) => {
+      const invDivisionId = String(inv.division?._id || inv.division || "");
+      const corpSku = String(inv.corporateSku || "").trim().toLowerCase();
+      return (
+        invDivisionId === GATEWAY_DIVISION_ID &&
+        corpSku !== "" &&
+        corpSku === netSuiteSku.toLowerCase()
+      );
+    });
+
+    const cobraUnitCost =
+      matchedStock?.unitCost !== undefined && matchedStock?.unitCost !== null
+        ? Number(matchedStock.unitCost)
+        : Number(i.rate) || 0;
+
 
     return {
       id: generateLocalId(),
       name: matchedStock
-        ? `${matchedStock.itemName || matchedStock.name} (COBRA SKU: ${matchedStock.sku})`
+        ? matchedStock.itemName || matchedStock.name || rawName
         : rawName,
-      sku: skuStr,
+      sku: matchedStock?.sku || netSuiteSku,
+      corporateSku: netSuiteSku,
       qty: Number(i.quantity) || 1,
-      price: isTransfer ? 0 : Number(i.rate) || 0,
+      price: isTransfer ? 0 : cobraUnitCost,
       weight: matchedStock?.weight || 0,
+      mappedViaApi: Boolean(matchedStock?.sku),
     };
   });
 

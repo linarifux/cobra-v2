@@ -14,7 +14,10 @@ import {
   updateOrder,
   fetchOrders,
 } from "../store/slices/orderSlice";
-import { fetchInventory } from "../store/slices/inventorySlice";
+import {
+  fetchInventory,
+  fetchInventoryByLookup,
+} from "../store/slices/inventorySlice";
 import { fetchProcessingChargesByCustomer } from "../store/slices/processingChargeSlice";
 import {
   fetchCarriers,
@@ -124,7 +127,7 @@ export default function NetSuiteOrderDetail() {
     String(mappedRecordId) === String(id) &&
     Boolean(loadedRecord);
 
-  // --- SINGLE COORDINATED PARALLEL FETCH (ALWAYS FRESH) + MAP ---
+  // --- SINGLE COORDINATED PARALLEL FETCH (ALWAYS FRESH) + COBRA SKU & UNIT COST MAP ---
   useEffect(() => {
     if (!id) return;
     let isCancelled = false;
@@ -183,14 +186,77 @@ export default function NetSuiteOrderDetail() {
         return;
       }
 
+      const inventoryList = latestState.inventory?.items || [];
+      const isFreshTransfer = isTransferRecord(freshRecord);
+
       const mapped = mapNetSuiteRecordToState(
         freshRecord,
-        latestState.inventory?.items || [],
+        inventoryList,
         latestState.carriers?.items || [],
         latestState.carriers?.freightProviders || [],
       );
 
-      const mappedItemsWeightOz = mapped.items.reduce(
+      // Resolve COBRA SKU, name, weight, and unitCost before first render
+      const resolvedItems = await Promise.all(
+        mapped.items.map(async (item) => {
+          if (item.mappedViaApi) {
+            const localMatch = inventoryList.find(
+              (inv) =>
+                String(inv.sku || "").trim().toLowerCase() ===
+                String(item.sku || "").trim().toLowerCase(),
+            );
+
+            if (
+              localMatch &&
+              localMatch.unitCost !== undefined &&
+              localMatch.unitCost !== null
+            ) {
+              return {
+                ...item,
+                price: isFreshTransfer ? 0 : Number(localMatch.unitCost),
+              };
+            }
+
+            return item;
+          }
+
+          const lookupSku = String(item.corporateSku || item.sku || "").trim();
+          try {
+            const res = await dispatch(
+              fetchInventoryByLookup({
+                divisionId: GATEWAY_DIVISION_ID,
+                corporateSku: lookupSku,
+              }),
+            ).unwrap();
+
+            const invRecord = res?.data || res;
+            if (invRecord && (invRecord.sku || invRecord.itemName)) {
+              const resolvedUnitCost =
+                invRecord.unitCost !== undefined && invRecord.unitCost !== null
+                  ? Number(invRecord.unitCost)
+                  : item.price;
+
+              return {
+                ...item,
+                sku: invRecord.sku || item.sku,
+                corporateSku: invRecord.corporateSku || lookupSku,
+                name: invRecord.itemName || invRecord.name || item.name,
+                price: isFreshTransfer ? 0 : resolvedUnitCost,
+                weight: invRecord.weight ?? item.weight,
+                mappedViaApi: true,
+              };
+            }
+          } catch {
+            // Keep NetSuite fallback if not registered in COBRA inventory
+          }
+
+          return { ...item, mappedViaApi: true };
+        }),
+      );
+
+      if (isCancelled) return;
+
+      const mappedItemsWeightOz = resolvedItems.reduce(
         (acc, item) => acc + Number(item.weight || 0) * Number(item.qty || 0),
         0,
       );
@@ -200,7 +266,7 @@ export default function NetSuiteOrderDetail() {
       setAddress(mapped.address);
       setShipping(mapped.shipping);
       setNotes(mapped.notes);
-      setItems(mapped.items);
+      setItems(resolvedItems);
       setPackages([
         {
           ...createInitialPackage(),
