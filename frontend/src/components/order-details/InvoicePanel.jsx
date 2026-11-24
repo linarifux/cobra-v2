@@ -7,6 +7,7 @@ export default function InvoicePanel({
   setShipping,
   processingFeesPreview,
   liveWeightOz,
+  isLabelPurchased,
 }) {
   // Operational weight (uses live weight when provided, otherwise falls back to order record)
   const weightOz = Number(
@@ -37,9 +38,17 @@ export default function InvoicePanel({
         0,
     ) || 0;
 
-  // Shipping cost (live input value takes priority over stored record)
-  const rawShippingInput =
-    shipping?.shippingCost ?? currentOrder?.shippingDetails?.shippingCost ?? 0;
+  // For NetSuite orders, ignore NetSuite's rate — stay $0.00 until ShipStation label is purchased
+  const isNetSuiteOrder = currentOrder?.orderSource === 'NETSUITE';
+  const hasShipStationLabel =
+    isLabelPurchased !== undefined
+      ? Boolean(isLabelPurchased)
+      : Boolean(currentOrder?.shipstationDetails?.labelId);
+  const isAwaitingShipStationRate = isNetSuiteOrder && !hasShipStationLabel;
+
+  const rawShippingInput = isAwaitingShipStationRate
+    ? 0
+    : (shipping?.shippingCost ?? currentOrder?.shippingDetails?.shippingCost ?? 0);
   const shippingCost = Number(rawShippingInput) || 0;
 
   // Only include & show tax if explicitly stored on the order
@@ -120,26 +129,38 @@ export default function InvoicePanel({
         )}
 
         <div className="flex justify-between items-center">
-          <span>Shipping Cost</span>
-          <div
-            className="flex items-center border border-white/20 rounded-lg overflow-hidden bg-white/5 w-24 transition-colors focus-within:border-brand-gold/50 focus-within:bg-white/10"
-            title="Updates total immediately and persists on save"
-          >
-            <span className="px-2 text-xs text-slate-400">$</span>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              className="w-full bg-transparent text-white font-mono outline-none py-1 text-right pr-2 text-sm"
-              value={shipping?.shippingCost ?? ''}
-              onChange={(e) =>
-                setShipping({
-                  ...shipping,
-                  shippingCost: e.target.value,
-                })
-              }
-            />
+          <div className="flex flex-col">
+            <span>Shipping Cost</span>
+            {isAwaitingShipStationRate && (
+              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500">
+                Pending ShipStation Label
+              </span>
+            )}
           </div>
+
+          {isAwaitingShipStationRate ? (
+            <span className="font-mono text-slate-400">$0.00</span>
+          ) : (
+            <div
+              className="flex items-center border border-white/20 rounded-lg overflow-hidden bg-white/5 w-24 transition-colors focus-within:border-brand-gold/50 focus-within:bg-white/10"
+              title="Updates total immediately and persists on save"
+            >
+              <span className="px-2 text-xs text-slate-400">$</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="w-full bg-transparent text-white font-mono outline-none py-1 text-right pr-2 text-sm"
+                value={shipping?.shippingCost ?? ''}
+                onChange={(e) =>
+                  setShipping({
+                    ...shipping,
+                    shippingCost: e.target.value,
+                  })
+                }
+              />
+            </div>
+          )}
         </div>
 
         <div className="flex justify-between border-t pt-4 mt-2 border-white/10 text-white items-end">

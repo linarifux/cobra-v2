@@ -134,11 +134,12 @@ export const mapNetSuiteRecordToState = (
     freightProvidersData,
   );
 
+  // Do not import NetSuite's shipping rate — stays 0 until ShipStation generates the label
   const shipping = {
     carrierId: mappedCarrier.carrierId,
     carrierType: mappedCarrier.carrierType || rawShipMethod || "N/A",
     serviceCode: mappedCarrier.serviceCode,
-    shippingCost: record.shippingCost ?? record.altShippingCost ?? 0,
+    shippingCost: 0,
     trackingNumber:
       record.linkedTrackingNumbers || record.linkedtrackingnumberlist || "",
   };
@@ -262,7 +263,7 @@ export const buildMockCurrentOrder = ({
     carrierType: shipping.carrierType,
     serviceCode: shipping.serviceCode,
     trackingNumber: shipping.trackingNumber,
-    shippingCost: Number(shipping.shippingCost || 0),
+    shippingCost: 0,
     cartoons: cartoonsCount,
     pallets: palletsCount,
     totalWeightOunces: finalPayloadWeightOz,
@@ -316,7 +317,7 @@ export const buildCobraCreationPayload = ({
     carrierType: shipping.carrierType,
     serviceCode: shipping.serviceCode,
     trackingNumber: shipping.trackingNumber,
-    shippingCost: Number(shipping.shippingCost || 0),
+    shippingCost: 0, // Always 0 on initial COBRA import; populated by ShipStation on label purchase
     cartoons: cartoonsCount,
     pallets: palletsCount,
     totalBoxes: packages.length,

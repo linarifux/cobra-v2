@@ -264,7 +264,8 @@ export default function NetSuiteOrderDetail() {
       setLoadedRecord(freshRecord);
       setOrderStatus(mapped.orderStatus);
       setAddress(mapped.address);
-      setShipping(mapped.shipping);
+      // Do not import NetSuite shipping rate — stays $0 until ShipStation label is generated
+      setShipping({ ...mapped.shipping, shippingCost: 0 });
       setNotes(mapped.notes);
       setItems(resolvedItems);
       setPackages([
@@ -329,11 +330,13 @@ export default function NetSuiteOrderDetail() {
         (acc, item) => acc + Number(item.qty || 0) * Number(item.price || 0),
         0,
       );
+
+  // Shipping is strictly $0 on COBRA until ShipStation returns the rate upon label creation
+  const shippingWithZeroCost = { ...shipping, shippingCost: 0 };
   const grandTotal = Number(
     (
       computedSubtotal +
-      Number(processingFeesPreview.totalProcessingFee || 0) +
-      Number(shipping.shippingCost || 0)
+      Number(processingFeesPreview.totalProcessingFee || 0)
     ).toFixed(2),
   );
 
@@ -342,7 +345,7 @@ export default function NetSuiteOrderDetail() {
     isTransfer,
     orderStatus,
     address,
-    shipping,
+    shipping: shippingWithZeroCost,
     cartoonsCount,
     palletsCount,
     finalPayloadWeightOz,
@@ -391,7 +394,7 @@ export default function NetSuiteOrderDetail() {
       isRushOrder,
       notes,
       address,
-      shipping,
+      shipping: shippingWithZeroCost,
       cartoonsCount,
       palletsCount,
       packages,
@@ -493,7 +496,7 @@ export default function NetSuiteOrderDetail() {
         orderType: mockCurrentOrder.orderType,
         items,
         inventoryData,
-        shipping,
+        shipping: shippingWithZeroCost,
         address,
         notes,
       });
@@ -600,8 +603,10 @@ export default function NetSuiteOrderDetail() {
             />
 
             <ShippingPanel
-              shipping={shipping}
-              setShipping={setShipping}
+              shipping={shippingWithZeroCost}
+              setShipping={(nextShipping) =>
+                setShipping({ ...nextShipping, shippingCost: 0 })
+              }
               cartoonsCount={cartoonsCount}
               setCartoonsCount={setCartoonsCount}
               palletsCount={palletsCount}
@@ -657,10 +662,11 @@ export default function NetSuiteOrderDetail() {
 
           <InvoicePanel
             currentOrder={mockCurrentOrder}
-            shipping={shipping}
+            shipping={shippingWithZeroCost}
             setShipping={setShipping}
             processingFeesPreview={processingFeesPreview}
             liveWeightOz={finalPayloadWeightOz}
+            isLabelPurchased={false}
           />
         </div>
       </div>

@@ -132,8 +132,9 @@ export default function OrderDetailsPage() {
   const [deliveredAt, setDeliveredAt] = useState('');
   const [cancelledAt, setCancelledAt] = useState('');
 
-  // --- NetSuite Fulfillment Sync State ---
+  // --- NetSuite Fulfillment Sync & Label State ---
   const [netSuiteSyncState, setNetSuiteSyncState] = useState({ synced: false, error: null });
+  const [purchasedLabelId, setPurchasedLabelId] = useState(null);
 
   const [fulfillOpen, setFulfillOpen] = useState(false);
   const [cartoonsCount, setCartoonsCount] = useState(0);
@@ -165,10 +166,17 @@ export default function OrderDetailsPage() {
   const ssOrderId = ssData?.orderId || currentOrder?.shipstationOrderId || null;
   const ssLabelId = ssData?.labelId || null;
 
-  const isLabelPurchased = !!ssLabelId || !!shipping.trackingNumber;
+  const hasShipStationLabel = Boolean(ssLabelId || purchasedLabelId);
+  const isLabelPurchased = hasShipStationLabel || !!shipping.trackingNumber;
   const isShipmentCreated = !!ssOrderId;
   const isNetSuiteOrder = currentOrder?.orderSource === 'NETSUITE';
   const isSyncingNetSuite = nsFulfillmentStatus === 'loading';
+
+  // For NetSuite orders, keep shippingCost at 0 until ShipStation creates the label
+  const effectiveShippingCost =
+    isNetSuiteOrder && !hasShipStationLabel
+      ? 0
+      : Number(shipping.shippingCost || 0);
 
   // --- TOP LEVEL CALCULATIONS ---
   const derivedItemWeightOz = items.reduce((acc, item) => acc + (Number(item.weight) * Number(item.qty)), 0);
@@ -244,6 +252,7 @@ export default function OrderDetailsPage() {
 
   useEffect(() => {
     setNetSuiteSyncState({ synced: false, error: null });
+    setPurchasedLabelId(null);
     if (isValidMongoId) dispatch(fetchOrderById(id));
     return () => { dispatch(clearCurrentOrder()); };
   }, [id, isValidMongoId, dispatch]);
@@ -297,6 +306,13 @@ export default function OrderDetailsPage() {
 
   useEffect(() => {
     if (currentOrder) {
+      const orderIsNetSuite = currentOrder.orderSource === 'NETSUITE';
+      const orderHasLabel = Boolean(
+        currentOrder?.shipstationDetails?.labelId ||
+        currentOrder?.shipstationOrder?.labelId ||
+        currentOrder?.shipstation?.labelId
+      );
+
       setOrderStatus(currentOrder.status || 'New');
       setSelectedUserId(currentOrder.user?._id || currentOrder.user || '');
       setCartoonsCount(currentOrder.shippingDetails?.cartoons || 0);
@@ -314,7 +330,10 @@ export default function OrderDetailsPage() {
         carrierType: currentOrder.shippingDetails?.carrierType || '',
         serviceCode: currentOrder.shippingDetails?.serviceCode || '',
         trackingNumber: currentOrder.shippingDetails?.trackingNumber || '',
-        shippingCost: currentOrder.shippingDetails?.shippingCost || 0,
+        shippingCost:
+          orderIsNetSuite && !orderHasLabel
+            ? 0
+            : currentOrder.shippingDetails?.shippingCost || 0,
         shipStationId: currentOrder.shippingDetails?.shipStationId || ''
       });
 
@@ -437,7 +456,7 @@ export default function OrderDetailsPage() {
     const fulfillmentPayload = {
       trackingNumber: trackingStr,
       totalWeightOunces: Number(finalPayloadWeightOz) || Number(currentOrder?.shippingDetails?.totalWeightOunces || 0),
-      shippingCost: Number(shipping.shippingCost ?? currentOrder?.shippingDetails?.shippingCost ?? 0),
+      shippingCost: effectiveShippingCost,
       shipDate: (shippedAt ? new Date(shippedAt) : new Date()).toISOString().split('T')[0],
       carrierType: shipping.carrierType || currentOrder?.shippingDetails?.carrierType || '',
       memo: `Shipped via COBRA (${currentOrder?.orderNumber || 'N/A'})`,
@@ -497,6 +516,7 @@ export default function OrderDetailsPage() {
     const payload = {
       shippingDetails: {
         ...currentOrder.shippingDetails,
+        shippingCost: effectiveShippingCost,
         cartoons: Number(newCartons) || 0,
         pallets: Number(newPallets) || 0,
         totalBoxes: currentPkgs.length,
@@ -843,7 +863,7 @@ export default function OrderDetailsPage() {
         carrierType: shipping.carrierType,
         serviceCode: shipping.serviceCode,
         trackingNumber: shipping.trackingNumber,
-        shippingCost: Number(shipping.shippingCost || 0),
+        shippingCost: effectiveShippingCost,
         cartoons: Number(cartoonsCount) || 0,
         pallets: Number(palletsCount) || 0,
         totalBoxes: payloadPackages.length,
@@ -919,7 +939,7 @@ export default function OrderDetailsPage() {
         carrierType: shipping.carrierType,
         serviceCode: shipping.serviceCode,
         trackingNumber: shipping.trackingNumber,
-        shippingCost: Number(shipping.shippingCost || 0),
+        shippingCost: effectiveShippingCost,
         cartoons: Number(cartoonsCount) || 0,
         pallets: Number(palletsCount) || 0,
         totalBoxes: packages.length,
@@ -1016,6 +1036,7 @@ export default function OrderDetailsPage() {
         : new Date().toISOString(),
       shippingDetails: {
         ...currentOrder.shippingDetails,
+        shippingCost: effectiveShippingCost,
         cartoons: activeCartons,
         pallets: Number(palletsCount) || 0,
         totalBoxes: packages.length,
@@ -1114,12 +1135,25 @@ export default function OrderDetailsPage() {
           ? response.trackingNumbers.join(', ')
           : response.trackingNumber;
 
+      const returnedLabelId =
+        response.order?.shipstationDetails?.labelId ||
+        response.labelId ||
+        'purchased';
+
+      const returnedShippingCost =
+        response.order?.shippingDetails?.shippingCost ??
+        response.shippingCost ??
+        0;
+
+      // Unlock shipping cost display immediately with the live rate fetched from ShipStation
+      setPurchasedLabelId(returnedLabelId);
+      setShipping(prev => ({
+        ...prev,
+        trackingNumber: combinedTracking || prev.trackingNumber,
+        shippingCost: Number(returnedShippingCost) || 0
+      }));
+
       if (combinedTracking) {
-        setShipping(prev => ({
-          ...prev,
-          trackingNumber: combinedTracking,
-          shippingCost: response.order?.shippingDetails?.shippingCost ?? prev.shippingCost
-        }));
         setOrderStatus('Shipped');
       }
 
@@ -1194,6 +1228,7 @@ export default function OrderDetailsPage() {
     try {
       await dispatch(voidOrderLabel(currentOrder._id)).unwrap();
       toast.success("Label successfully voided.");
+      setPurchasedLabelId(null);
       setShipping(prev => ({ ...prev, trackingNumber: '', shippingCost: 0 }));
       setOrderStatus('Pending');
       setShippedAt('');
@@ -1443,6 +1478,7 @@ export default function OrderDetailsPage() {
             setShipping={setShipping}
             processingFeesPreview={processingFeesPreview}
             liveWeightOz={finalPayloadWeightOz}
+            isLabelPurchased={hasShipStationLabel}
           />
         </div>
       </div>
