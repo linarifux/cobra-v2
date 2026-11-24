@@ -22,6 +22,9 @@ export const isInternationalCountry = (country = "") =>
     country.toUpperCase().trim(),
   );
 
+const stripLeadingNumericId = (val = "") =>
+  String(val || "").replace(/^\d+\s+/, "").trim();
+
 export const determineShippingService = (
   netSuiteShipString,
   carriersData = [],
@@ -93,24 +96,27 @@ export const mapNetSuiteRecordToState = (
   // Only map to "New" if NetSuite status is Pending; otherwise keep original status
   const orderStatus = isPendingStatus ? "New" : originalStatus || "New";
 
-  let nsShopperName =
-    record.entity?.refName ||
-    record.entity_name ||
+  let fallbackName =
+    stripLeadingNumericId(record.entity?.refName || record.entity_name) ||
     record.email ||
     "NetSuite Shopper";
-  if (String(record.employee || record.employee?.id) === "129856") {
-    nsShopperName = "Leah Mockridge";
-  } else if (String(record.employee || record.employee?.id) === "72236") {
-    nsShopperName = "Ryan Smith";
+
+  const employeeId = String(record.employee?.id || record.employee || "");
+  if (employeeId === "129856") {
+    fallbackName = "Leah Mockridge";
+  } else if (employeeId === "72236") {
+    fallbackName = "Ryan Smith";
   }
 
+  const addresseeName = record.shippingAddress?.addressee?.trim() || "";
+
   const address = {
-    name: isTransfer ? "Gateway Destination" : nsShopperName,
+    name: addresseeName || (isTransfer ? "Gateway Destination" : fallbackName),
     companyName: isTransfer
       ? record.transferLocation?.refName || "Hainsport Whs"
       : "",
     email: record.email || record.custbody114 || "",
-    phone: "N/A",
+    phone: record.shippingAddress?.addrPhone?.trim() || "N/A",
     street: isTransfer ? "" : record.shippingAddress?.addr1 || "",
     line2: isTransfer ? "" : record.shippingAddress?.addr2 || "",
     city: isTransfer ? "Import" : record.shippingAddress?.city || "",
@@ -156,7 +162,6 @@ export const mapNetSuiteRecordToState = (
       matchedStock?.unitCost !== undefined && matchedStock?.unitCost !== null
         ? Number(matchedStock.unitCost)
         : Number(i.rate) || 0;
-
 
     return {
       id: generateLocalId(),
@@ -332,8 +337,6 @@ export const buildCobraCreationPayload = ({
   processingFees: processingFeesPreview,
 });
 
-
-
 export const buildNetSuiteFulfillmentPayload = ({
   order,
   labelResponse = {},
@@ -410,4 +413,3 @@ export const buildNetSuiteFulfillmentPayload = ({
     locationId,
   };
 };
-
